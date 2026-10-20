@@ -1,0 +1,31 @@
+{
+  "name": "@victor-aunon/speckit-viteplus-stitch",
+  "version": "1.0.0",
+  "description": "Spec Kit bundle with Vite+, Airbnb lint, Clean Architecture gates, Stitch MCP, and Playwright",
+  "keywords": [
+    "spec-kit",
+    "speckit",
+    "vite-plus",
+    "viteplus",
+    "stitch",
+    "playwright",
+    "clean-architecture",
+    "oxlint",
+    "oxfmt"
+  ],
+  "author": "victor-aunon",
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check-quality": "bash scripts/check-quality-gate.sh",
+    "verify-design": "bash scripts/verify-stitch-design.sh",
+    "install-bundle": "bash scripts/install.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7",
+    "yaml": "^2.7.0"
+  }
+}
