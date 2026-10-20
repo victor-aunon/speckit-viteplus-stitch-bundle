@@ -29,17 +29,26 @@ Deterministic Spec-Driven Development (SDD) workflow for high-fidelity web appli
 
 ## Installation in Any Project
 
-Run inside the root directory of any repository where you want to enable the workflow:
+Run inside the root directory of any repository initialized with Spec Kit (`specify init`):
 
+### Option A: Install from a specific GitHub Release (Recommended)
 ```bash
-# Install the complete bundle (workflow, hooks, templates, and scripts)
-specify bundle install <path-to-bundle-or-git-url>
+curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --release=v1.0.0
 ```
 
-Or using the included standalone installer script:
+### Option B: Install using a downloaded Release `.zip`
+If you downloaded `viteplus-stitch-1.0.0.zip` from GitHub Releases:
 ```bash
-bash bundles/speckit-viteplus-stitch/scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --zip=./viteplus-stitch-1.0.0.zip
 ```
+*(Or unzip it and run `bash scripts/install.sh`)*
+
+### Option C: Install latest from `main`
+```bash
+curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash
+```
+
+> **Note on `specify bundle install`:** In current versions of Spec Kit CLI (`<= 0.8.x`), `specify bundle install` only resolves workflows that are officially merged into the central GitHub catalog (`github/spec-kit`). For third-party or custom workflow bundles, the standalone `install.sh` script is the official installation method, which cleanly unpacks the workflow, sets up executable quality gate scripts, and registers lifecycle hooks in `.specify/`.
 
 This automatically sets up:
 * The workflow at `.specify/workflows/viteplus-stitch/`

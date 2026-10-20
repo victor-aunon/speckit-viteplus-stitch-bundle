@@ -12,7 +12,8 @@ BUNDLE_ROOT="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || pwd)"
 
 GITHUB_REPO="victor-aunon/speckit-viteplus-stitch-bundle"
 REMOTE_BRANCH="main"
-
+RELEASE_TAG=""
+ZIP_FILE=""
 TARGET_DIR="."
 
 for arg in "$@"; do
@@ -20,8 +21,20 @@ for arg in "$@"; do
     --target-dir=*)
       TARGET_DIR="${arg#*=}"
       ;;
+    --release=*|--version=*)
+      RELEASE_TAG="${arg#*=}"
+      ;;
+    --zip=*)
+      ZIP_FILE="${arg#*=}"
+      ;;
     --help)
-      echo "Usage: install.sh [--target-dir=<path>]"
+      echo "Usage: install.sh [options]"
+      echo ""
+      echo "Options:"
+      echo "  --target-dir=<path>    Target directory of the project (default: current directory)"
+      echo "  --release=<tag>        Install from a specific GitHub Release tag (e.g. v1.0.0)"
+      echo "  --zip=<path>           Install from a locally downloaded release .zip file"
+      echo "  --help                 Show this help message"
       exit 0
       ;;
     *)
@@ -32,13 +45,32 @@ done
 TARGET_DIR="$(cd "$TARGET_DIR" 2>/dev/null && pwd || echo "$TARGET_DIR")"
 SPECIFY_DIR="$TARGET_DIR/.specify"
 
-# If local assets are missing (e.g. running via `curl ... | bash`), download from GitHub
-if [ ! -f "$BUNDLE_ROOT/workflows/viteplus-stitch/workflow.yml" ]; then
+# 1. If a local zip file was supplied, unpack and use as bundle root
+if [ -n "$ZIP_FILE" ]; then
+  if [ ! -f "$ZIP_FILE" ]; then
+    echo "❌ Error: Zip file '$ZIP_FILE' does not exist."
+    exit 1
+  fi
+  TEMP_UNPACK_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'speckit-bundle-zip')"
+  trap 'rm -rf "$TEMP_UNPACK_DIR"' EXIT
+  echo "Unpacking release archive from: $ZIP_FILE..."
+  unzip -q -o "$ZIP_FILE" -d "$TEMP_UNPACK_DIR"
+  BUNDLE_ROOT="$TEMP_UNPACK_DIR"
+# 2. If local assets are missing (e.g. running via `curl ... | bash`), download from GitHub
+elif [ ! -f "$BUNDLE_ROOT/workflows/viteplus-stitch/workflow.yml" ]; then
   TEMP_DOWNLOAD_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'speckit-bundle')"
   trap 'rm -rf "$TEMP_DOWNLOAD_DIR"' EXIT
-  echo "Downloading bundle assets from GitHub ($GITHUB_REPO)..."
+
+  DOWNLOAD_URL="https://github.com/$GITHUB_REPO/archive/refs/heads/$REMOTE_BRANCH.tar.gz"
+  REF_LABEL="branch: $REMOTE_BRANCH"
+  if [ -n "$RELEASE_TAG" ]; then
+    DOWNLOAD_URL="https://github.com/$GITHUB_REPO/archive/refs/tags/$RELEASE_TAG.tar.gz"
+    REF_LABEL="release: $RELEASE_TAG"
+  fi
+
+  echo "Downloading bundle assets from GitHub ($GITHUB_REPO @ $REF_LABEL)..."
   if command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then
-    curl -fsSL "https://github.com/$GITHUB_REPO/archive/refs/heads/$REMOTE_BRANCH.tar.gz" | tar -xz -C "$TEMP_DOWNLOAD_DIR" --strip-components=1
+    curl -fsSL "$DOWNLOAD_URL" | tar -xz -C "$TEMP_DOWNLOAD_DIR" --strip-components=1
     BUNDLE_ROOT="$TEMP_DOWNLOAD_DIR"
   else
     echo "❌ Error: 'curl' and 'tar' are required to download bundle assets remotely."
