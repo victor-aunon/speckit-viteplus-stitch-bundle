@@ -7,8 +7,11 @@
 
 set -eo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUNDLE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
+BUNDLE_ROOT="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || pwd)"
+
+GITHUB_REPO="victor-aunon/speckit-viteplus-stitch-bundle"
+REMOTE_BRANCH="main"
 
 TARGET_DIR="."
 
@@ -28,6 +31,20 @@ done
 
 TARGET_DIR="$(cd "$TARGET_DIR" 2>/dev/null && pwd || echo "$TARGET_DIR")"
 SPECIFY_DIR="$TARGET_DIR/.specify"
+
+# If local assets are missing (e.g. running via `curl ... | bash`), download from GitHub
+if [ ! -f "$BUNDLE_ROOT/workflows/viteplus-stitch/workflow.yml" ]; then
+  TEMP_DOWNLOAD_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'speckit-bundle')"
+  trap 'rm -rf "$TEMP_DOWNLOAD_DIR"' EXIT
+  echo "Downloading bundle assets from GitHub ($GITHUB_REPO)..."
+  if command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then
+    curl -fsSL "https://github.com/$GITHUB_REPO/archive/refs/heads/$REMOTE_BRANCH.tar.gz" | tar -xz -C "$TEMP_DOWNLOAD_DIR" --strip-components=1
+    BUNDLE_ROOT="$TEMP_DOWNLOAD_DIR"
+  else
+    echo "❌ Error: 'curl' and 'tar' are required to download bundle assets remotely."
+    exit 2
+  fi
+fi
 
 echo "Installing viteplus-stitch bundle into: $TARGET_DIR..."
 
