@@ -3,21 +3,17 @@ bundle:
   id: "viteplus-stitch"
   name: "Vite+ & Stitch Quality Bundle"
   version: "1.0.0"
+  license: "MIT"
+  role: "workflow"
   description: "Spec Kit bundle with Vite+, Airbnb lint, Clean Architecture gates, Stitch MCP, and Playwright"
-  author: "Sngular"
+  author: "victor-aunon"
 
-components:
+requires:
+  speckit_version: ">=0.8.5"
+  mcp:
+    - "stitch"
+
+provides:
   workflows:
     - id: "viteplus-stitch"
-      path: "workflows/viteplus-stitch/workflow.yml"
-  extensions:
-    - path: "extensions/extensions.yml"
-  templates:
-    - name: "vite.config.ts"
-      path: "templates/vite.config.ts.tmpl"
-    - name: "playwright.design.config.ts"
-      path: "templates/playwright.design.config.ts.tmpl"
-    - name: "design-audit.spec.ts"
-      path: "templates/design-audit.spec.ts.tmpl"
-    - name: "routes-manifest.json"
-      path: "templates/routes-manifest.json.tmpl"
+      version: "1.0.0"

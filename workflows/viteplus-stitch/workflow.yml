@@ -3,7 +3,7 @@ workflow:
   id: "viteplus-stitch"
   name: "Vite+ Stitch SDD Lifecycle"
   version: "1.0.0"
-  author: "Sngular"
+  author: "victor-aunon"
   description: "Deterministic SDD workflow featuring Vite+, Google Stitch MCP, and architectural & visual quality gates"
 
 requires:

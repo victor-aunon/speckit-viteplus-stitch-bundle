@@ -10,9 +10,10 @@ describe('Bundle Manifest Validation', () => {
     const content = yaml.parse(fs.readFileSync(manifestPath, 'utf8'));
     expect(content.schema_version).toBe('1.0');
     expect(content.bundle.id).toBe('viteplus-stitch');
-    expect(content.bundle.version).toBe('1.0.0');
+    expect(content.bundle.version).toBe('1.0.0');expect(content.bundle.role).toBe('workflow');
+    expect(content.bundle.license).toBe('MIT');
+    expect(content.requires.speckit_version).toBeDefined();
     expect(content.components.workflows[0].id).toBe('viteplus-stitch');
-    expect(content.components.extensions[0].path).toBe('extensions/extensions.yml');
   });
 
   it('should have a valid package.json with correct bundle metadata', () => {
