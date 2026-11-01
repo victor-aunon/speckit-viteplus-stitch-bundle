@@ -5,7 +5,7 @@ bundle:
   version: "1.0.0"
   license: "MIT"
   role: "workflow"
-  description: "Spec Kit bundle with Vite+, Airbnb lint, Clean Architecture gates, Stitch MCP, and Playwright"
+  description: "Spec Kit bundle with Vite+, Airbnb lint, Clean Architecture gates (vertical slices), typed env config guard, Stitch MCP, and Playwright"
   author: "victor-aunon"
 
 requires:

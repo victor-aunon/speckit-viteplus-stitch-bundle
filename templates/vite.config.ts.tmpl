@@ -24,29 +24,61 @@ export default defineConfig({
       'shadcn/no-inline-styles': 'error',
 
       // 3. Clean Architecture Layer Boundary Import Restrictions
+      //
+      // Supported layout (vertical slicing):
+      //   src/features/<slice>/domain/**
+      //   src/features/<slice>/application/**
+      //   src/features/<slice>/infrastructure/**
+      //   src/features/<slice>/ui/**
+      //
+      // The same dependency rules apply to every slice under src/**, not only
+      // to the shared src/core/** tree.
       'import/no-restricted-paths': [
         'error',
         {
           zones: [
+            // --- Vertical slices: every slice obeys the same layer rules ---
             // Domain layer cannot depend on Application, Infrastructure, or UI
+            {
+              target: '**/src/**/domain/**',
+              from: '**/src/**/@(application|infrastructure|ui)/**',
+              message: 'Clean Architecture Violation: Domain cannot depend on Application, Infrastructure, or UI (vertical slice rule).'
+            },
+            // Application layer cannot depend on Infrastructure or UI
+            {
+              target: '**/src/**/application/**',
+              from: '**/src/**/@(infrastructure|ui)/**',
+              message: 'Clean Architecture Violation: Application cannot depend on Infrastructure or UI (vertical slice rule).'
+            },
+            // Infrastructure layer cannot depend on UI
+            {
+              target: '**/src/**/infrastructure/**',
+              from: '**/src/**/ui/**',
+              message: 'Clean Architecture Violation: Infrastructure cannot depend on UI (vertical slice rule).'
+            },
+            // UI layer cannot directly import Infrastructure adapters
+            {
+              target: '**/src/**/ui/**',
+              from: '**/src/**/infrastructure/**',
+              message: 'Clean Architecture Violation: UI cannot directly import Infrastructure adapters (vertical slice rule).'
+            },
+
+            // --- Shared core layers: explicit examples kept for readability ---
             {
               target: '**/src/core/domain/**',
               from: '**/src/@(core/application|infrastructure|ui)/**',
               message: 'Clean Architecture Violation: Domain cannot depend on Application, Infrastructure, or UI.'
             },
-            // Application layer cannot depend on Infrastructure or UI
             {
               target: '**/src/core/application/**',
               from: '**/src/@(infrastructure|ui)/**',
               message: 'Clean Architecture Violation: Application cannot depend on Infrastructure or UI.'
             },
-            // Infrastructure layer cannot depend on UI
             {
               target: '**/src/infrastructure/**',
               from: '**/src/ui/**',
               message: 'Clean Architecture Violation: Infrastructure cannot depend on UI.'
             },
-            // UI layer cannot directly import Infrastructure adapters
             {
               target: '**/src/ui/**',
               from: '**/src/infrastructure/**',

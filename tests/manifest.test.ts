@@ -13,7 +13,7 @@ describe('Bundle Manifest Validation', () => {
     expect(content.bundle.version).toBe('1.0.0');expect(content.bundle.role).toBe('workflow');
     expect(content.bundle.license).toBe('MIT');
     expect(content.requires.speckit_version).toBeDefined();
-    expect(content.components.workflows[0].id).toBe('viteplus-stitch');
+    expect(content.provides.workflows[0].id).toBe('viteplus-stitch');
   });
 
   it('should have a valid package.json with correct bundle metadata', () => {

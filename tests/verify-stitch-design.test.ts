@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { runBash } from './helpers/bash';
 
 describe('verify-stitch-design.sh and templates', () => {
   const scriptPath = path.resolve(__dirname, '../scripts/verify-stitch-design.sh');
@@ -11,17 +11,18 @@ describe('verify-stitch-design.sh and templates', () => {
   it('script should exist and be executable', () => {
     expect(fs.existsSync(scriptPath)).toBe(true);
     const stats = fs.statSync(scriptPath);
-    expect(stats.mode & 0o111).toBeGreaterThan(0);
+    const executable = process.platform === 'win32' || (stats.mode & 0o111) > 0;
+    expect(executable).toBe(true);
   });
 
   it('should support --help flag and display usage', () => {
-    const output = execSync(`bash ${scriptPath} --help`, { encoding: 'utf8' });
+    const output = runBash(scriptPath, ['--help']);
     expect(output).toContain('Usage: verify-stitch-design.sh');
     expect(output).toContain('Playwright');
   });
 
   it('should exit 0 cleanly with skip message when no designs directory exists', () => {
-    const output = execSync(`bash ${scriptPath} --feature-dir=/tmp/non-existent-feature-dir`, { encoding: 'utf8' });
+    const output = runBash(scriptPath, ['--feature-dir=./__non_existent_feature_dir__']);
     expect(output).toContain('No designs directory found');
     expect(output).toContain('Skipping visual verification');
   });

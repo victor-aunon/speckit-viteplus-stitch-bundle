@@ -89,8 +89,10 @@ cp "$BUNDLE_ROOT/workflows/viteplus-stitch/workflow.yml" "$SPECIFY_DIR/workflows
 
 # 2. Copy scripts and ensure execution permissions
 cp "$BUNDLE_ROOT/scripts/check-quality-gate.sh" "$SPECIFY_DIR/scripts/bash/check-quality-gate.sh"
+cp "$BUNDLE_ROOT/scripts/check-env-config.sh" "$SPECIFY_DIR/scripts/bash/check-env-config.sh"
 cp "$BUNDLE_ROOT/scripts/verify-stitch-design.sh" "$SPECIFY_DIR/scripts/bash/verify-stitch-design.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-quality-gate.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/check-env-config.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/verify-stitch-design.sh"
 
 # 3. Copy templates
@@ -110,7 +112,7 @@ else
       cat >> "$EXTENSIONS_FILE" << 'EOF'
   after_task:
     - name: "viteplus-quality-gate"
-      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, and architecture layer boundaries)"
+      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, and typed env config guard)"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
     - name: "stitch-visual-gate"
@@ -133,7 +135,7 @@ EOF
 hooks:
   after_task:
     - name: "viteplus-quality-gate"
-      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, and architecture layer boundaries)"
+      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, and typed env config guard)"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
     - name: "stitch-visual-gate"
@@ -166,7 +168,7 @@ if [ -f "$REGISTRY_FILE" ]; then
       reg.workflows['viteplus-stitch'] = {
         name: 'Vite+ Stitch SDD Lifecycle',
         version: '1.0.0',
-        description: 'Deterministic SDD workflow featuring Vite+, Google Stitch MCP, and architectural & visual quality gates',
+        description: 'Deterministic SDD workflow featuring Vite+, Google Stitch MCP, phase checkpoints, and architectural, env-config & visual quality gates',
         source: 'local-bundle',
         installed_at: '$TIMESTAMP',
         updated_at: '$TIMESTAMP'

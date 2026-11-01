@@ -1,7 +1,7 @@
 {
   "name": "@victor-aunon/speckit-viteplus-stitch",
   "version": "1.0.0",
-  "description": "Spec Kit bundle with Vite+, Airbnb lint, Clean Architecture gates, Stitch MCP, and Playwright",
+  "description": "Spec Kit bundle with Vite+, Airbnb lint, Clean Architecture gates (vertical slices), typed env config guard, Stitch MCP, and Playwright",
   "keywords": [
     "spec-kit",
     "speckit",
@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check-quality": "bash scripts/check-quality-gate.sh",
+    "check-env": "bash scripts/check-env-config.sh",
     "verify-design": "bash scripts/verify-stitch-design.sh",
     "install-bundle": "bash scripts/install.sh"
   },

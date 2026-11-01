@@ -2,8 +2,48 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
+export type DesignTokens = Record<string, string>;
+
+const TOKEN_DECLARATION = /(--[A-Za-z0-9_-]+)\s*:\s*([^;{}]+);/g;
+
 /**
- * Visual Audit and CSS Tokens Verification Test against Stitch Golden Master
+ * Parse every CSS custom property declared in the Stitch tokens.css file.
+ * tokens.css is the canonical source of truth for the design system.
+ */
+export function parseDesignTokens(css: string): DesignTokens {
+  const tokens: DesignTokens = {};
+  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  let match: RegExpExecArray | null;
+
+  while ((match = TOKEN_DECLARATION.exec(withoutComments)) !== null) {
+    tokens[match[1]] = match[2].trim().replace(/\s+/g, ' ');
+  }
+
+  return tokens;
+}
+
+export function normalizeTokenValue(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * Return one human-readable message per token whose DOM value does not match
+ * the value declared by Stitch. Missing tokens are reported too.
+ */
+export function diffDesignTokens(expected: DesignTokens, actual: DesignTokens): string[] {
+  return Object.entries(expected)
+    .filter(
+      ([name, expectedValue]) =>
+        normalizeTokenValue(actual[name] ?? '') !== normalizeTokenValue(expectedValue)
+    )
+    .map(
+      ([name, expectedValue]) =>
+        `${name}: expected "${expectedValue}" but the DOM computed "${actual[name] ?? '<missing>'}"`
+    );
+}
+
+/**
+ * Visual Audit and CSS Tokens Verification Test against Stitch Golden Master.
  */
 test.describe('Stitch Design Audit & Tokens Verification', () => {
   const featureDir = process.env.FEATURE_DIR || './specs';
@@ -11,32 +51,37 @@ test.describe('Stitch Design Audit & Tokens Verification', () => {
   const tokensFile = path.join(designsDir, 'tokens.css');
   const manifestFile = path.join(designsDir, 'routes-manifest.json');
 
-  test('CSS design tokens are strictly applied in the DOM', async ({ page }) => {
+  test('every Stitch design token is applied exactly in the DOM', async ({ page }) => {
     test.skip(!fs.existsSync(tokensFile), 'No tokens.css found in designs directory');
+
+    const expectedTokens = parseDesignTokens(fs.readFileSync(tokensFile, 'utf8'));
+    const tokenNames = Object.keys(expectedTokens);
+    expect(tokenNames.length).toBeGreaterThan(0);
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Extract computed CSS custom properties from :root
-    const rootStyles = await page.evaluate(() => {
+    const actualTokens = await page.evaluate((names: string[]) => {
       const computed = window.getComputedStyle(document.documentElement);
-      return {
-        bgCanvas: computed.getPropertyValue('--color-bg-canvas').trim(),
-        textPrimary: computed.getPropertyValue('--color-text-primary').trim(),
-        colorPrimary: computed.getPropertyValue('--color-primary').trim(),
-      };
-    });
+      return Object.fromEntries(names.map((name) => [name, computed.getPropertyValue(name)]));
+    }, tokenNames);
 
-    expect(rootStyles).toBeDefined();
+    const mismatches = diffDesignTokens(expectedTokens, actualTokens);
+    expect(
+      mismatches,
+      `Design token drift detected. tokens.css is the Stitch source of truth.\n${mismatches.join('\n')}`
+    ).toEqual([]);
   });
 
-  test('Visual layout matches Stitch golden screenshot with 0.05 tolerance', async ({ page }) => {
+  test('visual layout matches Stitch golden screenshot with 0.05 tolerance', async ({ page }) => {
     test.skip(!fs.existsSync(manifestFile), 'No routes-manifest.json found in designs directory');
 
     const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
     for (const screen of manifest.screens || []) {
       const goldenImagePath = path.join(designsDir, `${screen.id}.png`);
-      test.skip(!fs.existsSync(goldenImagePath), `Golden screenshot for ${screen.id} not found`);
+      if (!fs.existsSync(goldenImagePath)) {
+        continue;
+      }
 
       await page.goto(screen.route || '/');
       await page.waitForLoadState('networkidle');

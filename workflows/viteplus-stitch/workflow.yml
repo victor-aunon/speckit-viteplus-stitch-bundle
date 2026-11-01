@@ -4,7 +4,7 @@ workflow:
   name: "Vite+ Stitch SDD Lifecycle"
   version: "1.0.0"
   author: "victor-aunon"
-  description: "Deterministic SDD workflow featuring Vite+, Google Stitch MCP, and architectural & visual quality gates"
+  description: "Deterministic SDD workflow featuring Vite+, Google Stitch MCP, phase-by-phase implementation checkpoints, and architectural, env-config & visual quality gates"
 
 requires:
   speckit_version: ">=0.8.5"
@@ -22,6 +22,10 @@ inputs:
     type: string
     default: "auto"
     prompt: "Agent integration to use (e.g. gemini, claude, copilot; 'auto' uses the project's integration)"
+  auto_continue:
+    type: boolean
+    default: false
+    prompt: "Automatically continue through all implementation phases without pausing after each phase? (default: pause and ask after each phase)"
 
 steps:
   - id: specify
@@ -55,7 +59,17 @@ steps:
       args: "{{ inputs.spec }} --phased"
 
   - id: implement
-    command: speckit.implement
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.spec }} --phased --verify-gates"
+    type: if
+    condition: "{{ inputs.auto_continue }}"
+    then:
+      - id: implement-auto
+        command: speckit.implement
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "{{ inputs.spec }} --phased --verify-gates --auto-continue"
+    else:
+      - id: implement-paused
+        command: speckit.implement
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "{{ inputs.spec }} --phased --verify-gates --pause-after-phase"

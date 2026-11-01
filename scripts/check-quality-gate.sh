@@ -8,17 +8,22 @@
 #   2. Linter (Oxlint with Airbnb rules and @shadcn/lint)
 #   3. Strict type checking (TypeScript typeCheck)
 #   4. Cyclomatic complexity limits (max 10) and function line limits (max 50)
-#   5. Clean Architecture layer boundaries (import/no-restricted-paths)
+#   5. Clean Architecture layer boundaries (import/no-restricted-paths),
+#      including vertical slices outside src/core
+#   6. Environment access centralized in one typed config module
 # ==============================================================================
 
 set -eo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
 
 show_help() {
   cat << 'EOF'
 Usage: check-quality-gate.sh [options]
 
 Deterministic Quality Gate for Spec Kit with Vite+ (vp).
-Verifies formatting, types, Airbnb style rules, complexity limits, and architectural boundaries.
+Verifies formatting, types, Airbnb style rules, complexity limits, architectural boundaries,
+and centralized/typed environment variable access.
 
 Options:
   --help        Show this help message
@@ -56,7 +61,21 @@ echo "======================================================================"
 echo "[QUALITY GATE] Starting deterministic quality check with Vite+"
 echo "======================================================================"
 
-# 1. Resolve Vite+ (vp) binary
+# 1. Enforce centralized, typed environment variable access
+if [ "$DRY_RUN" = false ]; then
+  ENV_CHECK="$SCRIPT_DIR/check-env-config.sh"
+  if [ -f "$ENV_CHECK" ]; then
+    if ! bash "$ENV_CHECK"; then
+      echo ""
+      echo "❌ [QUALITY GATE FAILED]: Environment variable configuration violations detected."
+      exit 1
+    fi
+  else
+    echo "⚠️ [QUALITY GATE WARNING]: check-env-config.sh not found; skipping environment gate."
+  fi
+fi
+
+# 2. Resolve Vite+ (vp) binary
 VP_CMD=""
 if command -v vp >/dev/null 2>&1; then
   VP_CMD="vp"
@@ -79,7 +98,7 @@ if [ "$DRY_RUN" = true ]; then
   exit 0
 fi
 
-# 2. Run unified quality check
+# 3. Run unified quality check
 echo "Executing vp check (Airbnb Linter + Oxlint + TypeScript Types + Complexity)..."
 
 CHECK_STATUS=0
