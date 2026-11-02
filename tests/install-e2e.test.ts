@@ -30,13 +30,45 @@ describe('Bundle Installer Script E2E', () => {
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-env-config.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/verify-stitch-design.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/extensions.yml'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/workflows/viteplus-stitch/GUARDRAILS.md'))).toBe(true);
 
     const extContent = yaml.parse(fs.readFileSync(path.join(tempDir, '.specify/extensions.yml'), 'utf8'));
     expect(extContent.hooks.after_task.length).toBeGreaterThan(0);
 
-    // Second execution (Idempotence)
+    const constitutionPath = path.join(tempDir, '.specify/memory/constitution.md');
+    expect(fs.existsSync(constitutionPath)).toBe(true);
+    const constitution = fs.readFileSync(constitutionPath, 'utf8');
+    expect(constitution).toContain('Quality Gate Integrity (NON-NEGOTIABLE)');
+    expect(constitution).toContain('viteplus-stitch:quality-gate-integrity');
+    expect(constitution).toContain('vite.config.ts');
+
+    // Second execution (Idempotence) must not duplicate the constitution section
     const output2 = runBash(installScript, [`--target-dir=${tempDir}`]);
     expect(output2).toContain('Installation of viteplus-stitch completed successfully');
+
+    const constitutionAfter = fs.readFileSync(constitutionPath, 'utf8');
+    const occurrences = constitutionAfter.split('viteplus-stitch:quality-gate-integrity').length - 1;
+    expect(occurrences).toBe(1);
+
+    removeDir(tempDir);
+  });
+
+  it('should preserve an existing constitution and append the guardrail section once', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-constitution-test-'));
+    const memoryDir = path.join(tempDir, '.specify/memory');
+    fs.mkdirSync(memoryDir, { recursive: true });
+
+    const existing = '# My Constitution\n\n### I. Custom Rule\nKeep me.\n';
+    fs.writeFileSync(path.join(memoryDir, 'constitution.md'), existing, 'utf8');
+
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+
+    const merged = fs.readFileSync(path.join(memoryDir, 'constitution.md'), 'utf8');
+    expect(merged).toContain('Keep me.');
+    expect(merged).toContain('Quality Gate Integrity (NON-NEGOTIABLE)');
+    const occurrences = merged.split('viteplus-stitch:quality-gate-integrity').length - 1;
+    expect(occurrences).toBe(1);
 
     removeDir(tempDir);
   });

@@ -28,6 +28,25 @@ inputs:
     prompt: "Automatically continue through all implementation phases without pausing after each phase? (default: pause and ask after each phase)"
 
 steps:
+  - id: guardrails
+    type: prompt
+    integration: "{{ inputs.integration }}"
+    prompt: |
+      You are running the viteplus-stitch Spec-Driven Development workflow.
+      Before any work starts, read `.specify/workflows/viteplus-stitch/GUARDRAILS.md`
+      and `.specify/memory/constitution.md` (section "Quality Gate Integrity").
+
+      NON-NEGOTIABLE RULE: at no point may you modify Vite settings
+      (`vite.config.ts` or any Vite/Vite+ config), the quality scripts
+      (`.specify/scripts/bash/check-quality-gate.sh`, `check-env-config.sh`,
+      `verify-stitch-design.sh`), `package.json` quality scripts,
+      `.specify/extensions.yml`, test files/snapshots, or any lint/type/complexity
+      rule to make a failing gate or test pass. Fix the application code instead.
+      If you believe a gate is genuinely wrong, stop and ask the human for explicit
+      approval before changing it.
+
+      Acknowledge this rule and stop. Do not modify any files in this step.
+
   - id: specify
     command: speckit.specify
     integration: "{{ inputs.integration }}"

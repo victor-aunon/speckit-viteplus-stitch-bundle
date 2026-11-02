@@ -14,6 +14,7 @@ describe('Workflow YAML Schema Validation', () => {
 
     const stepIds = wf.steps.map((s: any) => s.id);
     expect(stepIds).toEqual([
+      'guardrails',
       'specify',
       'review-spec',
       'plan',
@@ -21,6 +22,16 @@ describe('Workflow YAML Schema Validation', () => {
       'tasks',
       'implement'
     ]);
+
+    // The first step must instruct the model that gate tampering is forbidden
+    // before it is allowed to touch any code.
+    const guardrails = wf.steps[0];
+    expect(guardrails.type).toBe('prompt');
+    expect(guardrails.integration).toContain('inputs.integration');
+    expect(guardrails.prompt).toContain('NON-NEGOTIABLE');
+    expect(guardrails.prompt).toContain('vite.config.ts');
+    expect(guardrails.prompt).toContain('check-quality-gate.sh');
+    expect(guardrails.prompt).toContain('GUARDRAILS.md');
 
     const reviewSpecGate = wf.steps.find((s: any) => s.id === 'review-spec');
     expect(reviewSpecGate.type).toBe('gate');
@@ -34,6 +45,21 @@ describe('Workflow YAML Schema Validation', () => {
 
     expect(wf.inputs.spec).toBeDefined();
     expect(wf.inputs.enable_stitch).toBeDefined();
+  });
+
+  it('should ship a guardrails policy that forbids weakening quality gates', () => {
+    const guardrailsPath = path.resolve(__dirname, '../templates/guardrails.md');
+    expect(fs.existsSync(guardrailsPath)).toBe(true);
+    const content = fs.readFileSync(guardrailsPath, 'utf8');
+
+    expect(content).toContain('Non-Negotiable');
+    expect(content).toContain('vite.config.ts');
+    expect(content).toContain('check-quality-gate.sh');
+    expect(content).toContain('check-env-config.sh');
+    expect(content).toContain('verify-stitch-design.sh');
+    expect(content).toContain('package.json');
+    expect(content).toContain('eslint-disable');
+    expect(content).toContain('ask the human');
   });
 
   it('should pause after every implementation phase by default and allow --auto-continue', () => {

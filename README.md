@@ -73,6 +73,8 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/check-env-config.sh`       | Direct env-access guard                                               |
 | `.specify/scripts/bash/verify-stitch-design.sh`   | Playwright Stitch token/visual gate                                   |
 | `.specify/templates/`                             | `vite.config.ts`, Playwright, env config, and design-audit templates  |
+| `.specify/workflows/viteplus-stitch/GUARDRAILS.md` | Non-negotiable policy: never weaken gates to pass tests              |
+| `.specify/memory/constitution.md`                 | Receives the "Quality Gate Integrity" section (read by every command) |
 
 
 The workflow uses `integration: auto` by default, which reads the integration selected when the project was initialized with `specify init` (for example Claude, Gemini, or Copilot).
@@ -201,6 +203,28 @@ specify workflow run viteplus-stitch \
 ### Step 7: Completion
 
 Once all phases are completed and all checkpoints pass, the feature is fully verified, architecturally clean, and ready to merge.
+
+---
+
+## Quality Gate Integrity (Guardrails)
+
+The workflow instructs the model, before any other step, that **gate configuration is human-owned**. The bundle installs two layers of instruction:
+
+1. A `guardrails` prompt step at the start of `workflow.yml`.
+2. A `Quality Gate Integrity (NON-NEGOTIABLE)` section in `.specify/memory/constitution.md`, which `speckit.plan`, `speckit.tasks`, and `speckit.implement` read on every invocation. The full policy lives in `.specify/workflows/viteplus-stitch/GUARDRAILS.md`.
+
+The rule forbids the agent from editing these files to make a check pass:
+
+- `vite.config.ts` and any other Vite/Vite+ configuration (`vitest.config.ts`, `vite.config.*`)
+- `package.json` quality scripts
+- `.specify/scripts/bash/check-quality-gate.sh`, `check-env-config.sh`, `verify-stitch-design.sh`
+- `.specify/extensions.yml` hooks
+- test files, snapshots, fixtures, and coverage thresholds
+- lint rules, complexity thresholds, architecture zones, and `@shadcn/lint` rules
+
+It also forbids `eslint-disable`/`oxlint-disable`/`ts-ignore` suppressions, lowering thresholds, deleting or skipping assertions, and regenerating golden screenshots to match a broken UI. When a gate fails, the model must fix the application code. If a gate is genuinely wrong, it must stop and request explicit human approval before changing it.
+
+The constitution section is idempotent: reinstalling the bundle never duplicates it, and an existing constitution is preserved.
 
 ---
 

@@ -100,7 +100,56 @@ if [ -d "$BUNDLE_ROOT/templates" ]; then
   cp "$BUNDLE_ROOT/templates/"* "$SPECIFY_DIR/templates/" 2>/dev/null || true
 fi
 
-# 4. Configure hooks in .specify/extensions.yml idempotently
+# 4. Install the non-negotiable quality-gate guardrails
+#    - A standalone copy the workflow prompt step tells the model to read.
+#    - A constitution section, because speckit.plan/tasks/implement read
+#      .specify/memory/constitution.md on every invocation.
+if [ -f "$BUNDLE_ROOT/templates/guardrails.md" ]; then
+  cp "$BUNDLE_ROOT/templates/guardrails.md" "$SPECIFY_DIR/workflows/viteplus-stitch/GUARDRAILS.md"
+fi
+
+MEMORY_DIR="$SPECIFY_DIR/memory"
+CONSTITUTION_FILE="$MEMORY_DIR/constitution.md"
+mkdir -p "$MEMORY_DIR"
+
+if [ ! -f "$CONSTITUTION_FILE" ]; then
+  cat > "$CONSTITUTION_FILE" << 'EOF'
+# Project Constitution
+
+## Core Principles
+
+### Quality Gate Integrity (NON-NEGOTIABLE)
+<!-- viteplus-stitch:quality-gate-integrity -->
+The agent MUST NOT modify Vite settings (`vite.config.ts` or any Vite/Vite+ config),
+`package.json` quality scripts, the bundle quality gates
+(`.specify/scripts/bash/check-quality-gate.sh`, `check-env-config.sh`,
+`verify-stitch-design.sh`), `.specify/extensions.yml`, test files/snapshots, or any
+lint/type/complexity rule to make a failing gate or test pass.
+When a gate fails, fix the application code. If a gate is genuinely wrong, stop and
+ask the human for explicit approval before changing it. Gate configuration is
+human-owned; silence or a passing run is not approval.
+
+See `.specify/workflows/viteplus-stitch/GUARDRAILS.md` for the full policy.
+EOF
+elif ! grep -q "viteplus-stitch:quality-gate-integrity" "$CONSTITUTION_FILE"; then
+  cat >> "$CONSTITUTION_FILE" << 'EOF'
+
+## Quality Gate Integrity (NON-NEGOTIABLE)
+<!-- viteplus-stitch:quality-gate-integrity -->
+The agent MUST NOT modify Vite settings (`vite.config.ts` or any Vite/Vite+ config),
+`package.json` quality scripts, the bundle quality gates
+(`.specify/scripts/bash/check-quality-gate.sh`, `check-env-config.sh`,
+`verify-stitch-design.sh`), `.specify/extensions.yml`, test files/snapshots, or any
+lint/type/complexity rule to make a failing gate or test pass.
+When a gate fails, fix the application code. If a gate is genuinely wrong, stop and
+ask the human for explicit approval before changing it. Gate configuration is
+human-owned; silence or a passing run is not approval.
+
+See `.specify/workflows/viteplus-stitch/GUARDRAILS.md` for the full policy.
+EOF
+fi
+
+# 5. Configure hooks in .specify/extensions.yml idempotently
 EXTENSIONS_FILE="$SPECIFY_DIR/extensions.yml"
 
 if [ ! -f "$EXTENSIONS_FILE" ]; then
@@ -156,7 +205,7 @@ EOF
   fi
 fi
 
-# 5. Register in workflow-registry.json if present
+# 6. Register in workflow-registry.json if present
 REGISTRY_FILE="$SPECIFY_DIR/workflows/workflow-registry.json"
 if [ -f "$REGISTRY_FILE" ]; then
   TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u)"
