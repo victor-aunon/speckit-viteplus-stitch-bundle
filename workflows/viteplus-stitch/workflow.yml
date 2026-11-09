@@ -4,7 +4,7 @@ workflow:
   name: "Vite+ Stitch SDD Lifecycle"
   version: "1.0.0"
   author: "victor-aunon"
-  description: "Deterministic SDD workflow featuring Vite+, Google Stitch MCP, phase-by-phase implementation checkpoints, and architectural, env-config & visual quality gates"
+  description: "Deterministic SDD workflow featuring Vite+, Google Stitch MCP, Impeccable UI craft lifecycle, phase-by-phase implementation checkpoints, and architectural, env-config & visual quality gates"
 
 requires:
   speckit_version: ">=0.8.5"
@@ -14,10 +14,14 @@ inputs:
     type: string
     required: true
     prompt: "Describe the feature you want to build"
+  has_ui:
+    type: boolean
+    default: true
+    prompt: "Does this feature include UI components or frontend views?"
   enable_stitch:
     type: boolean
     default: true
-    prompt: "Do you want to use Google Stitch for UI design and tokens?"
+    prompt: "Do you want to use Google Stitch for UI design and tokens? (Applies when has_ui is true)"
   integration:
     type: string
     default: "auto"
@@ -34,7 +38,8 @@ steps:
     prompt: |
       You are running the viteplus-stitch Spec-Driven Development workflow.
       Before any work starts, read `.specify/workflows/viteplus-stitch/GUARDRAILS.md`
-      and `.specify/memory/constitution.md` (section "Quality Gate Integrity").
+      and `.specify/memory/constitution.md` (sections "Quality Gate Integrity" and
+      "Impeccable UI Craft Lifecycle").
 
       NON-NEGOTIABLE RULE: at no point may you modify Vite settings
       (`vite.config.ts` or any Vite/Vite+ config), the quality scripts
@@ -63,19 +68,44 @@ steps:
     command: speckit.plan
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.spec }} --with-viteplus {% if inputs.enable_stitch %}--with-stitch{% endif %}"
+      args: "{{ inputs.spec }} --with-viteplus {% if inputs.has_ui and inputs.enable_stitch %}--with-stitch{% endif %}"
+
+  - id: critique-design
+    type: if
+    condition: "{{ inputs.has_ui }}"
+    then:
+      - id: impeccable-critique
+        type: prompt
+        integration: "{{ inputs.integration }}"
+        prompt: |
+          This feature includes UI components.
+          Before the human design review gate, perform an Impeccable Design Critique:
+
+          1. Activate the `impeccable` skill and review the UI architecture:
+             - If Stitch was enabled: inspect screens in `specs/<feature>/designs/` and `tokens.css`.
+             - If Stitch was NOT enabled: inspect UI wireframes, component contracts, and design tokens specified in `plan.md`.
+          2. Evaluate visual hierarchy, cognitive load (Operate vs Persuade), contrast ratios (WCAG AA), typographic rhythm, and Tailwind/shadcn tokens.
+          3. Generate `specs/<feature>/designs/DESIGN_CRITIQUE.md` with:
+             - Executive Assessment
+             - Heuristic Findings
+             - Actionable Adjustments (or Stitch edit_screens prompts)
+          4. Output a concise 5-line summary for the human reviewer in the terminal.
 
   - id: review-design
-    type: gate
-    message: "Review the design system and generated screens in specs/<feature>/designs/."
-    options: [approve, request_changes]
-    on_reject: abort
+    type: if
+    condition: "{{ inputs.has_ui }}"
+    then:
+      - id: review-design-gate
+        type: gate
+        message: "Review UI design proposal and Impeccable critique in specs/<feature>/designs/DESIGN_CRITIQUE.md."
+        options: [approve, request_changes]
+        on_reject: abort
 
   - id: tasks
     command: speckit.tasks
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.spec }} --phased"
+      args: "{{ inputs.spec }} --phased {% if inputs.has_ui %}--with-impeccable-lifecycle{% endif %}"
 
   - id: implement
     type: if

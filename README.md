@@ -9,6 +9,7 @@ Deterministic Spec-Driven Development (SDD) workflow for high-fidelity web appli
 - 🔐 **Typed Environment Configuration Gate**: Blocks direct `process.env` / `import.meta.env` access in application code. Environment variables must be read, validated, typed, and exported from a single config module (`src/config/env.ts`).
 - 🎨 **@shadcn/lint for Tailwind CSS**: Component contract enforcement, blocking arbitrary bracket values (`p-[13px]`) and unsemantic palette classes.
 - 🖌️ **Optional Google Stitch MCP**: Automated creation of design systems, CSS tokens, and canonical UI screens directly from the terminal.
+- ✨ **Impeccable UI Craft Lifecycle**: Full-spectrum visual craft governance for UI features (`has_ui: true`). Runs pre-implementation heuristic art direction (`impeccable critique`), mandates loading skeletons, empty states, and error boundaries in user stories (`impeccable harden`), and polishes motion (`impeccable animate`) and accessibility (`impeccable audit`).
 - 🛑 **Interactive Visual Review Gate**: Inspect and approve UI screens and design tokens before writing product code.
 - 🔬 **Strict Stitch Token Verification**: Every token declared in `tokens.css` must be present in the DOM with the exact Stitch value; drift fails the gate.
 - 🔄 **Phased Implementation with Checkpoints**: Playwright and Vite+ validate every phase, then the workflow pauses for approval before the next phase. Use `--auto-continue` to run all phases without pausing.
@@ -110,8 +111,11 @@ The agent needs permission to run terminal commands. If the agent cannot answer 
 ### Optional inputs
 
 ```bash
-# Disable Stitch for a non-UI feature
-specify workflow run viteplus-stitch -i spec="Add a CSV parser" -i enable_stitch=false
+# Non-UI feature (skips Stitch, Impeccable critique, and visual gates entirely)
+specify workflow run viteplus-stitch -i spec="Add a CSV parser" -i has_ui=false
+
+# UI feature without Google Stitch (uses component wireframes + Impeccable craft lifecycle)
+specify workflow run viteplus-stitch -i spec="Add billing" -i enable_stitch=false
 
 # Force a specific AI integration
 specify workflow run viteplus-stitch -i spec="Add billing" -i integration=claude
@@ -147,29 +151,43 @@ Spec Kit generates the functional technical specification (`specs/<feature>/spec
 
 The workflow generates the implementation plan (`plan.md`):
 
-- If the feature includes a UI, the agent invokes Google Stitch MCP.
-- Creates the design system and generates required screen views.
+- If `has_ui` is true and `enable_stitch` is true, the agent invokes Google Stitch MCP to generate design systems and screens.
 - Downloads reference screenshots to `specs/<feature>/designs/<screen-id>.png` and tokens to `specs/<feature>/designs/tokens.css`.
 - Creates `routes-manifest.json` mapping screens to local dev routes.
+- If `enable_stitch` is false, wireframes and component contracts are specified directly in `plan.md`.
 
-### Step 4: Visual Design Review Gate (`review-design`)
+### Step 4: Impeccable Design Critique (`critique-design`)
 
-The workflow pauses and presents the generated screens:
+When `has_ui` is true, before asking for human approval:
 
-- Open them locally in your image viewer or browser.
-- **If you like the design**: Select **`[approve]`**. Designs are frozen as the canonical golden master.
-- **If you want changes**: Select **`[request_changes]`** and instruct the agent (e.g. *"make the main call to action button more prominent with dark variant"*). The agent uses Stitch `edit_screens` before freezing.
+- The agent activates the **`impeccable`** skill to evaluate the UI proposal (whether from Stitch or written in plan).
+- Audits visual hierarchy (Operate vs Persuade), contrast ratios (WCAG AA), typography, and spacing rhythm.
+- Generates `specs/<feature>/designs/DESIGN_CRITIQUE.md` with heuristic findings and actionable recommendations.
+- Outputs a concise 5-line summary in the terminal.
 
-### Step 5: Phase-by-Phase Task Breakdown
+### Step 5: Visual Design Review Gate (`review-design`)
+
+When `has_ui` is true, the workflow pauses and presents the proposal alongside the Impeccable critique:
+
+- Review screens and `DESIGN_CRITIQUE.md`.
+- **If you like the design**: Select **`[approve]`**. Designs and tokens are frozen as canonical masters.
+- **If you want changes**: Select **`[request_changes]`** and instruct the agent to refine screens (via Stitch `edit_screens` or plan adjustment) based on the critique.
+
+### Step 6: Phase-by-Phase Task Breakdown (`speckit.tasks`)
 
 The `speckit.tasks` command generates `tasks.md` split into strictly ordered phases:
 
 - `Phase 1: Setup` (Vite+ configuration, dependencies, CSS tokens)
 - `Phase 2: Core & Domain` (Entities, Value Objects, Repository Ports)
-- `Phase 3..N: User Stories` (Use cases, adapters, and UI components)
-- `Phase Final: Polish & E2E` (Full integration and end-to-end tests)
+- `Phase 3..N: User Stories`:
+  - Component implementation according to tokens.
+  - **`impeccable harden`**: Mandatory tasks for loading skeletons, empty states with friendly CTAs, and error boundaries.
+- `Phase Final: Polish & E2E`:
+  - **`impeccable animate`**: Micro-interactions respecting `@media (prefers-reduced-motion: reduce)`.
+  - **`impeccable audit`**: Accessibility (WCAG AA), responsive viewport behavior, and performance validation.
+  - Full integration, E2E, and Playwright visual snapshot tests.
 
-### Step 6: Phased Implementation with Automated Quality Gates
+### Step 7: Phased Implementation with Automated Quality Gates
 
 The agent executes tasks **phase by phase**. After each phase completes, two deterministic quality gates run:
 
@@ -200,7 +218,7 @@ specify workflow run viteplus-stitch \
   --input auto_continue=true
 ```
 
-### Step 7: Completion
+### Step 8: Completion
 
 Once all phases are completed and all checkpoints pass, the feature is fully verified, architecturally clean, and ready to merge.
 

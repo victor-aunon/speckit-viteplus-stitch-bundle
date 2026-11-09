@@ -18,6 +18,7 @@ describe('Workflow YAML Schema Validation', () => {
       'specify',
       'review-spec',
       'plan',
+      'critique-design',
       'review-design',
       'tasks',
       'implement'
@@ -38,16 +39,28 @@ describe('Workflow YAML Schema Validation', () => {
     expect(reviewSpecGate.options).toContain('approve');
     expect(reviewSpecGate.options).toContain('reject');
 
-    const reviewDesignGate = wf.steps.find((s: any) => s.id === 'review-design');
+    const critiqueStep = wf.steps.find((s: any) => s.id === 'critique-design');
+    expect(critiqueStep.type).toBe('if');
+    expect(critiqueStep.condition).toContain('inputs.has_ui');
+    const critiquePrompt = critiqueStep.then.find((s: any) => s.id === 'impeccable-critique');
+    expect(critiquePrompt.prompt).toContain('impeccable');
+    expect(critiquePrompt.prompt).toContain('DESIGN_CRITIQUE.md');
+
+    const reviewDesignStep = wf.steps.find((s: any) => s.id === 'review-design');
+    expect(reviewDesignStep.type).toBe('if');
+    expect(reviewDesignStep.condition).toContain('inputs.has_ui');
+    const reviewDesignGate = reviewDesignStep.then.find((s: any) => s.id === 'review-design-gate');
     expect(reviewDesignGate.type).toBe('gate');
     expect(reviewDesignGate.options).toContain('approve');
     expect(reviewDesignGate.options).toContain('request_changes');
 
     expect(wf.inputs.spec).toBeDefined();
+    expect(wf.inputs.has_ui).toBeDefined();
+    expect(wf.inputs.has_ui.default).toBe(true);
     expect(wf.inputs.enable_stitch).toBeDefined();
   });
 
-  it('should ship a guardrails policy that forbids weakening quality gates', () => {
+  it('should ship a guardrails policy that forbids weakening quality gates and enforces Impeccable lifecycle', () => {
     const guardrailsPath = path.resolve(__dirname, '../templates/guardrails.md');
     expect(fs.existsSync(guardrailsPath)).toBe(true);
     const content = fs.readFileSync(guardrailsPath, 'utf8');
@@ -60,6 +73,12 @@ describe('Workflow YAML Schema Validation', () => {
     expect(content).toContain('package.json');
     expect(content).toContain('eslint-disable');
     expect(content).toContain('ask the human');
+
+    // Impeccable UI Craft Lifecycle
+    expect(content).toContain('Impeccable UI Craft Lifecycle');
+    expect(content).toContain('impeccable critique');
+    expect(content).toContain('impeccable harden');
+    expect(content).toContain('impeccable animate');
   });
 
   it('should pause after every implementation phase by default and allow --auto-continue', () => {

@@ -33,3 +33,18 @@ The agent MUST NOT edit, weaken, disable, skip, or delete any of the following i
 ## Ownership
 
 Gate configuration is owned by the human. Changes to it require explicit approval in the same conversation. Silence, a passing test, or an expired checkpoint is **not** approval.
+
+## Impeccable UI Craft Lifecycle (Mandatory when feature touches UI)
+
+When a feature contains frontend UI components (`has_ui` is true), the agent must follow the three-stage craft lifecycle:
+
+1. **Conception (`impeccable critique`)**:
+   - Before approving designs, evaluate visual hierarchy, cognitive load (Operate vs Persuade), contrast ratios (WCAG AA), typography, and Tailwind/shadcn tokens.
+   - Produce `specs/<feature>/designs/DESIGN_CRITIQUE.md` with actionable adjustments before freezing golden masters.
+2. **Implementation Robustness (`impeccable harden`)**:
+   - In `tasks.md`, every UI user story MUST include tasks for loading skeletons, empty states with friendly CTAs, error boundaries with retry mechanisms, and edge case truncations.
+   - Happy-path-only UI components are prohibited.
+3. **Refinement & Polish (`impeccable animate` + `audit`)**:
+   - In `tasks.md`, the final phase (`Phase Final: Polish & E2E`) MUST include:
+     - `impeccable animate`: Purposeful micro-interactions (hover, active, focus-visible) with `@media (prefers-reduced-motion: reduce)` support.
+     - `impeccable audit`: Accessibility (WCAG AA), responsive behavior, and performance validation before final verification.

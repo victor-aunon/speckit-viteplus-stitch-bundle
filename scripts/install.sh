@@ -130,6 +130,13 @@ ask the human for explicit approval before changing it. Gate configuration is
 human-owned; silence or a passing run is not approval.
 
 See `.specify/workflows/viteplus-stitch/GUARDRAILS.md` for the full policy.
+
+### Impeccable UI Craft Lifecycle
+<!-- viteplus-stitch:impeccable-lifecycle -->
+When a feature contains frontend UI components (has_ui is true), the agent must follow the Impeccable lifecycle:
+1. Conception (impeccable critique): critique visual hierarchy, tokens, and contrast before approving designs.
+2. Robustness (impeccable harden): UI tasks must include loading skeletons, empty states, and error boundaries.
+3. Polish (impeccable animate + audit): final phase must include micro-interactions (with prefers-reduced-motion) and accessibility audit.
 EOF
 elif ! grep -q "viteplus-stitch:quality-gate-integrity" "$CONSTITUTION_FILE"; then
   cat >> "$CONSTITUTION_FILE" << 'EOF'
@@ -146,6 +153,13 @@ ask the human for explicit approval before changing it. Gate configuration is
 human-owned; silence or a passing run is not approval.
 
 See `.specify/workflows/viteplus-stitch/GUARDRAILS.md` for the full policy.
+
+### Impeccable UI Craft Lifecycle
+<!-- viteplus-stitch:impeccable-lifecycle -->
+When a feature contains frontend UI components (has_ui is true), the agent must follow the Impeccable lifecycle:
+1. Conception (impeccable critique): critique visual hierarchy, tokens, and contrast before approving designs.
+2. Robustness (impeccable harden): UI tasks must include loading skeletons, empty states, and error boundaries.
+3. Polish (impeccable animate + audit): final phase must include micro-interactions (with prefers-reduced-motion) and accessibility audit.
 EOF
 fi
 

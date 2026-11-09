@@ -40,6 +40,8 @@ describe('Bundle Installer Script E2E', () => {
     const constitution = fs.readFileSync(constitutionPath, 'utf8');
     expect(constitution).toContain('Quality Gate Integrity (NON-NEGOTIABLE)');
     expect(constitution).toContain('viteplus-stitch:quality-gate-integrity');
+    expect(constitution).toContain('Impeccable UI Craft Lifecycle');
+    expect(constitution).toContain('viteplus-stitch:impeccable-lifecycle');
     expect(constitution).toContain('vite.config.ts');
 
     // Second execution (Idempotence) must not duplicate the constitution section
@@ -49,6 +51,8 @@ describe('Bundle Installer Script E2E', () => {
     const constitutionAfter = fs.readFileSync(constitutionPath, 'utf8');
     const occurrences = constitutionAfter.split('viteplus-stitch:quality-gate-integrity').length - 1;
     expect(occurrences).toBe(1);
+    const impeccableOccurrences = constitutionAfter.split('viteplus-stitch:impeccable-lifecycle').length - 1;
+    expect(impeccableOccurrences).toBe(1);
 
     removeDir(tempDir);
   });
@@ -67,8 +71,11 @@ describe('Bundle Installer Script E2E', () => {
     const merged = fs.readFileSync(path.join(memoryDir, 'constitution.md'), 'utf8');
     expect(merged).toContain('Keep me.');
     expect(merged).toContain('Quality Gate Integrity (NON-NEGOTIABLE)');
+    expect(merged).toContain('Impeccable UI Craft Lifecycle');
     const occurrences = merged.split('viteplus-stitch:quality-gate-integrity').length - 1;
     expect(occurrences).toBe(1);
+    const impeccableOccurrences = merged.split('viteplus-stitch:impeccable-lifecycle').length - 1;
+    expect(impeccableOccurrences).toBe(1);
 
     removeDir(tempDir);
   });
