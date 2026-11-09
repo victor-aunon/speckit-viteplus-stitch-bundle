@@ -40,15 +40,15 @@ Run inside the root directory of any repository initialized with Spec Kit (`spec
 ### Option A: Install from a specific GitHub Release (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --release=v1.0.0
+curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --release=v1.1.0
 ```
 
 ### Option B: Install using a downloaded Release `.zip`
 
-If you downloaded `viteplus-stitch-1.0.0.zip` from GitHub Releases:
+If you downloaded `viteplus-stitch-1.1.0.zip` from GitHub Releases:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --zip=./viteplus-stitch-1.0.0.zip
+curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --zip=./viteplus-stitch-1.1.0.zip
 ```
 
 *(Or unzip it and run `bash scripts/install.sh`)*

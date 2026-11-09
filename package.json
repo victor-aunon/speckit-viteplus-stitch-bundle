@@ -1,6 +1,6 @@
 {
   "name": "@victor-aunon/speckit-viteplus-stitch",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Spec Kit bundle with Vite+, Airbnb lint, Clean Architecture gates (vertical slices), typed env config guard, Stitch MCP, and Playwright",
   "keywords": [
     "spec-kit",

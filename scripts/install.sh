@@ -230,7 +230,7 @@ if [ -f "$REGISTRY_FILE" ]; then
       reg.workflows = reg.workflows || {};
       reg.workflows['viteplus-stitch'] = {
         name: 'Vite+ Stitch SDD Lifecycle',
-        version: '1.0.0',
+        version: '1.1.0',
         description: 'Deterministic SDD workflow featuring Vite+, Google Stitch MCP, phase checkpoints, and architectural, env-config & visual quality gates',
         source: 'local-bundle',
         installed_at: '$TIMESTAMP',
