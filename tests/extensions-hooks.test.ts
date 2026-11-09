@@ -16,7 +16,12 @@ describe('Extensions Hooks and Vite Config Templates', () => {
 
     const afterTaskCommands = ext.hooks.after_task.map((h: any) => h.command);
     expect(afterTaskCommands).toContain('.specify/scripts/bash/check-quality-gate.sh');
-    expect(afterTaskCommands).toContain('.specify/scripts/bash/verify-stitch-design.sh');
+    expect(afterTaskCommands).toContain('.specify/scripts/bash/verify-stitch-design.sh --tokens-only');
+
+    expect(ext.hooks.after_implement).toBeDefined();
+    const afterImplementCommands = ext.hooks.after_implement.map((h: any) => h.command);
+    expect(afterImplementCommands).toContain('.specify/scripts/bash/check-quality-gate.sh');
+    expect(afterImplementCommands).toContain('.specify/scripts/bash/verify-stitch-design.sh');
   });
 
   it('vite.config.ts.tmpl should configure Airbnb rules, complexity, layer rules, and shadcn lint', () => {
@@ -41,9 +46,11 @@ describe('Extensions Hooks and Vite Config Templates', () => {
     expect(content).toContain('semi: true');
   });
 
-  it('routes-manifest.json.tmpl should declare screens array structure', () => {
+  it('routes-manifest.json.tmpl should declare screens array structure with selector and fixtures support', () => {
     expect(fs.existsSync(routesTmpl)).toBe(true);
     const routes = JSON.parse(fs.readFileSync(routesTmpl, 'utf8'));
     expect(Array.isArray(routes.screens)).toBe(true);
+    expect(routes.screens[0].selector).toBeDefined();
+    expect(routes.screens[0].fixtures).toBeDefined();
   });
 });

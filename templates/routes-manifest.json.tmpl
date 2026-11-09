@@ -6,6 +6,7 @@
       "id": "screen-main-dashboard",
       "name": "Main Dashboard",
       "route": "/",
+      "selector": "main",
       "viewport": {
         "width": 1440,
         "height": 900
@@ -14,7 +15,10 @@
       "maskSelectors": [
         "[data-testid='current-timestamp']",
         "[data-testid='user-avatar']"
-      ]
+      ],
+      "fixtures": {
+        "/api/v1/dashboard": "./fixtures/dashboard.json"
+      }
     }
   ]
 }

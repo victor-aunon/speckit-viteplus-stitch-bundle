@@ -43,6 +43,28 @@ describe('Strict Stitch design token gate', () => {
     expect(content).not.toContain('--color-bg-canvas');
   });
 
+  it('design-audit template defines deterministic render CSS and supports mock fixtures and selectors', () => {
+    const content = fs.readFileSync(specTmpl, 'utf8');
+
+    // Opción 2.A: Deterministic font smoothing and animation suppression
+    expect(content).toContain('DETERMINISTIC_RENDER_CSS');
+    expect(content).toContain('-webkit-font-smoothing: antialiased');
+    expect(content).toContain('page.addStyleTag');
+    expect(content).toContain('screen.selector ? page.locator(screen.selector) : page');
+
+    // Opción 3.A: Mock fixtures network routing
+    expect(content).toContain('screen.fixtures');
+    expect(content).toContain('page.route');
+    expect(content).toContain('route.fulfill');
+
+    // Config template options
+    const configTmpl = path.join(root, 'templates/playwright.design.config.ts.tmpl');
+    expect(fs.existsSync(configTmpl)).toBe(true);
+    const configContent = fs.readFileSync(configTmpl, 'utf8');
+    expect(configContent).toContain("caret: 'hide'");
+    expect(configContent).toContain("scale: 'css'");
+  });
+
   it('rejects a tokens.css file that declares no design tokens in --tokens-only mode', () => {
     const featureDir = makeDesignsDir(':root {\n  color: red;\n}\n', true);
     try {

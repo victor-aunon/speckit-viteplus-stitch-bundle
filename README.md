@@ -294,3 +294,27 @@ Validate the token file without launching Playwright:
 ```bash
 .specify/scripts/bash/verify-stitch-design.sh --tokens-only --feature-dir=specs/001-feature
 ```
+
+### Lifecycle Hooks Specialization & Mock Fixtures
+
+- **Fast Task Loop (`after_task`)**: Runs `check-quality-gate.sh` and `verify-stitch-design.sh --tokens-only`. This ensures that tasks involving domain, application, or infrastructure code are never blocked waiting for Playwright or failing on nonexistent UI routes.
+- **Full Visual Gate (`after_implement`)**: Runs the full visual Playwright audit comparing snapshots against Stitch golden masters.
+- **Deterministic Rendering**: Playwright injects font stabilization CSS (`-webkit-font-smoothing: antialiased`, disabled animations/carets) to ensure cross-platform snapshot consistency between macOS and Linux/CI.
+- **Mock Data Fixtures (`routes-manifest.json`)**: Dynamic or authenticated routes can declare local mock fixtures and target container selectors:
+  ```json
+  {
+    "screens": [
+      {
+        "id": "screen-main-dashboard",
+        "name": "Main Dashboard",
+        "route": "/cards/card-demo-123",
+        "selector": "main",
+        "waitForSelector": "main",
+        "fixtures": {
+          "/api/v1/cards/card-demo-123": "./fixtures/card.json"
+        }
+      }
+    ]
+  }
+  ```
+  Playwright automatically intercepts matching network requests (`page.route`) and fulfills them with local fixture data for 100% deterministic, backend-independent visual audits.

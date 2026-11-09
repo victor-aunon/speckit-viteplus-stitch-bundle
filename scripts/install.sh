@@ -164,9 +164,9 @@ else
       description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, and typed env config guard)"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
-    - name: "stitch-visual-gate"
-      description: "Runs Playwright visual audit against Stitch screenshots when applicable"
-      command: ".specify/scripts/bash/verify-stitch-design.sh"
+    - name: "stitch-tokens-gate"
+      description: "Validates Stitch CSS design tokens without running full visual Playwright suite"
+      command: ".specify/scripts/bash/verify-stitch-design.sh --tokens-only"
       optional: false
   after_implement:
     - name: "final-quality-gate"
@@ -187,9 +187,9 @@ hooks:
       description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, and typed env config guard)"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
-    - name: "stitch-visual-gate"
-      description: "Runs Playwright visual audit against Stitch screenshots when applicable"
-      command: ".specify/scripts/bash/verify-stitch-design.sh"
+    - name: "stitch-tokens-gate"
+      description: "Validates Stitch CSS design tokens without running full visual Playwright suite"
+      command: ".specify/scripts/bash/verify-stitch-design.sh --tokens-only"
       optional: false
   after_implement:
     - name: "final-quality-gate"

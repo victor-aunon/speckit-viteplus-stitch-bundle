@@ -43,6 +43,22 @@ export function diffDesignTokens(expected: DesignTokens, actual: DesignTokens): 
 }
 
 /**
+ * Deterministic CSS injected before screenshot comparison to eliminate
+ * font smoothing variations across operating systems (macOS vs Linux/CI)
+ * and disable residual transitions/carets.
+ */
+export const DETERMINISTIC_RENDER_CSS = `
+  *, *::before, *::after {
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    text-rendering: geometricPrecision !important;
+    animation: none !important;
+    transition: none !important;
+    caret-color: transparent !important;
+  }
+`;
+
+/**
  * Visual Audit and CSS Tokens Verification Test against Stitch Golden Master.
  */
 test.describe('Stitch Design Audit & Tokens Verification', () => {
@@ -83,11 +99,52 @@ test.describe('Stitch Design Audit & Tokens Verification', () => {
         continue;
       }
 
+      // 1. Configure custom viewport if defined in manifest
+      if (screen.viewport?.width && screen.viewport?.height) {
+        await page.setViewportSize({
+          width: screen.viewport.width,
+          height: screen.viewport.height,
+        });
+      }
+
+      // 2. Mock API fixtures for dynamic data isolation (Opción 3.A)
+      if (screen.fixtures && typeof screen.fixtures === 'object') {
+        for (const [urlPattern, fixtureRelPath] of Object.entries(screen.fixtures)) {
+          const fixtureFullPath = path.resolve(designsDir, fixtureRelPath as string);
+          if (fs.existsSync(fixtureFullPath)) {
+            const fixtureData = fs.readFileSync(fixtureFullPath, 'utf8');
+            await page.route(`**${urlPattern}*`, async (route) => {
+              await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: fixtureData,
+              });
+            });
+          }
+        }
+      }
+
       await page.goto(screen.route || '/');
       await page.waitForLoadState('networkidle');
 
-      await expect(page).toHaveScreenshot(`${screen.id}.png`, {
+      // 3. Wait for view ready selector if defined
+      if (screen.waitForSelector) {
+        await page.waitForSelector(screen.waitForSelector, { state: 'visible', timeout: 10000 });
+      }
+
+      // 4. Inject deterministic font antialiasing and animation suppression styles (Opción 2.A)
+      await page.addStyleTag({ content: DETERMINISTIC_RENDER_CSS });
+
+      // 5. Target specific container locator if specified, otherwise the full page
+      const target = screen.selector ? page.locator(screen.selector) : page;
+      const mask = (screen.maskSelectors || []).map((sel: string) => page.locator(sel));
+
+      await expect(target).toHaveScreenshot(`${screen.id}.png`, {
         maxDiffPixelRatio: 0.05,
+        mask,
+        animations: 'disabled',
+        caret: 'hide',
+        scale: 'css',
       });
     }
   });
