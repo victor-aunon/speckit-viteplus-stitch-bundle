@@ -22,7 +22,8 @@ describe('Workflow YAML Schema Validation', () => {
       'critique-design',
       'review-design',
       'tasks',
-      'implement'
+      'implement',
+      'verify'
     ]);
 
     // The first step must instruct the model that gate tampering is forbidden
@@ -39,6 +40,12 @@ describe('Workflow YAML Schema Validation', () => {
     expect(auditSpecStep.type).toBe('prompt');
     expect(auditSpecStep.prompt).toContain('SPEC_AUDIT.md');
     expect(auditSpecStep.prompt).toContain('Acceptance Criteria');
+
+    const verifyStep = wf.steps.find((s: any) => s.id === 'verify');
+    expect(verifyStep.type).toBe('prompt');
+    expect(verifyStep.prompt).toContain('VERIFICATION_REPORT.md');
+    expect(verifyStep.prompt).toContain('Delta-Spec Sync');
+    expect(verifyStep.prompt).toContain('Scenario Verification Matrix');
 
     const reviewSpecStep = wf.steps.find((s: any) => s.id === 'review-spec');
     expect(reviewSpecStep.type).toBe('if');

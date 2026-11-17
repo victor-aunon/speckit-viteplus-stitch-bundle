@@ -144,3 +144,21 @@ steps:
         integration: "{{ inputs.integration }}"
         input:
           args: "{{ inputs.spec }} --phased --verify-gates --pause-after-phase"
+
+  - id: verify
+    type: prompt
+    integration: "{{ inputs.integration }}"
+    prompt: |
+      Perform empirical verification of the completed implementation:
+
+      1. Inspect `specs/<feature>/spec.md`, `tasks.md`, test outputs, and quality gate results.
+      2. Verify each acceptance scenario (Given/When/Then) against concrete empirical evidence:
+         - Unit, integration, and regression tests passing with zero failures
+         - Clean Architecture boundary validation passing
+         - Visual fidelity & A11y tests passing (if has_ui)
+         - Production bundle budget passing (if has_ui)
+      3. Generate `specs/<feature>/VERIFICATION_REPORT.md` with:
+         - Scenario Verification Matrix (Pass/Fail per acceptance criterion)
+         - Empirical Evidence Log (test names, gate outputs, screenshots)
+         - Delta-Spec Sync: Document any architectural clarifications or domain adjustments made during implementation.
+      4. Output an Executive Closing Summary in the terminal for asynchronous human review.

@@ -227,9 +227,19 @@ specify workflow run viteplus-stitch \
   --input auto_continue=true
 ```
 
-### Step 8: Completion
+### Step 8: Empirical Verification, Delta-Spec Sync & Closure (`verify`)
 
-Once all phases are completed and all checkpoints pass, the feature is fully verified, architecturally clean, and ready to merge.
+Once implementation is complete, the workflow triggers the final verification and closure phase:
+
+1. **Empirical Scenario Verification**:
+   - The agent inspects `spec.md`, `tasks.md`, test outputs, and quality gate logs.
+   - Cross-checks each Given/When/Then scenario against empirical proof (unit tests, integration tests, clean architecture boundary checks, accessibility scans, bundle size budget, and Playwright screenshots).
+2. **Verification Report (`VERIFICATION_REPORT.md`)**:
+   - Generates `specs/<feature>/VERIFICATION_REPORT.md` containing the Scenario Verification Matrix (Pass/Fail per acceptance criterion) and an empirical evidence log.
+3. **Delta-Spec Sync**:
+   - Documents any architectural decisions, edge-case clarifications, or schema adjustments discovered during implementation, syncing them back to the specification.
+4. **Executive Closing Summary**:
+   - Outputs a concise summary in the terminal highlighting passing criteria, modified files, and readiness for human asynchronous merge.
 
 ---
 
