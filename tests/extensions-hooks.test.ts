@@ -18,6 +18,9 @@ describe('Extensions Hooks and Vite Config Templates', () => {
     expect(afterTaskCommands).toContain('.specify/scripts/bash/check-quality-gate.sh');
     expect(afterTaskCommands).toContain('.specify/scripts/bash/verify-stitch-design.sh --tokens-only');
 
+    const vpQualityGate = ext.hooks.after_task.find((h: any) => h.name === 'viteplus-quality-gate');
+    expect(vpQualityGate.description).toContain('regression tests');
+
     expect(ext.hooks.after_implement).toBeDefined();
     const afterImplementCommands = ext.hooks.after_implement.map((h: any) => h.command);
     expect(afterImplementCommands).toContain('.specify/scripts/bash/check-quality-gate.sh');

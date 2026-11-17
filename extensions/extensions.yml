@@ -3,7 +3,7 @@ schema_version: "1.0"
 hooks:
   after_task:
     - name: "viteplus-quality-gate"
-      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, and typed env config guard)"
+      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, typed env config guard, and regression tests)"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
 
@@ -14,7 +14,7 @@ hooks:
 
   after_implement:
     - name: "final-quality-gate"
-      description: "Comprehensive final verification of quality and architecture"
+      description: "Comprehensive final verification of quality, architecture, and full test suite"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
     - name: "final-visual-gate"

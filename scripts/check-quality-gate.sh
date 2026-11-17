@@ -11,6 +11,7 @@
 #   5. Clean Architecture layer boundaries (import/no-restricted-paths),
 #      including vertical slices outside src/core
 #   6. Environment access centralized in one typed config module
+#   7. Automated unit and integration test suite execution with zero regressions
 # ==============================================================================
 
 set -eo pipefail
@@ -23,22 +24,24 @@ Usage: check-quality-gate.sh [options]
 
 Deterministic Quality Gate for Spec Kit with Vite+ (vp).
 Verifies formatting, types, Airbnb style rules, complexity limits, architectural boundaries,
-and centralized/typed environment variable access.
+centralized/typed environment variable access, and automated regression test suite.
 
 Options:
   --help        Show this help message
   --dry-run     Verify tooling availability without running full check
   --fix         Automatically fix formatting and auto-fixable lint issues
+  --skip-tests  Skip running the automated test suite
 
 Exit Codes:
   0             All checks passed successfully
-  1             Linting, type, complexity, or architectural boundary violations
+  1             Linting, type, complexity, architectural, or test violations
   2             Missing dependencies or runtime tools
 EOF
 }
 
 DRY_RUN=false
 AUTO_FIX=false
+SKIP_TESTS=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -51,6 +54,9 @@ for arg in "$@"; do
       ;;
     --fix)
       AUTO_FIX=true
+      ;;
+    --skip-tests)
+      SKIP_TESTS=true
       ;;
     *)
       ;;
@@ -113,6 +119,49 @@ if [ $CHECK_STATUS -ne 0 ]; then
   echo "❌ [QUALITY GATE FAILED]: Violations detected in code (exit code: $CHECK_STATUS)."
   echo "Please fix the issues flagged by Vite+ before proceeding to the next phase."
   exit 1
+fi
+
+echo "✓ Code style, types, complexity, and architectural boundaries passed."
+
+# 4. Run automated test suite (Regression Gate)
+if [ "$SKIP_TESTS" = false ]; then
+  echo ""
+  echo "Executing automated test suite (Regression Gate)..."
+
+  TEST_CMD=""
+  if [ -f "vitest.config.ts" ] || [ -f "vitest.config.js" ] || [ -f "vite.config.ts" ]; then
+    if command -v vp >/dev/null 2>&1; then
+      TEST_CMD="vp test --run --passWithNoTests"
+    elif [ -x "./node_modules/.bin/vp" ]; then
+      TEST_CMD="./node_modules/.bin/vp test --run --passWithNoTests"
+    elif [ -x "./node_modules/.bin/vitest" ]; then
+      TEST_CMD="./node_modules/.bin/vitest run --passWithNoTests"
+    fi
+  fi
+
+  if [ -z "$TEST_CMD" ] && [ -f "package.json" ]; then
+    if grep -q '"test":' package.json; then
+      TEST_CMD="npm test -- --passWithNoTests"
+    fi
+  fi
+
+  if [ -n "$TEST_CMD" ]; then
+    echo "✓ Test runner detected: $TEST_CMD"
+    TEST_STATUS=0
+    $TEST_CMD || TEST_STATUS=$?
+
+    if [ $TEST_STATUS -ne 0 ]; then
+      echo ""
+      echo "❌ [QUALITY GATE FAILED]: Test suite failed with regressions (exit code: $TEST_STATUS)."
+      echo "Please fix the failing tests before proceeding to the next phase."
+      exit 1
+    fi
+    echo "✓ Test suite passed with zero regressions."
+  else
+    echo "ℹ️  No test runner or test suite configured; skipping regression tests."
+  fi
+else
+  echo "ℹ️  --skip-tests flag specified; skipping regression tests."
 fi
 
 echo ""

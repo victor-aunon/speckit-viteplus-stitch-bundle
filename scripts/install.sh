@@ -175,7 +175,7 @@ else
       cat >> "$EXTENSIONS_FILE" << 'EOF'
   after_task:
     - name: "viteplus-quality-gate"
-      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, and typed env config guard)"
+      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, typed env config guard, and regression tests)"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
     - name: "stitch-tokens-gate"
@@ -184,7 +184,7 @@ else
       optional: false
   after_implement:
     - name: "final-quality-gate"
-      description: "Comprehensive final verification of quality and architecture"
+      description: "Comprehensive final verification of quality, architecture, and full test suite"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
     - name: "final-visual-gate"
@@ -198,7 +198,7 @@ EOF
 hooks:
   after_task:
     - name: "viteplus-quality-gate"
-      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, and typed env config guard)"
+      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, typed env config guard, and regression tests)"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
     - name: "stitch-tokens-gate"
@@ -207,7 +207,7 @@ hooks:
       optional: false
   after_implement:
     - name: "final-quality-gate"
-      description: "Comprehensive final verification of quality and architecture"
+      description: "Comprehensive final verification of quality, architecture, and full test suite"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
     - name: "final-visual-gate"
