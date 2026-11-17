@@ -24,24 +24,28 @@ Usage: check-quality-gate.sh [options]
 
 Deterministic Quality Gate for Spec Kit with Vite+ (vp).
 Verifies formatting, types, Airbnb style rules, complexity limits, architectural boundaries,
-centralized/typed environment variable access, and automated regression test suite.
+centralized/typed environment variable access, blast radius scope, and automated regression test suite.
 
 Options:
-  --help        Show this help message
-  --dry-run     Verify tooling availability without running full check
-  --fix         Automatically fix formatting and auto-fixable lint issues
-  --skip-tests  Skip running the automated test suite
+  --help           Show this help message
+  --dry-run        Verify tooling availability without running full check
+  --fix            Automatically fix formatting and auto-fixable lint issues
+  --skip-tests     Skip running the automated test suite
+  --scope=<path>   Restrict allowed modifications to a feature slice (e.g. src/features/billing)
+  --reset-breaker  Reset the consecutive failure circuit breaker counter
 
 Exit Codes:
-  0             All checks passed successfully
-  1             Linting, type, complexity, architectural, or test violations
-  2             Missing dependencies or runtime tools
+  0                All checks passed successfully
+  1                Linting, type, complexity, architectural, blast radius, or test violations
+  2                Missing dependencies or runtime tools
 EOF
 }
 
 DRY_RUN=false
 AUTO_FIX=false
 SKIP_TESTS=false
+SCOPE_DIR=""
+RESET_BREAKER=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -58,6 +62,12 @@ for arg in "$@"; do
     --skip-tests)
       SKIP_TESTS=true
       ;;
+    --scope=*)
+      SCOPE_DIR="${arg#*=}"
+      ;;
+    --reset-breaker)
+      RESET_BREAKER=true
+      ;;
     *)
       ;;
   esac
@@ -67,11 +77,46 @@ echo "======================================================================"
 echo "[QUALITY GATE] Starting deterministic quality check with Vite+"
 echo "======================================================================"
 
-# 1. Enforce centralized, typed environment variable access
+BLAST_CHECK="$SCRIPT_DIR/check-blast-radius.sh"
+
+record_failure() {
+  if [ -f "$BLAST_CHECK" ]; then
+    bash "$BLAST_CHECK" --record-failure 2>/dev/null || true
+  fi
+}
+
+record_success() {
+  if [ -f "$BLAST_CHECK" ]; then
+    bash "$BLAST_CHECK" --record-success 2>/dev/null || true
+  fi
+}
+
+# 1. Circuit Breaker pre-flight and Reset
+if [ "$RESET_BREAKER" = true ] && [ -f "$BLAST_CHECK" ]; then
+  bash "$BLAST_CHECK" --reset
+fi
+
+if [ "$DRY_RUN" = false ] && [ -f "$BLAST_CHECK" ]; then
+  if ! bash "$BLAST_CHECK" --check-breaker; then
+    exit 1
+  fi
+
+  SCOPE_ARGS=()
+  if [ -n "$SCOPE_DIR" ]; then
+    SCOPE_ARGS+=("--scope=$SCOPE_DIR")
+  fi
+  if ! bash "$BLAST_CHECK" --check-scope "${SCOPE_ARGS[@]}"; then
+    record_failure
+    exit 1
+  fi
+fi
+
+# 2. Enforce centralized, typed environment variable access
 if [ "$DRY_RUN" = false ]; then
   ENV_CHECK="$SCRIPT_DIR/check-env-config.sh"
   if [ -f "$ENV_CHECK" ]; then
     if ! bash "$ENV_CHECK"; then
+      record_failure
       echo ""
       echo "❌ [QUALITY GATE FAILED]: Environment variable configuration violations detected."
       exit 1
@@ -81,7 +126,7 @@ if [ "$DRY_RUN" = false ]; then
   fi
 fi
 
-# 2. Resolve Vite+ (vp) binary
+# 3. Resolve Vite+ (vp) binary
 VP_CMD=""
 if command -v vp >/dev/null 2>&1; then
   VP_CMD="vp"
@@ -115,6 +160,7 @@ else
 fi
 
 if [ $CHECK_STATUS -ne 0 ]; then
+  record_failure
   echo ""
   echo "❌ [QUALITY GATE FAILED]: Violations detected in code (exit code: $CHECK_STATUS)."
   echo "Please fix the issues flagged by Vite+ before proceeding to the next phase."
@@ -151,6 +197,7 @@ if [ "$SKIP_TESTS" = false ]; then
     $TEST_CMD || TEST_STATUS=$?
 
     if [ $TEST_STATUS -ne 0 ]; then
+      record_failure
       echo ""
       echo "❌ [QUALITY GATE FAILED]: Test suite failed with regressions (exit code: $TEST_STATUS)."
       echo "Please fix the failing tests before proceeding to the next phase."
@@ -163,6 +210,8 @@ if [ "$SKIP_TESTS" = false ]; then
 else
   echo "ℹ️  --skip-tests flag specified; skipping regression tests."
 fi
+
+record_success
 
 echo ""
 echo "✅ [QUALITY GATE PASSED]: All deterministic quality checks passed."

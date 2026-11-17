@@ -73,6 +73,7 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/check-quality-gate.sh`     | Vite+ + env-config + architecture quality gate                        |
 | `.specify/scripts/bash/check-env-config.sh`       | Direct env-access guard                                               |
 | `.specify/scripts/bash/verify-stitch-design.sh`   | Playwright Stitch token/visual gate                                   |
+| `.specify/scripts/bash/check-blast-radius.sh`     | Blast radius scope protection & circuit breaker anti-loop guard       |
 | `.specify/templates/`                             | `vite.config.ts`, Playwright, env config, and design-audit templates  |
 | `.specify/workflows/viteplus-stitch/GUARDRAILS.md` | Non-negotiable policy: never weaken gates to pass tests              |
 | `.specify/memory/constitution.md`                 | Receives the "Quality Gate Integrity" section (read by every command) |

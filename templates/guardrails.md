@@ -57,3 +57,10 @@ Before planning, the agent must perform an automated Spec Quality Audit (`audit-
 - Document assessment in `specs/<feature>/SPEC_AUDIT.md`.
 - In unattended mode (`auto_continue: true`), human gate approval is automatically satisfied only if the audit score meets the quality threshold (>= 90%).
 
+## Blast Radius & Circuit Breaker Protection (Anti-Loop Guard)
+
+To ensure safe unattended execution:
+- **Blast Radius**: The agent must NEVER modify files outside the feature slice/assigned scope. Tooling, workflows, quality scripts (`check-quality-gate.sh`, `check-blast-radius.sh`, `check-env-config.sh`, `verify-stitch-design.sh`), extensions, and templates are strictly protected against modification.
+- **Circuit Breaker**: If quality gate checks fail 3 consecutive times during a task, the Circuit Breaker trips and halts execution immediately. This prevents token-draining thrashing loops. When tripped, uncommitted regressions must be reverted (`git restore .`) before resetting.
+
+
