@@ -11,6 +11,8 @@
 
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
+
 show_help() {
   cat << 'EOF'
 Usage: verify-stitch-design.sh [options]
@@ -105,6 +107,16 @@ if [ "$TOKENS_ONLY" = true ]; then
   echo ""
   echo "✅ [VISUAL GATE PASSED]: Stitch tokens.css structure is valid."
   exit 0
+fi
+
+# Validate route and component contracts before launching Playwright
+CONTRACT_SCRIPT="$SCRIPT_DIR/check-contracts.sh"
+if [ -f "$CONTRACT_SCRIPT" ]; then
+  if ! bash "$CONTRACT_SCRIPT" --feature-dir="$FEATURE_DIR" --check-orphans --check-atomic; then
+    echo ""
+    echo "❌ [VISUAL GATE FAILED]: Route or component contract violations detected."
+    exit 1
+  fi
 fi
 
 # Verify Playwright

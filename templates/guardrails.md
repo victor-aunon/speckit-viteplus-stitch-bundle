@@ -63,4 +63,12 @@ To ensure safe unattended execution:
 - **Blast Radius**: The agent must NEVER modify files outside the feature slice/assigned scope. Tooling, workflows, quality scripts (`check-quality-gate.sh`, `check-blast-radius.sh`, `check-env-config.sh`, `verify-stitch-design.sh`), extensions, and templates are strictly protected against modification.
 - **Circuit Breaker**: If quality gate checks fail 3 consecutive times during a task, the Circuit Breaker trips and halts execution immediately. This prevents token-draining thrashing loops. When tripped, uncommitted regressions must be reverted (`git restore .`) before resetting.
 
+## Atomic Design & Component Isolation (Anti-Bloat Guard)
+
+To eliminate LLM component-bundling antipatterns and preserve long-term maintainability:
+- **Strictly One Component Per File**: Every React component must live in its own isolated file. Declaring multiple subcomponents, inline helper components, or multiple UI cards inside a single file is strictly prohibited (`react/no-multi-comp`).
+- **Hierarchical Separation**: Split components cleanly into atoms, molecules, and organisms within their vertical slice (`ui/` or `components/`).
+- **File Naming**: The file name must strictly match the component's primary exported identifier (e.g. `UserAvatar.tsx` exports `UserAvatar`).
+
+
 

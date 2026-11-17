@@ -89,12 +89,12 @@ done
 
 # Resolve state directory
 if [ -z "$STATE_DIR" ]; then
-  if [ -d ".specify" ]; then
-    STATE_DIR=".specify"
-  elif [ -d "../.specify" ]; then
-    STATE_DIR="../.specify"
+  if [ -d "$PWD/.specify" ]; then
+    STATE_DIR="$PWD/.specify"
   else
-    STATE_DIR="/tmp"
+    DIR_HASH="$(printf '%s' "$PWD" | shasum 2>/dev/null | awk '{print $1}' || printf '%s' "$PWD" | md5 2>/dev/null || echo "default")"
+    STATE_DIR="${TMPDIR:-/tmp}/speckit-cb-${DIR_HASH:0:12}"
+    mkdir -p "$STATE_DIR" 2>/dev/null || true
   fi
 fi
 

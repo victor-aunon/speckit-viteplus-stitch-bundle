@@ -35,6 +35,9 @@ describe('Extensions Hooks and Vite Config Templates', () => {
     expect(content).toContain("'complexity': ['error', 10]");
     expect(content).toContain("'max-lines-per-function'");
 
+    // Atomic Design (Max 1 component per file)
+    expect(content).toContain("'react/no-multi-comp'");
+
     // Clean Architecture layer boundaries
     expect(content).toContain('import/no-restricted-paths');
     expect(content).toContain('src/core/domain');
