@@ -16,6 +16,7 @@ describe('Workflow YAML Schema Validation', () => {
     expect(stepIds).toEqual([
       'guardrails',
       'specify',
+      'audit-spec',
       'review-spec',
       'plan',
       'critique-design',
@@ -34,7 +35,15 @@ describe('Workflow YAML Schema Validation', () => {
     expect(guardrails.prompt).toContain('check-quality-gate.sh');
     expect(guardrails.prompt).toContain('GUARDRAILS.md');
 
-    const reviewSpecGate = wf.steps.find((s: any) => s.id === 'review-spec');
+    const auditSpecStep = wf.steps.find((s: any) => s.id === 'audit-spec');
+    expect(auditSpecStep.type).toBe('prompt');
+    expect(auditSpecStep.prompt).toContain('SPEC_AUDIT.md');
+    expect(auditSpecStep.prompt).toContain('Acceptance Criteria');
+
+    const reviewSpecStep = wf.steps.find((s: any) => s.id === 'review-spec');
+    expect(reviewSpecStep.type).toBe('if');
+    expect(reviewSpecStep.condition).toContain('inputs.auto_continue');
+    const reviewSpecGate = reviewSpecStep.then.find((s: any) => s.id === 'review-spec-gate');
     expect(reviewSpecGate.type).toBe('gate');
     expect(reviewSpecGate.options).toContain('approve');
     expect(reviewSpecGate.options).toContain('reject');
@@ -49,6 +58,7 @@ describe('Workflow YAML Schema Validation', () => {
     const reviewDesignStep = wf.steps.find((s: any) => s.id === 'review-design');
     expect(reviewDesignStep.type).toBe('if');
     expect(reviewDesignStep.condition).toContain('inputs.has_ui');
+    expect(reviewDesignStep.condition).toContain('inputs.auto_continue');
     const reviewDesignGate = reviewDesignStep.then.find((s: any) => s.id === 'review-design-gate');
     expect(reviewDesignGate.type).toBe('gate');
     expect(reviewDesignGate.options).toContain('approve');
@@ -79,6 +89,11 @@ describe('Workflow YAML Schema Validation', () => {
     expect(content).toContain('impeccable critique');
     expect(content).toContain('impeccable harden');
     expect(content).toContain('impeccable animate');
+
+    // Automated Spec Quality & Completeness
+    expect(content).toContain('Automated Spec Quality & Completeness');
+    expect(content).toContain('audit-spec');
+    expect(content).toContain('SPEC_AUDIT.md');
   });
 
   it('should pause after every implementation phase by default and allow --auto-continue', () => {

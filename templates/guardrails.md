@@ -48,3 +48,12 @@ When a feature contains frontend UI components (`has_ui` is true), the agent mus
    - In `tasks.md`, the final phase (`Phase Final: Polish & E2E`) MUST include:
      - `impeccable animate`: Purposeful micro-interactions (hover, active, focus-visible) with `@media (prefers-reduced-motion: reduce)` support.
      - `impeccable audit`: Accessibility (WCAG AA), responsive behavior, and performance validation before final verification.
+
+## Automated Spec Quality & Completeness (Mandatory for Unattended Development)
+
+Before planning, the agent must perform an automated Spec Quality Audit (`audit-spec`):
+- Verify Given/When/Then acceptance criteria for all user stories.
+- Verify explicit coverage for error states, network failures, empty states, and invalid inputs.
+- Document assessment in `specs/<feature>/SPEC_AUDIT.md`.
+- In unattended mode (`auto_continue: true`), human gate approval is automatically satisfied only if the audit score meets the quality threshold (>= 90%).
+

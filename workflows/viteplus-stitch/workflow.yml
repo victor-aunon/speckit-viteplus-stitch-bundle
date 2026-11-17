@@ -58,11 +58,33 @@ steps:
     input:
       args: "{{ inputs.spec }}"
 
+  - id: audit-spec
+    type: prompt
+    integration: "{{ inputs.integration }}"
+    prompt: |
+      Perform an automated Spec Quality & Completeness Audit on the generated specification:
+
+      1. Inspect `specs/<feature>/spec.md` (or the active feature spec).
+      2. Verify the specification against deterministic SDD quality criteria:
+         - User Stories & Value: Every story defines clear actor, action, and expected business outcome.
+         - Acceptance Criteria: Every story includes unambiguous Given/When/Then scenarios.
+         - Robustness & Edge Cases: Explicitly defines error handling, network/storage failures, empty states, and validation boundaries.
+         - Architectural Boundaries: Enforces Clean Architecture / vertical slice boundaries without leaking infrastructure details.
+      3. Generate `specs/<feature>/SPEC_AUDIT.md` with:
+         - Executive Quality Score (0-100%) and Pass/Fail status (threshold: 90%)
+         - Scenario Matrix: list of covered user journeys and edge cases
+         - Remediation: if any criteria are ambiguous or missing, update `spec.md` directly to satisfy them.
+      4. Output a concise 5-line executive summary in the terminal.
+
   - id: review-spec
-    type: gate
-    message: "Review the technical specification in specs/<feature>/spec.md before planning."
-    options: [approve, reject]
-    on_reject: abort
+    type: if
+    condition: "{{ not inputs.auto_continue }}"
+    then:
+      - id: review-spec-gate
+        type: gate
+        message: "Review the technical specification in specs/<feature>/spec.md and audit in specs/<feature>/SPEC_AUDIT.md before planning."
+        options: [approve, reject]
+        on_reject: abort
 
   - id: plan
     command: speckit.plan
@@ -93,7 +115,7 @@ steps:
 
   - id: review-design
     type: if
-    condition: "{{ inputs.has_ui }}"
+    condition: "{{ inputs.has_ui and not inputs.auto_continue }}"
     then:
       - id: review-design-gate
         type: gate

@@ -140,12 +140,16 @@ specify workflow run viteplus-stitch --input spec="Create a credit card manageme
 
 Spec Kit then runs the workflow's command steps through your configured AI integration. See [How to Interact from an AI Agent](#how-to-interact-from-an-ai-agent) for agent-first usage and gate handling.
 
-### Step 2: Specification Approval (`review-spec`)
+### Step 2: Specification Audit & Approval (`audit-spec` & `review-spec`)
 
-Spec Kit generates the functional technical specification (`specs/<feature>/spec.md`) and pauses:
+Spec Kit generates the functional technical specification (`specs/<feature>/spec.md`):
 
-- Review requirements and Gherkin scenarios.
-- Select **`[approve]`** to proceed or **`[reject]`** to adjust.
+1. **Automated Spec Quality Audit (`audit-spec`)**:
+   - The agent evaluates the specification against strict SDD criteria: user stories with clear business value, testable Given/When/Then Gherkin acceptance criteria, error handling, network failure recovery, empty states, and architecture boundaries.
+   - Generates `specs/<feature>/SPEC_AUDIT.md` with an executive quality score (0-100%, threshold: 90%), scenario matrix, and auto-remediations.
+2. **Review Gate (`review-spec`)**:
+   - In **interactive mode** (`auto_continue: false`): pauses for human review of `spec.md` and `SPEC_AUDIT.md`. Select **`[approve]`** to proceed or **`[reject]`** to adjust.
+   - In **unattended mode** (`auto_continue: true`): the manual gate is bypassed automatically once the automated audit confirms the quality threshold, proceeding straight to planning without human blocking.
 
 ### Step 3: Planning, CSS Tokens, and Stitch Screens
 
@@ -158,7 +162,7 @@ The workflow generates the implementation plan (`plan.md`):
 
 ### Step 4: Impeccable Design Critique (`critique-design`)
 
-When `has_ui` is true, before asking for human approval:
+When `has_ui` is true:
 
 - The agent activates the **`impeccable`** skill to evaluate the UI proposal (whether from Stitch or written in plan).
 - Audits visual hierarchy (Operate vs Persuade), contrast ratios (WCAG AA), typography, and spacing rhythm.
@@ -167,11 +171,13 @@ When `has_ui` is true, before asking for human approval:
 
 ### Step 5: Visual Design Review Gate (`review-design`)
 
-When `has_ui` is true, the workflow pauses and presents the proposal alongside the Impeccable critique:
+When `has_ui` is true:
 
-- Review screens and `DESIGN_CRITIQUE.md`.
-- **If you like the design**: Select **`[approve]`**. Designs and tokens are frozen as canonical masters.
-- **If you want changes**: Select **`[request_changes]`** and instruct the agent to refine screens (via Stitch `edit_screens` or plan adjustment) based on the critique.
+- In **interactive mode** (`auto_continue: false`): the workflow pauses and presents the proposal alongside the Impeccable critique:
+  - Review screens and `DESIGN_CRITIQUE.md`.
+  - **If you like the design**: Select **`[approve]`**. Designs and tokens are frozen as canonical masters.
+  - **If you want changes**: Select **`[request_changes]`** and instruct the agent to refine screens (via Stitch `edit_screens` or plan adjustment) based on the critique.
+- In **unattended mode** (`auto_continue: true`): the manual gate is bypassed automatically, freezing the audited designs and progressing directly to task breakdown.
 
 ### Step 6: Phase-by-Phase Task Breakdown (`speckit.tasks`)
 
