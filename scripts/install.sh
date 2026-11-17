@@ -93,11 +93,13 @@ cp "$BUNDLE_ROOT/scripts/check-env-config.sh" "$SPECIFY_DIR/scripts/bash/check-e
 cp "$BUNDLE_ROOT/scripts/verify-stitch-design.sh" "$SPECIFY_DIR/scripts/bash/verify-stitch-design.sh"
 cp "$BUNDLE_ROOT/scripts/check-blast-radius.sh" "$SPECIFY_DIR/scripts/bash/check-blast-radius.sh"
 cp "$BUNDLE_ROOT/scripts/check-contracts.sh" "$SPECIFY_DIR/scripts/bash/check-contracts.sh"
+cp "$BUNDLE_ROOT/scripts/check-bundle-budget.sh" "$SPECIFY_DIR/scripts/bash/check-bundle-budget.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-quality-gate.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-env-config.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/verify-stitch-design.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-blast-radius.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-contracts.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/check-bundle-budget.sh"
 
 # 3. Copy templates
 if [ -d "$BUNDLE_ROOT/templates" ]; then
@@ -191,6 +193,10 @@ else
       description: "Comprehensive final verification of quality, architecture, and full test suite"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
+    - name: "bundle-budget-gate"
+      description: "Validates production build performance and bundle size limits"
+      command: ".specify/scripts/bash/check-bundle-budget.sh"
+      optional: false
     - name: "final-visual-gate"
       description: "Comprehensive final visual audit against Stitch designs"
       command: ".specify/scripts/bash/verify-stitch-design.sh"
@@ -213,6 +219,10 @@ hooks:
     - name: "final-quality-gate"
       description: "Comprehensive final verification of quality, architecture, and full test suite"
       command: ".specify/scripts/bash/check-quality-gate.sh"
+      optional: false
+    - name: "bundle-budget-gate"
+      description: "Validates production build performance and bundle size limits"
+      command: ".specify/scripts/bash/check-bundle-budget.sh"
       optional: false
     - name: "final-visual-gate"
       description: "Comprehensive final visual audit against Stitch designs"

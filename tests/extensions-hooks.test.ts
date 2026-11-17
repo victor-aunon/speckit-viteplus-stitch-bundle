@@ -24,7 +24,18 @@ describe('Extensions Hooks and Vite Config Templates', () => {
     expect(ext.hooks.after_implement).toBeDefined();
     const afterImplementCommands = ext.hooks.after_implement.map((h: any) => h.command);
     expect(afterImplementCommands).toContain('.specify/scripts/bash/check-quality-gate.sh');
+    expect(afterImplementCommands).toContain('.specify/scripts/bash/check-bundle-budget.sh');
     expect(afterImplementCommands).toContain('.specify/scripts/bash/verify-stitch-design.sh');
+  });
+
+  it('design-audit.spec.ts.tmpl should enforce automated WCAG 2.1 AA accessibility checks', () => {
+    const auditTmpl = path.resolve(__dirname, '../templates/design-audit.spec.ts.tmpl');
+    expect(fs.existsSync(auditTmpl)).toBe(true);
+    const content = fs.readFileSync(auditTmpl, 'utf8');
+    expect(content).toContain('WCAG 2.1 AA');
+    expect(content).toContain('accessibility: screens meet WCAG 2.1 AA standards');
+    expect(content).toContain('image-alt');
+    expect(content).toContain('button-name');
   });
 
   it('vite.config.ts.tmpl should configure Airbnb rules, complexity, layer rules, and shadcn lint', () => {

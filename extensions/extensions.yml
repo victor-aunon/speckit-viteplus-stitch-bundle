@@ -17,6 +17,10 @@ hooks:
       description: "Comprehensive final verification of quality, architecture, and full test suite"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
+    - name: "bundle-budget-gate"
+      description: "Validates production build performance and bundle size limits"
+      command: ".specify/scripts/bash/check-bundle-budget.sh"
+      optional: false
     - name: "final-visual-gate"
       description: "Comprehensive final visual audit against Stitch designs"
       command: ".specify/scripts/bash/verify-stitch-design.sh"

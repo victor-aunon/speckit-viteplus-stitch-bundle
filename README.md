@@ -75,6 +75,7 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/verify-stitch-design.sh`   | Playwright Stitch token/visual gate                                   |
 | `.specify/scripts/bash/check-blast-radius.sh`     | Blast radius scope protection & circuit breaker anti-loop guard       |
 | `.specify/scripts/bash/check-contracts.sh`        | Route manifest & orphan component contract integrity gate            |
+| `.specify/scripts/bash/check-bundle-budget.sh`    | Production performance & bundle size budget gate                      |
 | `.specify/templates/`                             | `vite.config.ts`, Playwright, env config, and design-audit templates  |
 | `.specify/workflows/viteplus-stitch/GUARDRAILS.md` | Non-negotiable policy: never weaken gates to pass tests              |
 | `.specify/memory/constitution.md`                 | Receives the "Quality Gate Integrity" section (read by every command) |

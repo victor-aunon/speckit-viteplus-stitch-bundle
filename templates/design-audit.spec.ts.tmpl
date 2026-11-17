@@ -89,6 +89,88 @@ test.describe('Stitch Design Audit & Tokens Verification', () => {
     ).toEqual([]);
   });
 
+  test('accessibility: screens meet WCAG 2.1 AA standards without critical violations', async ({ page }) => {
+    test.skip(!fs.existsSync(manifestFile), 'No routes-manifest.json found in designs directory');
+
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    for (const screen of manifest.screens || []) {
+      // 1. Configure custom viewport if defined in manifest
+      if (screen.viewport?.width && screen.viewport?.height) {
+        await page.setViewportSize({
+          width: screen.viewport.width,
+          height: screen.viewport.height,
+        });
+      }
+
+      // 2. Mock API fixtures if declared
+      if (screen.fixtures && typeof screen.fixtures === 'object') {
+        for (const [urlPattern, fixtureRelPath] of Object.entries(screen.fixtures)) {
+          const fixtureFullPath = path.resolve(designsDir, fixtureRelPath as string);
+          if (fs.existsSync(fixtureFullPath)) {
+            const fixtureData = fs.readFileSync(fixtureFullPath, 'utf8');
+            await page.route(`**${urlPattern}*`, async (route) => {
+              await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: fixtureData,
+              });
+            });
+          }
+        }
+      }
+
+      await page.goto(screen.route || '/');
+      await page.waitForLoadState('networkidle');
+
+      // 3. Wait for view ready selector if defined
+      if (screen.waitForSelector) {
+        await page.waitForSelector(screen.waitForSelector, { state: 'visible', timeout: 10000 });
+      }
+
+      // 4. Automated Accessibility Scan (WCAG 2.1 AA)
+      let a11yViolations: string[] = [];
+
+      try {
+        // @ts-ignore
+        const { default: AxeBuilder } = await import('@axe-core/playwright');
+        const results = await new AxeBuilder({ page })
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+          .analyze();
+        a11yViolations = (results.violations || []).map(
+          (v: any) => `[${v.impact?.toUpperCase()}] ${v.id}: ${v.description} (${v.helpUrl})`
+        );
+      } catch {
+        // Fallback: in-page deterministic DOM scan for critical accessibility violations
+        a11yViolations = await page.evaluate(() => {
+          const issues: string[] = [];
+          document.querySelectorAll('img:not([alt])').forEach((img, i) => {
+            issues.push(`[SERIOUS] image-alt: Image element #${i} is missing an 'alt' attribute.`);
+          });
+          document.querySelectorAll('button').forEach((btn, i) => {
+            const text = btn.innerText?.trim() || btn.getAttribute('aria-label') || btn.getAttribute('title');
+            if (!text) {
+              issues.push(`[CRITICAL] button-name: Button element #${i} has no accessible text or aria-label.`);
+            }
+          });
+          document.querySelectorAll('input:not([type="hidden"]):not([aria-label]):not([aria-labelledby])').forEach((input, i) => {
+            const id = input.id;
+            const hasLabel = id && document.querySelector(`label[for="${id}"]`);
+            const wrappedByLabel = input.closest('label');
+            if (!hasLabel && !wrappedByLabel) {
+              issues.push(`[SERIOUS] label: Input #${i} has no associated <label> or aria-label.`);
+            }
+          });
+          return issues;
+        });
+      }
+
+      expect(
+        a11yViolations,
+        `Accessibility Gate Failed for screen '${screen.id}' (${screen.route}):\n${a11yViolations.join('\n')}`
+      ).toEqual([]);
+    }
+  });
+
   test('visual layout matches Stitch golden screenshot with 0.05 tolerance', async ({ page }) => {
     test.skip(!fs.existsSync(manifestFile), 'No routes-manifest.json found in designs directory');
 
