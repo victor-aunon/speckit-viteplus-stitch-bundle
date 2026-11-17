@@ -50,7 +50,7 @@ describe('Extensions Hooks and Vite Config Templates', () => {
     expect(content).toContain("'react/no-multi-comp'");
 
     // Clean Architecture layer boundaries
-    expect(content).toContain('import/no-restricted-paths');
+    expect(content).toContain('no-restricted-imports');
     expect(content).toContain('src/core/domain');
     expect(content).toContain('src/infrastructure');
 

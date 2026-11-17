@@ -5,6 +5,7 @@ export default defineConfig({
   // Vite+ (vp) Code Quality Configuration
   lint: {
     options: {
+      typeAware: true,
       typeCheck: true, // Strict TypeScript type checking
     },
     plugins: [
@@ -25,72 +26,107 @@ export default defineConfig({
       'shadcn/no-raw-colors': 'error',
       'shadcn/no-arbitrary-values': 'error',
       'shadcn/no-inline-styles': 'error',
+    },
 
-      // 3. Clean Architecture Layer Boundary Import Restrictions
-      //
-      // Supported layout (vertical slicing):
-      //   src/features/<slice>/domain/**
-      //   src/features/<slice>/application/**
-      //   src/features/<slice>/infrastructure/**
-      //   src/features/<slice>/ui/**
-      //
-      // The same dependency rules apply to every slice under src/**, not only
-      // to the shared src/core/** tree.
-      'import/no-restricted-paths': [
-        'error',
-        {
-          zones: [
-            // --- Vertical slices: every slice obeys the same layer rules ---
-            // Domain layer cannot depend on Application, Infrastructure, or UI
+    // 4. Clean Architecture Layer Boundary Restrictions (Oxlint overrides)
+    //
+    // Supported layout (vertical slicing & shared core):
+    //   src/features/<slice>/domain/**
+    //   src/features/<slice>/application/**
+    //   src/features/<slice>/infrastructure/**
+    //   src/features/<slice>/ui/**
+    //
+    // The same dependency rules apply to every slice under src/** and shared src/core/**:
+    // - Domain cannot depend on Application, Infrastructure, or UI
+    // - Application cannot depend on Infrastructure or UI
+    // - Infrastructure cannot depend on UI
+    // - UI cannot directly import Infrastructure adapters
+    overrides: [
+      // Domain layer boundary
+      {
+        files: ['**/src/**/domain/**', '**/src/core/domain/**'],
+        rules: {
+          'no-restricted-imports': [
+            'error',
             {
-              target: '**/src/**/domain/**',
-              from: '**/src/**/@(application|infrastructure|ui)/**',
-              message: 'Clean Architecture Violation: Domain cannot depend on Application, Infrastructure, or UI (vertical slice rule).'
+              patterns: [
+                {
+                  group: [
+                    '**/application/**',
+                    '**/infrastructure/**',
+                    '**/ui/**',
+                    '**/src/**/application/**',
+                    '**/src/**/infrastructure/**',
+                    '**/src/**/ui/**',
+                  ],
+                  message:
+                    'Clean Architecture Violation: Domain cannot depend on Application, Infrastructure, or UI (vertical slice rule).',
+                },
+              ],
             },
-            // Application layer cannot depend on Infrastructure or UI
+          ],
+        },
+      },
+      // Application layer boundary
+      {
+        files: ['**/src/**/application/**', '**/src/core/application/**'],
+        rules: {
+          'no-restricted-imports': [
+            'error',
             {
-              target: '**/src/**/application/**',
-              from: '**/src/**/@(infrastructure|ui)/**',
-              message: 'Clean Architecture Violation: Application cannot depend on Infrastructure or UI (vertical slice rule).'
+              patterns: [
+                {
+                  group: [
+                    '**/infrastructure/**',
+                    '**/ui/**',
+                    '**/src/**/infrastructure/**',
+                    '**/src/**/ui/**',
+                  ],
+                  message:
+                    'Clean Architecture Violation: Application cannot depend on Infrastructure or UI (vertical slice rule).',
+                },
+              ],
             },
-            // Infrastructure layer cannot depend on UI
+          ],
+        },
+      },
+      // Infrastructure layer boundary
+      {
+        files: ['**/src/**/infrastructure/**', '**/src/infrastructure/**'],
+        rules: {
+          'no-restricted-imports': [
+            'error',
             {
-              target: '**/src/**/infrastructure/**',
-              from: '**/src/**/ui/**',
-              message: 'Clean Architecture Violation: Infrastructure cannot depend on UI (vertical slice rule).'
+              patterns: [
+                {
+                  group: ['**/ui/**', '**/src/**/ui/**'],
+                  message:
+                    'Clean Architecture Violation: Infrastructure cannot depend on UI (vertical slice rule).',
+                },
+              ],
             },
-            // UI layer cannot directly import Infrastructure adapters
+          ],
+        },
+      },
+      // UI layer boundary
+      {
+        files: ['**/src/**/ui/**', '**/src/ui/**'],
+        rules: {
+          'no-restricted-imports': [
+            'error',
             {
-              target: '**/src/**/ui/**',
-              from: '**/src/**/infrastructure/**',
-              message: 'Clean Architecture Violation: UI cannot directly import Infrastructure adapters (vertical slice rule).'
+              patterns: [
+                {
+                  group: ['**/infrastructure/**', '**/src/**/infrastructure/**'],
+                  message:
+                    'Clean Architecture Violation: UI cannot directly import Infrastructure adapters (vertical slice rule).',
+                },
+              ],
             },
-
-            // --- Shared core layers: explicit examples kept for readability ---
-            {
-              target: '**/src/core/domain/**',
-              from: '**/src/@(core/application|infrastructure|ui)/**',
-              message: 'Clean Architecture Violation: Domain cannot depend on Application, Infrastructure, or UI.'
-            },
-            {
-              target: '**/src/core/application/**',
-              from: '**/src/@(infrastructure|ui)/**',
-              message: 'Clean Architecture Violation: Application cannot depend on Infrastructure or UI.'
-            },
-            {
-              target: '**/src/infrastructure/**',
-              from: '**/src/ui/**',
-              message: 'Clean Architecture Violation: Infrastructure cannot depend on UI.'
-            },
-            {
-              target: '**/src/ui/**',
-              from: '**/src/infrastructure/**',
-              message: 'Clean Architecture Violation: UI cannot directly import Infrastructure adapters.'
-            }
-          ]
-        }
-      ]
-    }
+          ],
+        },
+      },
+    ],
   },
   fmt: {
     // Airbnb / VoidZero style guide standard
@@ -99,5 +135,5 @@ export default defineConfig({
     trailingComma: 'all',
     tabWidth: 2,
     printWidth: 100,
-  }
+  },
 });

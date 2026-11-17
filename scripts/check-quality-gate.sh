@@ -8,7 +8,7 @@
 #   2. Linter (Oxlint with Airbnb rules and @shadcn/lint)
 #   3. Strict type checking (TypeScript typeCheck)
 #   4. Cyclomatic complexity limits (max 10) and function line limits (max 50)
-#   5. Clean Architecture layer boundaries (import/no-restricted-paths),
+#   5. Clean Architecture layer boundaries (no-restricted-imports with Oxlint overrides),
 #      including vertical slices outside src/core
 #   6. Environment access centralized in one typed config module
 #   7. Automated unit and integration test suite execution with zero regressions
