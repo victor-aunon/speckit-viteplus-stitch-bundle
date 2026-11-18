@@ -92,6 +92,33 @@ steps:
     input:
       args: "{{ inputs.spec }} --with-viteplus {% if inputs.has_ui and inputs.enable_stitch %}--with-stitch{% endif %}"
 
+  - id: generate-designs
+    type: if
+    condition: "{{ inputs.has_ui and inputs.enable_stitch }}"
+    then:
+      - id: stitch-design-generation
+        type: prompt
+        integration: "{{ inputs.integration }}"
+        prompt: |
+          Generate high-fidelity UI screens and canonical design tokens using Google Stitch MCP:
+
+          1. Inspect `specs/<feature>/spec.md` and `plan.md` to identify the core user journeys and all required screens/views.
+          2. Locate or create the feature designs directory at `specs/<feature>/designs/` and subdirectory `specs/<feature>/designs/fixtures/`.
+          3. Invoke Google Stitch MCP tools:
+             - Call `create_project` (or target active project) with the feature title.
+             - Call `create_design_system` to establish color palette, typography (Inter/Roboto), corner roundness, and appearance theme aligned with the project.
+             - For each primary screen described in the specification, call `generate_screen_from_text` with rich layout, accessibility, and component details.
+             - For each generated screen, download assets using `download_file`:
+               * Save the rendered PNG screenshot to `specs/<feature>/designs/<screen-id>.png` (e.g. `screen-dashboard.png`, `screen-analytics.png`).
+               * Save the HTML code to `specs/<feature>/designs/<screen-id>.html`.
+          4. Extract and create the canonical design tokens stylesheet at `specs/<feature>/designs/tokens.css`:
+             - Define CSS variables under `:root` for colors (`--color-background`, `--color-surface`, `--color-primary`, `--color-text`, etc.), radii (`--radius-sm`, `--radius-md`, `--radius-lg`), typography (`--font-family`, `--font-size-*`), and spacing (`--space-*`).
+          5. Create `specs/<feature>/designs/routes-manifest.json` following `.specify/templates/routes-manifest.json.tmpl`:
+             - Map each screen to its local development route (e.g. `/`, `/analytics`), title, DOM test selector, and fixture mock data path.
+             - Generate declared fixture JSON mock files in `specs/<feature>/designs/fixtures/`.
+          6. Fallback Resilience: If Google Stitch MCP is unavailable or encounters connection/rate-limit errors, generate clean wireframe HTML/PNG files, `tokens.css`, and `routes-manifest.json` directly so downstream visual gates succeed without crashing.
+          7. Output a summary table in the terminal listing all generated screens, screenshots, and token variables.
+
   - id: critique-design
     type: if
     condition: "{{ inputs.has_ui }}"
@@ -152,13 +179,17 @@ steps:
       Perform empirical verification of the completed implementation:
 
       1. Inspect `specs/<feature>/spec.md`, `tasks.md`, test outputs, and quality gate results.
-      2. Verify each acceptance scenario (Given/When/Then) against concrete empirical evidence:
+      2. If this feature has UI (`has_ui: true`):
+         - Activate the `impeccable` skill and perform a comprehensive Accessibility & Design Audit (`impeccable audit` checklist: WCAG 2.1 AA contrast, keyboard navigation `:focus-visible`, minimum 44px touch targets, and responsive layout scaling).
+         - Confirm micro-interactions and transitions respect `@media (prefers-reduced-motion: reduce)` (`impeccable animate`).
+      3. Verify each acceptance scenario (Given/When/Then) against concrete empirical evidence:
          - Unit, integration, and regression tests passing with zero failures
-         - Clean Architecture boundary validation passing
-         - Visual fidelity & A11y tests passing (if has_ui)
-         - Production bundle budget passing (if has_ui)
-      3. Generate `specs/<feature>/VERIFICATION_REPORT.md` with:
+         - Clean Architecture boundary validation passing (`vp check`)
+         - Route & component contracts and ghost classes passing (`check-contracts.sh`)
+         - Visual fidelity & Stitch token tests passing (`verify-stitch-design.sh`)
+         - Production bundle budget passing (`check-bundle-budget.sh`)
+      4. Generate `specs/<feature>/VERIFICATION_REPORT.md` with:
          - Scenario Verification Matrix (Pass/Fail per acceptance criterion)
-         - Empirical Evidence Log (test names, gate outputs, screenshots)
+         - Empirical Evidence Log (test names, gate outputs, screenshots, audit findings)
          - Delta-Spec Sync: Document any architectural clarifications or domain adjustments made during implementation.
-      4. Output an Executive Closing Summary in the terminal for asynchronous human review.
+      5. Output an Executive Closing Summary in the terminal for asynchronous human review.

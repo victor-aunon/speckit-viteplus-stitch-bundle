@@ -105,16 +105,18 @@ The workflow uses `integration: auto` by default, which reads the integration se
 ## Step-by-Step Workflow Execution
 
 ```
-[ Step 1: specify ]  ──►  [ Step 2: audit-spec ]  ──►  [ Step 3: plan + stitch ]
+[ Step 1: specify ]  ──►  [ Step 2: audit-spec ]  ──►  [ Step 3: plan ]
                                   │                               │
-                          (review-spec gate)              [ Step 4: critique-design ]
+                          (review-spec gate)          [ Step 4: generate-designs ]
+                                                                  │
+                                                      [ Step 5: critique-design ]
                                                                   │
                                                           (review-design gate)
                                                                   │
-[ Step 7: verify ]   ◄──  [ Step 6: implement ]   ◄──  [ Step 5: tasks ]
+[ Step 9: verify ]   ◄──  [ Step 8: implement ]   ◄──  [ Step 7: tasks ]
   - Scenario Matrix         - after_task: quality + tokens
   - Evidence Log            - after_implement: contracts + budget + visual
-  - Delta-Spec Sync
+  - Delta-Spec Sync         - Impeccable A11y & Motion Audit
 ```
 
 ### Step 1: Start a New Feature
@@ -132,21 +134,28 @@ Spec Kit generates the functional technical specification (`specs/<feature>/spec
    - In **interactive mode** (`auto_continue: false`): pauses for human review. Select **`[approve]`** to proceed or **`[reject]`** to adjust.
    - In **unattended mode** (`auto_continue: true`): bypassed automatically once the automated audit confirms the quality threshold.
 
-### Step 3: Planning, CSS Tokens, and Stitch Screens
-The workflow generates the implementation plan (`plan.md`):
-- If `has_ui: true` and `enable_stitch: true`, the agent invokes Google Stitch MCP to generate design systems and screens.
-- Downloads reference screenshots to `specs/<feature>/designs/<screen-id>.png` and tokens to `specs/<feature>/designs/tokens.css`.
-- Creates `routes-manifest.json` mapping screens to local dev routes.
-- If `enable_stitch: false`, wireframes and component contracts are specified directly in `plan.md`.
+### Step 3: Implementation Architecture Plan (`plan`)
+The workflow generates the architectural plan (`plan.md`):
+- Establishes vertical slices under `src/features/<slice>/` (domain, application, infrastructure, ui).
+- Defines domain entities, value objects, application ports, and dependency boundaries.
+- Specifies component contracts and route hierarchies.
 
-### Step 4: Impeccable Design Critique (`critique-design`)
+### Step 4: Stitch UI Screen & Token Generation (`generate-designs`)
+When `has_ui: true` and `enable_stitch: true`:
+- The agent explicitly invokes **Google Stitch MCP** (`create_project`, `create_design_system`, `generate_screen_from_text`).
+- Downloads reference screenshots to `specs/<feature>/designs/<screen-id>.png` and HTML code to `specs/<feature>/designs/<screen-id>.html`.
+- Extracts and generates canonical design tokens in `specs/<feature>/designs/tokens.css` (defining `--color-*`, `--radius-*`, `--font-*`, and `--space-*`).
+- Generates `specs/<feature>/designs/routes-manifest.json` and fixture mock data in `specs/<feature>/designs/fixtures/`.
+- If Stitch MCP is disabled or offline, generates clean fallback wireframes and token definitions to keep visual gates passing.
+
+### Step 5: Impeccable Design Critique (`critique-design`)
 When `has_ui: true`:
-- The agent activates the **`impeccable`** skill to evaluate the UI proposal.
+- The agent activates the **`impeccable`** skill to evaluate the generated UI proposal.
 - Audits visual hierarchy (Operate vs Persuade), contrast ratios (WCAG AA), typography, and spacing rhythm.
 - Generates `specs/<feature>/designs/DESIGN_CRITIQUE.md` with heuristic findings and actionable recommendations.
 - Outputs a concise 5-line summary in the terminal.
 
-### Step 5: Visual Design Review Gate (`review-design`)
+### Step 6: Visual Design Review Gate (`review-design`)
 When `has_ui: true`:
 - In **interactive mode** (`auto_continue: false`): pauses for visual inspection:
   - Review screens and `DESIGN_CRITIQUE.md`.
@@ -154,14 +163,14 @@ When `has_ui: true`:
   - **If changes needed**: Select **`[reject]`** to abort or refine screens before planning.
 - In **unattended mode** (`auto_continue: true`): bypassed automatically, freezing audited designs and progressing to tasks.
 
-### Step 6: Phase-by-Phase Task Breakdown (`speckit.tasks`)
+### Step 7: Phase-by-Phase Task Breakdown (`speckit.tasks`)
 Generates `tasks.md` split into strictly ordered phases:
 - `Phase 1: Setup` (Vite+ configuration, dependencies, CSS tokens)
 - `Phase 2: Core & Domain` (Entities, Value Objects, Repository Ports)
 - `Phase 3..N: User Stories` (TDD, application services, atomic components)
 - `Phase Final: Polish & Verification` (Impeccable animate, audit, and E2E)
 
-### Step 7: Phased Implementation with Automated Quality Gates
+### Step 8: Phased Implementation with Automated Quality Gates
 The agent executes tasks phase by phase. After each phase completes, deterministic quality gates run:
 1. **Static Gate (`vp check`)**:
    - Validates types (`tsc`), formatting (Oxfmt), and linting (Oxlint with Airbnb rules).
@@ -172,11 +181,12 @@ The agent executes tasks phase by phase. After each phase completes, determinist
    - Compares DOM `:root` computed tokens against `tokens.css`.
    - Runs snapshot comparison against the Stitch golden master with tolerance `0.05`.
 
-### Step 8: Verification & Delta-Spec Sync (`verify`)
+### Step 9: Verification & Delta-Spec Sync (`verify`)
 Once implementation completes, the workflow executes the final certification:
-1. **Scenario Verification Matrix**: Cross-checks each Given/When/Then scenario against automated test proof.
-2. **Verification Report (`VERIFICATION_REPORT.md`)**: Generates full evidence log with test runs, gate outputs, and bundle budget metrics.
-3. **Delta-Spec Sync**: Documents any architectural refinements or domain clarifications discovered during implementation.
+1. **Accessibility & Craft Audit**: When `has_ui: true`, activates `impeccable` to audit WCAG 2.1 AA compliance, keyboard navigation (`:focus-visible`), touch targets (44px), and reduced-motion support (`impeccable audit` + `impeccable animate`).
+2. **Scenario Verification Matrix**: Cross-checks each Given/When/Then scenario against automated test proof.
+3. **Verification Report (`VERIFICATION_REPORT.md`)**: Generates full evidence log with test runs, gate outputs, and bundle budget metrics.
+4. **Delta-Spec Sync**: Documents any architectural refinements or domain clarifications discovered during implementation.
 
 ---
 

@@ -19,6 +19,7 @@ describe('Workflow YAML Schema Validation', () => {
       'audit-spec',
       'review-spec',
       'plan',
+      'generate-designs',
       'critique-design',
       'review-design',
       'tasks',
@@ -46,6 +47,7 @@ describe('Workflow YAML Schema Validation', () => {
     expect(verifyStep.prompt).toContain('VERIFICATION_REPORT.md');
     expect(verifyStep.prompt).toContain('Delta-Spec Sync');
     expect(verifyStep.prompt).toContain('Scenario Verification Matrix');
+    expect(verifyStep.prompt).toContain('impeccable');
 
     const reviewSpecStep = wf.steps.find((s: any) => s.id === 'review-spec');
     expect(reviewSpecStep.type).toBe('if');
@@ -54,6 +56,15 @@ describe('Workflow YAML Schema Validation', () => {
     expect(reviewSpecGate.type).toBe('gate');
     expect(reviewSpecGate.options).toContain('approve');
     expect(reviewSpecGate.options).toContain('reject');
+
+    const generateDesignsStep = wf.steps.find((s: any) => s.id === 'generate-designs');
+    expect(generateDesignsStep.type).toBe('if');
+    expect(generateDesignsStep.condition).toContain('inputs.has_ui');
+    expect(generateDesignsStep.condition).toContain('inputs.enable_stitch');
+    const stitchPrompt = generateDesignsStep.then.find((s: any) => s.id === 'stitch-design-generation');
+    expect(stitchPrompt.prompt).toContain('Stitch');
+    expect(stitchPrompt.prompt).toContain('tokens.css');
+    expect(stitchPrompt.prompt).toContain('routes-manifest.json');
 
     const critiqueStep = wf.steps.find((s: any) => s.id === 'critique-design');
     expect(critiqueStep.type).toBe('if');
