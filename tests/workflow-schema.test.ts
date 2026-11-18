@@ -69,7 +69,8 @@ describe('Workflow YAML Schema Validation', () => {
     const reviewDesignGate = reviewDesignStep.then.find((s: any) => s.id === 'review-design-gate');
     expect(reviewDesignGate.type).toBe('gate');
     expect(reviewDesignGate.options).toContain('approve');
-    expect(reviewDesignGate.options).toContain('request_changes');
+    expect(reviewDesignGate.options).toContain('reject');
+    expect(reviewDesignGate.on_reject).toBe('abort');
 
     expect(wf.inputs.spec).toBeDefined();
     expect(wf.inputs.has_ui).toBeDefined();

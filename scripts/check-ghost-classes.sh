@@ -17,6 +17,7 @@ set -euo pipefail
 
 SRC_DIR="src"
 DRY_RUN=false
+FORCE=false
 
 for arg in "$@"; do
   case $arg in
@@ -28,12 +29,17 @@ for arg in "$@"; do
       DRY_RUN=true
       shift
       ;;
+    --force)
+      FORCE=true
+      shift
+      ;;
     --help)
       echo "Usage: check-ghost-classes.sh [OPTIONS]"
       echo ""
       echo "Options:"
       echo "  --src-dir=<path>   Path to component source directory (default: src)"
       echo "  --dry-run          Report violations without exiting with non-zero code"
+      echo "  --force            Enforce static class check even if Tailwind CSS is detected"
       echo "  --help             Show this help message"
       exit 0
       ;;
@@ -51,12 +57,84 @@ if [ ! -d "$SRC_DIR" ]; then
   exit 0
 fi
 
-node - "$SRC_DIR" "$DRY_RUN" << 'NODE_SCRIPT'
+node - "$SRC_DIR" "$DRY_RUN" "$FORCE" << 'NODE_SCRIPT'
 const fs = require('fs');
 const path = require('path');
 
-const [,, srcDirArg, dryRunArg] = process.argv;
+const [,, srcDirArg, dryRunArg, forceArg] = process.argv;
 const dryRun = dryRunArg === 'true';
+const force = forceArg === 'true';
+
+// 0. Auto-detect Tailwind CSS
+if (!force) {
+  let hasTailwind = false;
+  let tailwindReason = '';
+
+  // Check config files
+  const twConfigs = [
+    'tailwind.config.js',
+    'tailwind.config.ts',
+    'tailwind.config.cjs',
+    'tailwind.config.mjs',
+    path.join(process.cwd(), 'tailwind.config.js'),
+    path.join(process.cwd(), 'tailwind.config.ts'),
+    path.join(process.cwd(), 'tailwind.config.cjs'),
+    path.join(process.cwd(), 'tailwind.config.mjs'),
+  ];
+  for (const cfg of twConfigs) {
+    if (fs.existsSync(cfg)) {
+      hasTailwind = true;
+      tailwindReason = `config file '${path.basename(cfg)}' found`;
+      break;
+    }
+  }
+
+  // Check package.json
+  if (!hasTailwind && fs.existsSync('package.json')) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+      const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+      if (deps['tailwindcss'] || deps['@tailwindcss/vite'] || deps['@tailwindcss/postcss']) {
+        hasTailwind = true;
+        tailwindReason = 'Tailwind CSS dependency in package.json';
+      }
+    } catch (e) {}
+  }
+
+  // Check CSS files for @import "tailwindcss" or @tailwind directives
+  if (!hasTailwind) {
+    function checkCssForTailwind(dir) {
+      if (!fs.existsSync(dir)) return false;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!['node_modules', '.git', 'dist'].includes(entry.name)) {
+            if (checkCssForTailwind(fullPath)) return true;
+          }
+        } else if (entry.isFile() && entry.name.endsWith('.css')) {
+          const content = fs.readFileSync(fullPath, 'utf8');
+          if (/@import\s+["']tailwindcss["']|@tailwind\b|@theme\b/.test(content)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    if (checkCssForTailwind(srcDirArg) || checkCssForTailwind('.')) {
+      hasTailwind = true;
+      tailwindReason = 'Tailwind CSS @import or directive found in stylesheet';
+    }
+  }
+
+  if (hasTailwind) {
+    console.log(`ℹ️  [GHOST CLASSES GATE]: Tailwind CSS detected in project (${tailwindReason}).`);
+    console.log('ℹ️  Utility classes are generated dynamically; skipping static CSS declaration checks.');
+    console.log('\n✅ [GHOST CLASSES GATE PASSED]: Tailwind CSS active.');
+    process.exit(0);
+  }
+}
 
 // 1. Collect all CSS classes defined across project CSS files
 const definedClasses = new Set();

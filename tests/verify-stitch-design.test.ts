@@ -19,6 +19,7 @@ describe('verify-stitch-design.sh and templates', () => {
     const output = runBash(scriptPath, ['--help']);
     expect(output).toContain('Usage: verify-stitch-design.sh');
     expect(output).toContain('Playwright');
+    expect(output).toContain('--skip-orphans');
   });
 
   it('should exit 0 cleanly with skip message when no designs directory exists', () => {

@@ -108,10 +108,12 @@ export default defineConfig({
           ],
         },
       },
-      // UI layer boundary
+      // UI layer boundary & rules
       {
         files: ['**/src/**/ui/**', '**/src/ui/**'],
         rules: {
+          // Omit 50-line limit for UI components to accommodate accessible JSX, ARIA attributes, and presentation states
+          'max-lines-per-function': 'off',
           'no-restricted-imports': [
             'error',
             {

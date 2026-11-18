@@ -80,4 +80,90 @@ describe('check-ghost-classes.sh', () => {
       removeDir(tempDir);
     }
   });
+
+  it('skips ghost classes check and passes when tailwind.config.js is present', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-tw-config-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(tempDir, 'tailwind.config.js'), 'module.exports = {};\n');
+      fs.writeFileSync(
+        path.join(srcDir, 'Card.tsx'),
+        'export const Card = () => <div className="flex items-center p-4 bg-blue-500 rounded-lg">Tailwind</div>;\n',
+      );
+
+      const result = runBash(scriptPath, [`--src-dir=${srcDir}`], { cwd: tempDir });
+      expect(result).toContain('Tailwind CSS detected');
+      expect(result).toContain('GHOST CLASSES GATE PASSED');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('skips ghost classes check and passes when package.json contains tailwindcss dependency', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-tw-pkg-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(tempDir, 'package.json'),
+        JSON.stringify({ devDependencies: { '@tailwindcss/vite': '^4.0.0' } }),
+      );
+      fs.writeFileSync(
+        path.join(srcDir, 'Button.tsx'),
+        'export const Button = () => <button className="px-4 py-2 font-bold text-white bg-indigo-600">Click</button>;\n',
+      );
+
+      const result = runBash(scriptPath, [`--src-dir=${srcDir}`], { cwd: tempDir });
+      expect(result).toContain('Tailwind CSS detected');
+      expect(result).toContain('GHOST CLASSES GATE PASSED');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('skips ghost classes check and passes when CSS stylesheet imports tailwindcss', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-tw-css-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(srcDir, 'global.css'),
+        '@import "tailwindcss";\n',
+      );
+      fs.writeFileSync(
+        path.join(srcDir, 'Layout.tsx'),
+        'export const Layout = () => <main className="min-h-screen grid grid-cols-12 gap-4">Content</main>;\n',
+      );
+
+      const result = runBash(scriptPath, [`--src-dir=${srcDir}`], { cwd: tempDir });
+      expect(result).toContain('Tailwind CSS detected');
+      expect(result).toContain('GHOST CLASSES GATE PASSED');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('enforces ghost classes check when --force flag is provided even with tailwind', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-tw-force-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(tempDir, 'tailwind.config.js'), 'module.exports = {};\n');
+      fs.writeFileSync(
+        path.join(srcDir, 'Card.tsx'),
+        'export const Card = () => <div className="undeclared-ghost-utility">Force Test</div>;\n',
+      );
+
+      expect(() => {
+        runBash(scriptPath, [`--src-dir=${srcDir}`, '--force'], { cwd: tempDir });
+      }).toThrow();
+    } finally {
+      removeDir(tempDir);
+    }
+  });
 });

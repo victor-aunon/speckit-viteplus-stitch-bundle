@@ -120,7 +120,7 @@ steps:
       - id: review-design-gate
         type: gate
         message: "Review UI design proposal and Impeccable critique in specs/<feature>/designs/DESIGN_CRITIQUE.md."
-        options: [approve, request_changes]
+        options: [approve, reject]
         on_reject: abort
 
   - id: tasks

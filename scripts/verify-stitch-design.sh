@@ -24,6 +24,7 @@ Options:
   --feature-dir=<path>      Path to the feature directory (e.g. specs/001-feature)
   --tokens-only             Validate tokens.css structure without launching Playwright
   --update-snapshots        Update canonical snapshots if design was intentionally modified
+  --skip-orphans            Skip orphan UI component detection during contract check
 
 Exit Codes:
   0                         All visual tests passed or UI verification does not apply
@@ -35,6 +36,7 @@ EOF
 FEATURE_DIR=""
 UPDATE_SNAPSHOTS=false
 TOKENS_ONLY=false
+SKIP_ORPHANS=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -50,6 +52,9 @@ for arg in "$@"; do
       ;;
     --update-snapshots)
       UPDATE_SNAPSHOTS=true
+      ;;
+    --skip-orphans)
+      SKIP_ORPHANS=true
       ;;
     *)
       ;;
@@ -112,7 +117,11 @@ fi
 # Validate route and component contracts before launching Playwright
 CONTRACT_SCRIPT="$SCRIPT_DIR/check-contracts.sh"
 if [ -f "$CONTRACT_SCRIPT" ]; then
-  if ! bash "$CONTRACT_SCRIPT" --feature-dir="$FEATURE_DIR" --check-orphans --check-atomic; then
+  CONTRACT_FLAGS=("--feature-dir=$FEATURE_DIR" "--check-atomic")
+  if [ "$SKIP_ORPHANS" = false ]; then
+    CONTRACT_FLAGS+=("--check-orphans")
+  fi
+  if ! bash "$CONTRACT_SCRIPT" "${CONTRACT_FLAGS[@]}"; then
     echo ""
     echo "❌ [VISUAL GATE FAILED]: Route or component contract violations detected."
     exit 1

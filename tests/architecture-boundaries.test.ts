@@ -35,4 +35,10 @@ describe('Clean Architecture boundaries for vertical slices', () => {
     expect(content.toLowerCase()).toContain('vertical slice');
     expect(content).toContain('src/features/<slice>');
   });
+
+  it('exempts UI components from the 50-line function length limit', () => {
+    const content = fs.readFileSync(viteTmpl, 'utf8');
+    expect(content).toContain("files: ['**/src/**/ui/**', '**/src/ui/**']");
+    expect(content).toContain("'max-lines-per-function': 'off'");
+  });
 });
