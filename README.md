@@ -96,6 +96,7 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/templates/` | `vite.config.ts`, Playwright, env config, and design-audit templates |
 | `.specify/workflows/viteplus-stitch/GUARDRAILS.md` | Non-negotiable policy: never weaken gates to pass tests |
 | `.specify/memory/constitution.md` | Receives the "Quality Gate Integrity" section (read by every command) |
+| `AGENTS.md` | Root workspace guidelines: Clean Architecture boundaries, env-config & quality gates for any AI agent (Gemini, Claude, Cursor, Copilot) |
 
 The workflow uses `integration: auto` by default, which reads the integration selected when the project was initialized with `specify init` (for example Claude, Gemini, or Copilot).
 
@@ -336,10 +337,11 @@ When building UI features (`has_ui: true`), the workflow integrates the **Impecc
 
 ## Quality Gate Integrity (Guardrails)
 
-The workflow instructs the model, before any other step, that **gate configuration is human-owned**. The bundle installs two layers of instruction:
+The workflow instructs the model, before any other step, that **gate configuration is human-owned**. The bundle installs three layers of instruction:
 
 1. A `guardrails` prompt step at the start of `workflow.yml`.
-2. A `Quality Gate Integrity (NON-NEGOTIABLE)` section in `.specify/memory/constitution.md`.
+2. A `Quality Gate Integrity (NON-NEGOTIABLE)` section in `.specify/memory/constitution.md` (read by Spec Kit commands).
+3. A root `AGENTS.md` in the project workspace (read by any IDE agent: Cursor, Gemini CLI, Claude Code, Copilot).
 
 The rule strictly forbids modifying:
 - `vite.config.ts`, `vitest.config.ts`, and any quality tooling

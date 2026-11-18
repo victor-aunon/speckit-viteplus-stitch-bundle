@@ -47,7 +47,14 @@ describe('Bundle Installer Script E2E', () => {
     expect(constitution).toContain('viteplus-stitch:impeccable-lifecycle');
     expect(constitution).toContain('vite.config.ts');
 
-    // Second execution (Idempotence) must not duplicate the constitution section
+    const agentsPath = path.join(tempDir, 'AGENTS.md');
+    expect(fs.existsSync(agentsPath)).toBe(true);
+    const agentsContent = fs.readFileSync(agentsPath, 'utf8');
+    expect(agentsContent).toContain('viteplus-stitch:agents-instructions');
+    expect(agentsContent).toContain('Clean Architecture Boundaries');
+    expect(agentsContent).toContain('check-quality-gate.sh');
+
+    // Second execution (Idempotence) must not duplicate the constitution section or AGENTS.md section
     const output2 = runBash(installScript, [`--target-dir=${tempDir}`]);
     expect(output2).toContain('Installation of viteplus-stitch completed successfully');
 
@@ -57,16 +64,23 @@ describe('Bundle Installer Script E2E', () => {
     const impeccableOccurrences = constitutionAfter.split('viteplus-stitch:impeccable-lifecycle').length - 1;
     expect(impeccableOccurrences).toBe(1);
 
+    const agentsAfter = fs.readFileSync(agentsPath, 'utf8');
+    const agentsOccurrences = agentsAfter.split('viteplus-stitch:agents-instructions').length - 1;
+    expect(agentsOccurrences).toBe(1);
+
     removeDir(tempDir);
   });
 
-  it('should preserve an existing constitution and append the guardrail section once', () => {
+  it('should preserve an existing constitution and AGENTS.md, appending sections once', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-constitution-test-'));
     const memoryDir = path.join(tempDir, '.specify/memory');
     fs.mkdirSync(memoryDir, { recursive: true });
 
     const existing = '# My Constitution\n\n### I. Custom Rule\nKeep me.\n';
     fs.writeFileSync(path.join(memoryDir, 'constitution.md'), existing, 'utf8');
+
+    const existingAgents = '# My Existing Agent Config\nAlways follow team style.\n';
+    fs.writeFileSync(path.join(tempDir, 'AGENTS.md'), existingAgents, 'utf8');
 
     runBash(installScript, [`--target-dir=${tempDir}`]);
     runBash(installScript, [`--target-dir=${tempDir}`]);
@@ -79,6 +93,12 @@ describe('Bundle Installer Script E2E', () => {
     expect(occurrences).toBe(1);
     const impeccableOccurrences = merged.split('viteplus-stitch:impeccable-lifecycle').length - 1;
     expect(impeccableOccurrences).toBe(1);
+
+    const mergedAgents = fs.readFileSync(path.join(tempDir, 'AGENTS.md'), 'utf8');
+    expect(mergedAgents).toContain('Always follow team style.');
+    expect(mergedAgents).toContain('Clean Architecture Boundaries');
+    const agentsOccurrences = mergedAgents.split('viteplus-stitch:agents-instructions').length - 1;
+    expect(agentsOccurrences).toBe(1);
 
     removeDir(tempDir);
   });

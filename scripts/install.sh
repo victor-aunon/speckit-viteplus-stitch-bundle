@@ -235,7 +235,20 @@ EOF
   fi
 fi
 
-# 6. Register in workflow-registry.json if present
+# 6. Provision or augment root AGENTS.md for AI agent guidance (Gemini CLI, Claude Code, Cursor, Copilot)
+AGENTS_FILE="$TARGET_DIR/AGENTS.md"
+if [ ! -f "$AGENTS_FILE" ]; then
+  if [ -f "$BUNDLE_ROOT/templates/AGENTS.md.tmpl" ]; then
+    cp "$BUNDLE_ROOT/templates/AGENTS.md.tmpl" "$AGENTS_FILE"
+  fi
+elif ! grep -q "viteplus-stitch:agents-instructions" "$AGENTS_FILE"; then
+  if [ -f "$BUNDLE_ROOT/templates/AGENTS.md.tmpl" ]; then
+    echo "" >> "$AGENTS_FILE"
+    cat "$BUNDLE_ROOT/templates/AGENTS.md.tmpl" >> "$AGENTS_FILE"
+  fi
+fi
+
+# 7. Register in workflow-registry.json if present
 REGISTRY_FILE="$SPECIFY_DIR/workflows/workflow-registry.json"
 if [ -f "$REGISTRY_FILE" ]; then
   TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u)"

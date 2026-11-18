@@ -1,0 +1,71 @@
+<!-- viteplus-stitch:agents-instructions -->
+# Agent Guidelines & Quality Architecture (Vite+ & Stitch Bundle)
+
+This repository enforces strict, deterministic quality gates and Clean Architecture boundaries. Every AI agent (Claude Code, Gemini CLI, Cursor, Copilot, or Spec Kit subagents) working in this workspace must adhere to these non-negotiable standards.
+
+---
+
+## 1. Clean Architecture Boundaries (Vertical Slices)
+
+Code is organized into vertical feature slices under `src/features/<slice>/` and shared cross-cutting modules under `src/core/`:
+
+```
+src/features/<slice>/
+├── domain/           # Pure business logic: entities, value objects, domain invariants (zero external dependencies)
+├── application/      # Use cases, application services, repository ports (interfaces)
+├── infrastructure/   # Data adapters, HTTP clients, persistence implementations
+└── ui/               # React presentation components, view-specific hooks, local styling
+```
+
+### Unidirectional Dependency Rule
+- **Domain** cannot import from **Application**, **Infrastructure**, or **UI**.
+- **Application** cannot import from **Infrastructure** or **UI**.
+- **Infrastructure** cannot import from **UI**.
+- **UI** cannot directly import from **Infrastructure** (must depend on application ports).
+- *Violations will trigger fatal errors in `vp check` / Oxlint.*
+
+---
+
+## 2. Centralized Typed Environment Configuration
+
+- **Never** access `process.env` or `import.meta.env` directly in feature or UI code.
+- All environment variables must be declared, validated (e.g. Zod), typed, and exported from `src/config/env.ts`.
+- Direct access is strictly blocked by `.specify/scripts/bash/check-env-config.sh`.
+
+---
+
+## 3. Styling & Component Rules
+
+- **Zero-Config Styling Freedom**:
+  - **Tailwind CSS**: Use semantic utility classes. Arbitrary brackets (e.g. `p-[13px]`) and raw unsemantic colors are forbidden by `@shadcn/lint`.
+  - **Vanilla CSS**: All class names in JSX `className` must correspond to declared CSS rules in project stylesheets or design tokens (`tokens.css`). Ghost classes will fail `.specify/scripts/bash/check-ghost-classes.sh`.
+- **Atomic Design**: Strictly **one React component per file** (`react/no-multi-comp`).
+- **Function Line Limits**: Business logic functions (`domain`, `application`, `infrastructure`) must not exceed 50 lines or cyclomatic complexity 10. Presentation components under `src/**/ui/**` are legitimately exempt (`max-lines-per-function: 'off'`) to accommodate accessible JSX and ARIA attributes.
+
+---
+
+## 4. Quality Gate Integrity (NON-NEGOTIABLE)
+
+- **Gate configuration is human-owned.** You MUST NOT modify `vite.config.ts`, `package.json` scripts, `.specify/scripts/bash/*`, or `.specify/extensions.yml` to make a failing check pass.
+- **Never suppress violations**: Prohibited from adding `eslint-disable`, `oxlint-disable`, `@ts-ignore`, or skipping tests.
+- Resolve every violation by fixing the **application code**.
+
+---
+
+## 5. Verification Commands
+
+Run these deterministic gates before declaring any task complete:
+
+```bash
+# Core gate: formatting (Oxfmt), linting (Oxlint), strict typing, architecture boundaries, and test suite
+bash .specify/scripts/bash/check-quality-gate.sh
+
+# Performance & bundle budget (max 250KB per chunk, max 1000KB total)
+bash .specify/scripts/bash/check-bundle-budget.sh
+
+# Component & route contract integrity
+bash .specify/scripts/bash/check-contracts.sh
+
+# Stitch visual tokens & Playwright regression
+bash .specify/scripts/bash/verify-stitch-design.sh --tokens-only
+```
