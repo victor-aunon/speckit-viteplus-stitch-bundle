@@ -108,16 +108,17 @@ steps:
              - Call `create_project` (or target active project) with the feature title.
              - Call `create_design_system` to establish color palette, typography (Inter/Roboto), corner roundness, and appearance theme aligned with the project.
              - For each primary screen described in the specification, call `generate_screen_from_text` with rich layout, accessibility, and component details.
-             - For each generated screen, download assets using `download_file`:
-               * Save the rendered PNG screenshot to `specs/<feature>/designs/<screen-id>.png` (e.g. `screen-dashboard.png`, `screen-analytics.png`).
-               * Save the HTML code to `specs/<feature>/designs/<screen-id>.html`.
+             - Call `get_screen` for each generated screen to retrieve its `html_code` reference.
+             - Download ONLY the HTML code using `download_file` with `name: <screen.html_code.name>`:
+               * Save the HTML code to `specs/<feature>/designs/<screen-id>.html` using `write_file`.
+               * CRITICAL POLICY: Do NOT call `download_file` on `screenshot.name`. Binary image payloads cause API codec errors (HTTP 400) and tool policy denials in CLI agents. The downloaded HTML file is the complete, canonical design master for layout and styles.
           4. Extract and create the canonical design tokens stylesheet at `specs/<feature>/designs/tokens.css`:
              - Define CSS variables under `:root` for colors (`--color-background`, `--color-surface`, `--color-primary`, `--color-text`, etc.), radii (`--radius-sm`, `--radius-md`, `--radius-lg`), typography (`--font-family`, `--font-size-*`), and spacing (`--space-*`).
           5. Create `specs/<feature>/designs/routes-manifest.json` following `.specify/templates/routes-manifest.json.tmpl`:
              - Map each screen to its local development route (e.g. `/`, `/analytics`), title, DOM test selector, and fixture mock data path.
              - Generate declared fixture JSON mock files in `specs/<feature>/designs/fixtures/`.
-          6. Fallback Resilience: If Google Stitch MCP is unavailable or encounters connection/rate-limit errors, generate clean wireframe HTML/PNG files, `tokens.css`, and `routes-manifest.json` directly so downstream visual gates succeed without crashing.
-          7. Output a summary table in the terminal listing all generated screens, screenshots, and token variables.
+          6. Fallback Resilience: If Google Stitch MCP is unavailable or encounters connection/rate-limit errors, generate clean wireframe HTML files, `tokens.css`, and `routes-manifest.json` directly so downstream visual gates succeed without crashing.
+          7. Output a summary table in the terminal listing all generated screens, HTML files, and token variables.
 
   - id: critique-design
     type: if
@@ -131,7 +132,7 @@ steps:
           Before the human design review gate, perform an Impeccable Design Critique:
 
           1. Activate the `impeccable` skill and review the UI architecture:
-             - If Stitch was enabled: inspect screens in `specs/<feature>/designs/` and `tokens.css`.
+             - If Stitch was enabled: inspect screens in `specs/<feature>/designs/*.html` and `tokens.css`.
              - If Stitch was NOT enabled: inspect UI wireframes, component contracts, and design tokens specified in `plan.md`.
           2. Evaluate visual hierarchy, cognitive load (Operate vs Persuade), contrast ratios (WCAG AA), typographic rhythm, and Tailwind/shadcn tokens.
           3. Generate `specs/<feature>/designs/DESIGN_CRITIQUE.md` with:
