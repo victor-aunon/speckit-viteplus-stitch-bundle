@@ -10,6 +10,7 @@ Deterministic Spec-Driven Development (SDD) workflow for high-fidelity web appli
 - 🎨 **@shadcn/lint for Tailwind CSS**: Component contract enforcement, blocking arbitrary bracket values (`p-[13px]`) and unsemantic palette classes.
 - 🖌️ **Optional Google Stitch MCP**: Automated creation of design systems, CSS tokens, and canonical UI screens directly from the terminal.
 - ✨ **Impeccable UI Craft Lifecycle**: Full-spectrum visual craft governance for UI features (`has_ui: true`). Runs pre-implementation heuristic art direction (`impeccable critique`), mandates loading skeletons, empty states, and error boundaries in user stories (`impeccable harden`), and polishes motion (`impeccable animate`) and accessibility (`impeccable audit`).
+- 👻 **Ghost Classes Quality Gate**: Static AST scanner that verifies that every CSS class referenced in JSX/TSX is declared in a project stylesheet, eliminating dead or missing styles.
 - 🛑 **Interactive Visual Review Gate**: Inspect and approve UI screens and design tokens before writing product code.
 - 🔬 **Strict Stitch Token Verification**: Every token declared in `tokens.css` must be present in the DOM with the exact Stitch value; drift fails the gate.
 - 🔄 **Phased Implementation with Checkpoints**: Playwright and Vite+ validate every phase, then the workflow pauses for approval before the next phase. Use `--auto-continue` to run all phases without pausing.
@@ -20,11 +21,11 @@ Deterministic Spec-Driven Development (SDD) workflow for high-fidelity web appli
 
 1. **Spec Kit CLI** installed on your system:
    ```bash
-    which specify
+   which specify
    ```
 2. **Vite+ (`vp`)** installed globally or available via `npx`:
    ```bash
-    curl -fsSL https://vite.plus | bash
+   curl -fsSL https://vite.plus | bash
    ```
 3. **Google Stitch MCP** configured in your AI agent environment (optional, only needed for UI features).
 4. **Playwright** installed in the project (`npx playwright install --with-deps chromium`).
@@ -65,181 +66,245 @@ curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitc
 
 This is a **Spec Kit workflow**, not a slash-command extension. It does not add `/speckit.*` commands to your agent; it adds a workflow that dispatches the existing `speckit.specify`, `speckit.plan`, `speckit.tasks`, and `speckit.implement` commands to the AI integration already configured in your project.
 
-
-| Path                                              | Purpose                                                               |
+| Path | Purpose |
 | ------------------------------------------------- | --------------------------------------------------------------------- |
-| `.specify/workflows/viteplus-stitch/workflow.yml` | The workflow definition and phase gates                               |
-| `.specify/extensions.yml`                         | Lifecycle hooks that run the quality gates after tasks/implementation |
-| `.specify/scripts/bash/check-quality-gate.sh`     | Vite+ + env-config + architecture quality gate                        |
-| `.specify/scripts/bash/check-env-config.sh`       | Direct env-access guard                                               |
-| `.specify/scripts/bash/verify-stitch-design.sh`   | Playwright Stitch token/visual gate                                   |
-| `.specify/scripts/bash/check-blast-radius.sh`     | Blast radius scope protection & circuit breaker anti-loop guard       |
-| `.specify/scripts/bash/check-contracts.sh`        | Route manifest & orphan component contract integrity gate            |
-| `.specify/scripts/bash/check-bundle-budget.sh`    | Production performance & bundle size budget gate                      |
-| `.specify/templates/`                             | `vite.config.ts`, Playwright, env config, and design-audit templates  |
-| `.specify/workflows/viteplus-stitch/GUARDRAILS.md` | Non-negotiable policy: never weaken gates to pass tests              |
-| `.specify/memory/constitution.md`                 | Receives the "Quality Gate Integrity" section (read by every command) |
-
+| `.specify/workflows/viteplus-stitch/workflow.yml` | The workflow definition and phase gates |
+| `.specify/extensions.yml` | Lifecycle hooks that run the quality gates after tasks/implementation |
+| `.specify/scripts/bash/check-quality-gate.sh` | Vite+ + env-config + architecture quality gate |
+| `.specify/scripts/bash/check-env-config.sh` | Direct env-access guard |
+| `.specify/scripts/bash/verify-stitch-design.sh` | Playwright Stitch token/visual gate |
+| `.specify/scripts/bash/check-blast-radius.sh` | Blast radius scope protection & circuit breaker anti-loop guard |
+| `.specify/scripts/bash/check-contracts.sh` | Route manifest & orphan component contract integrity gate |
+| `.specify/scripts/bash/check-ghost-classes.sh` | Ghost classes gate: scans JSX/TSX for undeclared CSS classes |
+| `.specify/scripts/bash/check-bundle-budget.sh` | Production performance & bundle size budget gate |
+| `.specify/templates/` | `vite.config.ts`, Playwright, env config, and design-audit templates |
+| `.specify/workflows/viteplus-stitch/GUARDRAILS.md` | Non-negotiable policy: never weaken gates to pass tests |
+| `.specify/memory/constitution.md` | Receives the "Quality Gate Integrity" section (read by every command) |
 
 The workflow uses `integration: auto` by default, which reads the integration selected when the project was initialized with `specify init` (for example Claude, Gemini, or Copilot).
 
 ---
 
-## How to Interact from an AI Agent
+## Workflow CLI Parameters & Inputs Reference
 
-### Option 1: Start from the terminal (recommended)
+When running `specify workflow run viteplus-stitch`, you can configure the behavior using `--input <key>=<value>` (or `-i <key>=<value>`):
 
-Run the workflow from the project root. Spec Kit dispatches each step to your configured AI integration:
+| Input Parameter | Type | Default | Required? | Description & Usage |
+|---|:---:|:---:|:---:|---|
+| **`spec`** | `string` | — | **Yes** | Natural language description or feature prompt detailing what to build. |
+| **`has_ui`** | `boolean` | `true` | No | Controls UI-specific phases. When `false`, completely skips Google Stitch, Impeccable critique, Playwright visual gates, route contracts, and ghost classes check. Ideal for backend, domain, or CLI features. |
+| **`enable_stitch`** | `boolean` | `true` | No | When `has_ui: true`, toggles whether to use Google Stitch MCP for automated design generation (`true`) or use component wireframes defined directly in `plan.md` (`false`). |
+| **`auto_continue`** | `boolean` | `false` | No | Enables **Unattended Mode**. When `true`, automatically bypasses human approval gates (`review-spec`, `review-design`, and phase-by-phase pauses) once automated quality gates pass. When `false` (default), pauses for human confirmation. |
+| **`integration`** | `string` | `auto` | No | Selects the AI runner integration (e.g. `claude`, `gemini`, `copilot`, `auto`). |
+
+### Common CLI Invocation Examples
 
 ```bash
+# 1. Interactive Full UI Workflow (Default): Pauses for human review at design & phases
 specify workflow run viteplus-stitch \
-  --input spec="Create a credit card management module with list, details, and fee calculations"
+  -i spec="Create a Daily Habit & Streak Tracker with weekly analytics"
+
+# 2. Unattended Full UI Workflow: Runs all phases autonomously until completion
+specify workflow run viteplus-stitch \
+  -i spec="Create a Daily Habit & Streak Tracker" \
+  -i auto_continue=true
+
+# 3. Non-UI / Backend Feature: Skips visual design and UI gates entirely
+specify workflow run viteplus-stitch \
+  -i spec="Add JWT authentication middleware and token refresher" \
+  -i has_ui=false
+
+# 4. UI Feature without Google Stitch: Uses local wireframes and Impeccable craft
+specify workflow run viteplus-stitch \
+  -i spec="Add billing plans selector" \
+  -i enable_stitch=false
+
+# 5. Force specific AI model runner
+specify workflow run viteplus-stitch \
+  -i spec="Implement user settings profile" \
+  -i integration=gemini
 ```
-
-When a gate appears, answer it in the terminal. If the workflow pauses, inspect and resume it later with:
-
-```bash
-specify workflow status --json
-specify workflow resume <run_id>
-```
-
-### Option 2: Ask your AI agent to run it
-
-In your agent chat, ask it to execute the workflow through its terminal/shell tool:
-
-> Run this from the project root: `specify workflow run viteplus-stitch --input spec="Create a credit card management module"`. Then show me `specify workflow status --json` and stop at every gate until I approve.
-
-The agent needs permission to run terminal commands. If the agent cannot answer interactive gate prompts, let it run until the gate pauses, then run `specify workflow resume <run_id>` yourself in a terminal and answer the gate there.
-
-### Optional inputs
-
-```bash
-# Non-UI feature (skips Stitch, Impeccable critique, and visual gates entirely)
-specify workflow run viteplus-stitch -i spec="Add a CSV parser" -i has_ui=false
-
-# UI feature without Google Stitch (uses component wireframes + Impeccable craft lifecycle)
-specify workflow run viteplus-stitch -i spec="Add billing" -i enable_stitch=false
-
-# Force a specific AI integration
-specify workflow run viteplus-stitch -i spec="Add billing" -i integration=claude
-
-# Run every implementation phase without pausing after each phase
-specify workflow run viteplus-stitch -i spec="Add billing" -i auto_continue=true
-```
-
-You can also trigger it conversationally with your AI agent: *"Run the viteplus-stitch workflow for feature X and pause at each gate."*
 
 ---
 
-## Step-by-Step Workflow
+## Standalone Quality Scripts CLI Reference
+
+All quality gates installed in `.specify/scripts/bash/` can be executed independently in local development or in CI/CD pipelines:
+
+### 1. `check-quality-gate.sh` (Core Deterministic Gate)
+Runs formatting (Oxfmt Airbnb), linting (Oxlint with complexity limits), TypeScript strict types, Clean Architecture boundary checks, centralized env guard, and the regression test suite.
+
+```bash
+# Run all deterministic checks
+bash .specify/scripts/bash/check-quality-gate.sh
+
+# Automatically format code issues via Oxfmt / Vite+
+bash .specify/scripts/bash/check-quality-gate.sh --fix
+
+# Skip regression tests (lint, types, env, and architecture only)
+bash .specify/scripts/bash/check-quality-gate.sh --skip-tests
+
+# Report violations without exiting with error code
+bash .specify/scripts/bash/check-quality-gate.sh --dry-run
+
+# Reset circuit breaker counter to 0 after repeated failures
+bash .specify/scripts/bash/check-quality-gate.sh --reset-breaker
+```
+
+### 2. `check-contracts.sh` (Route & Component Contract Gate)
+Validates that routes in `routes-manifest.json` match application screens, fixtures exist, no unconsumed/orphan components exist in `src/`, and Atomic Design (1 component per file) is enforced. Automatically invokes `check-ghost-classes.sh`.
+
+```bash
+# Standard contract verification
+bash .specify/scripts/bash/check-contracts.sh
+
+# Target specific manifest and enable orphan & atomic checks
+bash .specify/scripts/bash/check-contracts.sh \
+  --manifest=specs/001-feature/designs/routes-manifest.json \
+  --check-orphans \
+  --check-atomic
+```
+
+### 3. `check-ghost-classes.sh` (Ghost Classes Gate)
+Scans all JSX/TSX files for class names in `className` attributes and verifies that each referenced class exists in at least one stylesheet (`src/**/*.css`, `tokens.css`).
+
+```bash
+# Check for ghost classes in src/
+bash .specify/scripts/bash/check-ghost-classes.sh
+
+# Custom source directory
+bash .specify/scripts/bash/check-ghost-classes.sh --src-dir=src/components
+
+# Dry run mode
+bash .specify/scripts/bash/check-ghost-classes.sh --dry-run
+```
+
+### 4. `verify-stitch-design.sh` (Stitch Token & Visual Gate)
+Compares design tokens in `tokens.css` against DOM `:root` computed styles, followed by Playwright visual snapshot regression testing.
+
+```bash
+# Fast token validation only (runs in <1s without starting Playwright)
+bash .specify/scripts/bash/verify-stitch-design.sh --tokens-only
+
+# Full visual regression comparison against Stitch golden screenshots
+bash .specify/scripts/bash/verify-stitch-design.sh --feature-dir=specs/001-feature
+```
+
+### 5. `check-bundle-budget.sh` (Production Performance Gate)
+Executes `vp build` (Rolldown engine) and inspects production bundle sizes against defined budgets.
+
+```bash
+# Validate against default budget (max chunk 250KB, total bundle 1000KB)
+bash .specify/scripts/bash/check-bundle-budget.sh
+
+# Custom budget thresholds
+bash .specify/scripts/bash/check-bundle-budget.sh --max-chunk=180 --max-total=800
+```
+
+### 6. `check-env-config.sh` (Direct Environment Access Guard)
+Ensures that no application file accesses `process.env` or `import.meta.env` directly outside the designated typed module.
+
+```bash
+bash .specify/scripts/bash/check-env-config.sh --env-config=src/config/env.ts
+```
+
+### 7. `check-blast-radius.sh` (Scope & Circuit Breaker Guard)
+Prevents autonomous agents from modifying protected quality scripts, workflows, or files outside the feature scope.
+
+```bash
+bash .specify/scripts/bash/check-blast-radius.sh --scope=src/features/billing
+```
+
+---
+
+## Step-by-Step Workflow Execution
+
+```
+[ Step 1: specify ]  ──►  [ Step 2: audit-spec ]  ──►  [ Step 3: plan + stitch ]
+                                  │                               │
+                          (review-spec gate)              [ Step 4: critique-design ]
+                                                                  │
+                                                          (review-design gate)
+                                                                  │
+[ Step 7: verify ]   ◄──  [ Step 6: implement ]   ◄──  [ Step 5: tasks ]
+  - Scenario Matrix         - after_task: quality + tokens
+  - Evidence Log            - after_implement: contracts + budget + visual
+  - Delta-Spec Sync
+```
 
 ### Step 1: Start a New Feature
-
 Trigger the cycle with a prompt describing what you want to build:
-
 ```bash
 specify workflow run viteplus-stitch --input spec="Create a credit card management module with list, details, and fee calculations"
 ```
 
-Spec Kit then runs the workflow's command steps through your configured AI integration. See [How to Interact from an AI Agent](#how-to-interact-from-an-ai-agent) for agent-first usage and gate handling.
-
 ### Step 2: Specification Audit & Approval (`audit-spec` & `review-spec`)
-
 Spec Kit generates the functional technical specification (`specs/<feature>/spec.md`):
-
 1. **Automated Spec Quality Audit (`audit-spec`)**:
    - The agent evaluates the specification against strict SDD criteria: user stories with clear business value, testable Given/When/Then Gherkin acceptance criteria, error handling, network failure recovery, empty states, and architecture boundaries.
    - Generates `specs/<feature>/SPEC_AUDIT.md` with an executive quality score (0-100%, threshold: 90%), scenario matrix, and auto-remediations.
 2. **Review Gate (`review-spec`)**:
-   - In **interactive mode** (`auto_continue: false`): pauses for human review of `spec.md` and `SPEC_AUDIT.md`. Select **`[approve]`** to proceed or **`[reject]`** to adjust.
-   - In **unattended mode** (`auto_continue: true`): the manual gate is bypassed automatically once the automated audit confirms the quality threshold, proceeding straight to planning without human blocking.
+   - In **interactive mode** (`auto_continue: false`): pauses for human review. Select **`[approve]`** to proceed or **`[reject]`** to adjust.
+   - In **unattended mode** (`auto_continue: true`): bypassed automatically once the automated audit confirms the quality threshold.
 
 ### Step 3: Planning, CSS Tokens, and Stitch Screens
-
 The workflow generates the implementation plan (`plan.md`):
-
-- If `has_ui` is true and `enable_stitch` is true, the agent invokes Google Stitch MCP to generate design systems and screens.
+- If `has_ui: true` and `enable_stitch: true`, the agent invokes Google Stitch MCP to generate design systems and screens.
 - Downloads reference screenshots to `specs/<feature>/designs/<screen-id>.png` and tokens to `specs/<feature>/designs/tokens.css`.
 - Creates `routes-manifest.json` mapping screens to local dev routes.
-- If `enable_stitch` is false, wireframes and component contracts are specified directly in `plan.md`.
+- If `enable_stitch: false`, wireframes and component contracts are specified directly in `plan.md`.
 
 ### Step 4: Impeccable Design Critique (`critique-design`)
-
-When `has_ui` is true:
-
-- The agent activates the **`impeccable`** skill to evaluate the UI proposal (whether from Stitch or written in plan).
+When `has_ui: true`:
+- The agent activates the **`impeccable`** skill to evaluate the UI proposal.
 - Audits visual hierarchy (Operate vs Persuade), contrast ratios (WCAG AA), typography, and spacing rhythm.
 - Generates `specs/<feature>/designs/DESIGN_CRITIQUE.md` with heuristic findings and actionable recommendations.
 - Outputs a concise 5-line summary in the terminal.
 
 ### Step 5: Visual Design Review Gate (`review-design`)
-
-When `has_ui` is true:
-
-- In **interactive mode** (`auto_continue: false`): the workflow pauses and presents the proposal alongside the Impeccable critique:
+When `has_ui: true`:
+- In **interactive mode** (`auto_continue: false`): pauses for visual inspection:
   - Review screens and `DESIGN_CRITIQUE.md`.
-  - **If you like the design**: Select **`[approve]`**. Designs and tokens are frozen as canonical masters.
-  - **If you want changes**: Select **`[request_changes]`** and instruct the agent to refine screens (via Stitch `edit_screens` or plan adjustment) based on the critique.
-- In **unattended mode** (`auto_continue: true`): the manual gate is bypassed automatically, freezing the audited designs and progressing directly to task breakdown.
+  - **If approved**: Select **`[approve]`**. Designs and tokens are frozen as canonical masters.
+  - **If changes needed**: Select **`[request_changes]`** to refine screens.
+- In **unattended mode** (`auto_continue: true`): bypassed automatically, freezing audited designs and progressing to tasks.
 
 ### Step 6: Phase-by-Phase Task Breakdown (`speckit.tasks`)
-
-The `speckit.tasks` command generates `tasks.md` split into strictly ordered phases:
-
+Generates `tasks.md` split into strictly ordered phases:
 - `Phase 1: Setup` (Vite+ configuration, dependencies, CSS tokens)
 - `Phase 2: Core & Domain` (Entities, Value Objects, Repository Ports)
-- `Phase 3..N: User Stories`:
-  - Component implementation according to tokens.
-  - **`impeccable harden`**: Mandatory tasks for loading skeletons, empty states with friendly CTAs, and error boundaries.
-- `Phase Final: Polish & E2E`:
-  - **`impeccable animate`**: Micro-interactions respecting `@media (prefers-reduced-motion: reduce)`.
-  - **`impeccable audit`**: Accessibility (WCAG AA), responsive viewport behavior, and performance validation.
-  - Full integration, E2E, and Playwright visual snapshot tests.
+- `Phase 3..N: User Stories` (TDD, application services, atomic components)
+- `Phase Final: Polish & Verification` (Impeccable animate, audit, and E2E)
 
 ### Step 7: Phased Implementation with Automated Quality Gates
-
-The agent executes tasks **phase by phase**. After each phase completes, two deterministic quality gates run:
-
+The agent executes tasks phase by phase. After each phase completes, two deterministic quality gates run:
 1. **Static Gate (`vp check`)**:
    - Validates types (`tsc`), formatting (Oxfmt), and linting (Oxlint).
    - Fails if any function exceeds cyclomatic complexity 10 or 50 lines.
-   - Fails if domain imports infrastructure or UI, including inside any vertical slice under `src/**`.
-   - Runs the env config gate and fails if application code reads `process.env` or `import.meta.env` directly, or if `src/config/env.ts` is missing/not typed.
-   - Fails if an invalid Tailwind utility is detected by `@shadcn/lint`.
-   - **The agent fixes all reported issues before continuing to the next phase.**
-2. **Visual Playwright Gate (when the phase touches UI)**:
-   - Playwright starts the application via `vp dev`.
-   - Parses every token in `tokens.css` and compares it against the computed DOM value on `:root`; any missing token or different value fails the gate.
-   - Runs snapshot comparison (`toHaveScreenshot`) against the Stitch golden master with controlled tolerance (`0.05`).
-   - If deviations exceed the threshold, the agent adjusts the markup.
+   - Enforces Clean Architecture: Domain cannot import Application, Infrastructure, or UI.
+   - Fails if application code reads `process.env` or `import.meta.env` directly.
+2. **Visual Playwright Gate**:
+   - Compares DOM `:root` computed tokens against `tokens.css`.
+   - Runs snapshot comparison against the Stitch golden master with tolerance `0.05`.
 
-**Phase approval (default)**: after both gates pass, the workflow stops and asks whether to continue to the next phase. Nothing is implemented beyond the current phase without approval.
+### Step 8: Verification & Delta-Spec Sync (`verify`)
+Once implementation completes, the workflow executes the final certification:
+1. **Scenario Verification Matrix**: Cross-checks each Given/When/Then scenario against automated test proof.
+2. **Verification Report (`VERIFICATION_REPORT.md`)**: Generates full evidence log with test runs, gate outputs, and bundle budget metrics.
+3. **Delta-Spec Sync**: Documents any architectural refinements or domain clarifications discovered during implementation.
 
-**Unattended mode**: run the workflow with `auto_continue=true`, or pass `--auto-continue` to `speckit.implement`, to execute all phases without pausing. Gates still run after every phase and still block on failure.
+---
 
-```bash
-# Default: pause and ask after each phase
-specify workflow run viteplus-stitch --input spec="Create a billing module"
+## Impeccable UI Craft Lifecycle Matrix
 
-# Unattended: run every phase, stopping only when a quality gate fails
-specify workflow run viteplus-stitch \
-  --input spec="Create a billing module" \
-  --input auto_continue=true
-```
+When building UI features (`has_ui: true`), the workflow integrates the **Impeccable** craft lifecycle across distinct stages:
 
-### Step 8: Empirical Verification, Delta-Spec Sync & Closure (`verify`)
-
-Once implementation is complete, the workflow triggers the final verification and closure phase:
-
-1. **Empirical Scenario Verification**:
-   - The agent inspects `spec.md`, `tasks.md`, test outputs, and quality gate logs.
-   - Cross-checks each Given/When/Then scenario against empirical proof (unit tests, integration tests, clean architecture boundary checks, accessibility scans, bundle size budget, and Playwright screenshots).
-2. **Verification Report (`VERIFICATION_REPORT.md`)**:
-   - Generates `specs/<feature>/VERIFICATION_REPORT.md` containing the Scenario Verification Matrix (Pass/Fail per acceptance criterion) and an empirical evidence log.
-3. **Delta-Spec Sync**:
-   - Documents any architectural decisions, edge-case clarifications, or schema adjustments discovered during implementation, syncing them back to the specification.
-4. **Executive Closing Summary**:
-   - Outputs a concise summary in the terminal highlighting passing criteria, modified files, and readiness for human asynchronous merge.
+| Impeccable Sub-Command | Workflow Stage | Target Scope | Output Artifact |
+|---|:---:|---|---|
+| **`impeccable critique`** | Step 4 (`critique-design`) | Heuristic visual hierarchy, contrast (WCAG AA), typography rhythm, and cognitive load assessment. | `specs/<feature>/designs/DESIGN_CRITIQUE.md` |
+| **`impeccable harden`** | Step 6 & 7 (Tasks & Implementation) | Production robustness: loading skeletons to prevent CLS, empty states with clear CTAs, error boundaries, and input recovery. | Handled in component tests & UI layer |
+| **`impeccable animate`** | Step 7 (UI Polish Phase) | GPU-accelerated micro-interactions (`transform`, `opacity`), feedback curves (`cubic-bezier(0.16, 1, 0.3, 1)`), and mandatory `@media (prefers-reduced-motion: reduce)`. | Zero layout thrashing verified by `detect.mjs` |
+| **`impeccable audit`** | Step 8 (`verify`) | Accessibility verification (WCAG 2.1 AA), keyboard navigation (`tabIndex`, `:focus-visible`), touch targets (min 44x44px), and responsive layout audit. | Recorded in `VERIFICATION_REPORT.md` |
 
 ---
 
@@ -248,110 +313,14 @@ Once implementation is complete, the workflow triggers the final verification an
 The workflow instructs the model, before any other step, that **gate configuration is human-owned**. The bundle installs two layers of instruction:
 
 1. A `guardrails` prompt step at the start of `workflow.yml`.
-2. A `Quality Gate Integrity (NON-NEGOTIABLE)` section in `.specify/memory/constitution.md`, which `speckit.plan`, `speckit.tasks`, and `speckit.implement` read on every invocation. The full policy lives in `.specify/workflows/viteplus-stitch/GUARDRAILS.md`.
+2. A `Quality Gate Integrity (NON-NEGOTIABLE)` section in `.specify/memory/constitution.md`.
 
-The rule forbids the agent from editing these files to make a check pass:
-
-- `vite.config.ts` and any other Vite/Vite+ configuration (`vitest.config.ts`, `vite.config.*`)
-- `package.json` quality scripts
-- `.specify/scripts/bash/check-quality-gate.sh`, `check-env-config.sh`, `verify-stitch-design.sh`
+The rule strictly forbids modifying:
+- `vite.config.ts`, `vitest.config.ts`, and any quality tooling
+- `.specify/scripts/bash/*` quality scripts
 - `.specify/extensions.yml` hooks
-- test files, snapshots, fixtures, and coverage thresholds
-- lint rules, complexity thresholds, architecture zones, and `@shadcn/lint` rules
+- Test files, assertions, fixtures, or coverage thresholds to make a failing test pass
+- Lint rules, complexity limits, or architecture boundary overrides
+- Suppressions like `eslint-disable`, `oxlint-disable`, `@ts-ignore`, `@ts-expect-error`
 
-It also forbids `eslint-disable`/`oxlint-disable`/`ts-ignore` suppressions, lowering thresholds, deleting or skipping assertions, and regenerating golden screenshots to match a broken UI. When a gate fails, the model must fix the application code. If a gate is genuinely wrong, it must stop and request explicit human approval before changing it.
-
-The constitution section is idempotent: reinstalling the bundle never duplicates it, and an existing constitution is preserved.
-
----
-
-## Quality Gate Details
-
-### Environment variables
-
-Application code must not read `process.env` or `import.meta.env` directly. Create the typed module from `templates/env.config.ts.tmpl` (typically at `src/config/env.ts`) and import values from it:
-
-```ts
-// src/config/env.ts -- the only module allowed to read env variables
-export interface Env {
-  readonly API_BASE_URL: string;
-}
-
-export const env: Env = {
-  API_BASE_URL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5173',
-} satisfies Env;
-```
-
-```ts
-// src/features/billing/charge.ts -- correct usage
-import { env } from '../../config/env';
-
-charge(env.API_BASE_URL);
-```
-
-Run the gate directly with:
-
-```bash
-.specify/scripts/bash/check-env-config.sh
-# Custom config path:
-.specify/scripts/bash/check-env-config.sh --env-config=src/shared/settings.ts
-```
-
-### Vertical slice layout
-
-The layer rules are path-based and apply to every slice, not just `src/core`:
-
-```text
-src/
-  core/                         # shared layers (optional)
-  features/
-    billing/
-      domain/                   # cannot import application, infrastructure, ui
-      application/              # cannot import infrastructure, ui
-      infrastructure/           # cannot import ui
-      ui/                       # cannot import infrastructure directly
-    notifications/
-      domain/
-      application/
-      infrastructure/
-      ui/
-```
-
-### Strict Stitch token verification
-
-`tokens.css` generated by Stitch is the design-token source of truth. The visual gate fails when:
-
-- a UI feature has Stitch screenshots but no `tokens.css`;
-- `tokens.css` declares no `--*` custom properties;
-- any token declared in `tokens.css` is missing from the computed `:root` styles;
-- any token value in the DOM differs from the value in `tokens.css`.
-
-Validate the token file without launching Playwright:
-
-```bash
-.specify/scripts/bash/verify-stitch-design.sh --tokens-only --feature-dir=specs/001-feature
-```
-
-### Lifecycle Hooks Specialization & Mock Fixtures
-
-- **Fast Task Loop (`after_task`)**: Runs `check-quality-gate.sh` and `verify-stitch-design.sh --tokens-only`. This ensures that tasks involving domain, application, or infrastructure code are never blocked waiting for Playwright or failing on nonexistent UI routes.
-- **Full Visual Gate (`after_implement`)**: Runs the full visual Playwright audit comparing snapshots against Stitch golden masters.
-- **Deterministic Rendering**: Playwright injects font stabilization CSS (`-webkit-font-smoothing: antialiased`, disabled animations/carets) to ensure cross-platform snapshot consistency between macOS and Linux/CI.
-- **Mock Data Fixtures (`routes-manifest.json`)**: Dynamic or authenticated routes can declare local mock fixtures and target container selectors:
-  ```json
-  {
-    "screens": [
-      {
-        "id": "screen-main-dashboard",
-        "name": "Main Dashboard",
-        "route": "/cards/card-demo-123",
-        "selector": "main",
-        "waitForSelector": "main",
-        "fixtures": {
-          "/api/v1/cards/card-demo-123": "./fixtures/card.json"
-        }
-      }
-    ]
-  }
-  ```
-  Playwright automatically intercepts matching network requests (`page.route`) and fulfills them with local fixture data for 100% deterministic, backend-independent visual audits.
+When a gate fails, the model must fix the application code. If a gate is genuinely wrong, it must stop and request explicit human approval before changing it.
