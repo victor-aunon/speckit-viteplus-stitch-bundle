@@ -276,7 +276,18 @@ if (violations > 0 && !dryRun) {
 }
 
 console.log("\n✅ [CONTRACT GATE PASSED]: Route and component contracts are strictly satisfied.");
-process.exit(0);
 NODE_SCRIPT
 
-exit $?
+# 4. Enforce Ghost Classes Gate (no undeclared CSS classes in JSX)
+GHOST_SCRIPT="$SCRIPT_DIR/check-ghost-classes.sh"
+if [ -f "$GHOST_SCRIPT" ]; then
+  GHOST_ARGS=()
+  if [ "$DRY_RUN" = true ]; then
+    GHOST_ARGS+=("--dry-run")
+  fi
+  if ! bash "$GHOST_SCRIPT" "${GHOST_ARGS[@]}"; then
+    exit 1
+  fi
+fi
+
+exit 0
