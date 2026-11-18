@@ -61,6 +61,7 @@ steps:
   - id: audit-spec
     type: prompt
     integration: "{{ inputs.integration }}"
+    timeout: 600
     prompt: |
       Perform an automated Spec Quality & Completeness Audit on the generated specification:
 
@@ -99,6 +100,7 @@ steps:
       - id: stitch-design-generation
         type: prompt
         integration: "{{ inputs.integration }}"
+        timeout: 900
         prompt: |
           Generate high-fidelity UI screens and canonical design tokens using Google Stitch MCP:
 
@@ -107,6 +109,7 @@ steps:
           - TEXT-ONLY ASSETS RULE: Never attempt to download binary screenshots, create fake .png files, or call `read_file` on any `.png` file. In Gemini CLI, reading ASCII text with a `.png` extension triggers fatal Google API 400 codec errors. The complete visual design master is the HTML code (`<screen-id>.html`).
 
           STEPS:
+          0. Idempotency Check: Inspect `specs/<feature>/designs/`. If `.html` screens, `tokens.css`, and `routes-manifest.json` already exist, verify their completeness, ensure fixtures exist, and output the summary table immediately without re-generating from scratch.
           1. Inspect `specs/<feature>/spec.md` and `plan.md` to identify the core user journeys and all required screens/views.
           2. Locate or create the feature designs directory at `specs/<feature>/designs/` and subdirectory `specs/<feature>/designs/fixtures/`.
           3. Invoke Google Stitch MCP tools directly:
@@ -132,6 +135,7 @@ steps:
       - id: impeccable-critique
         type: prompt
         integration: "{{ inputs.integration }}"
+        timeout: 600
         prompt: |
           This feature includes UI components.
           Before the human design review gate, perform an Impeccable Design Critique:
@@ -181,6 +185,7 @@ steps:
   - id: verify
     type: prompt
     integration: "{{ inputs.integration }}"
+    timeout: 600
     prompt: |
       Perform empirical verification of the completed implementation:
 
