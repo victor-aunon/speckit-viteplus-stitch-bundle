@@ -47,6 +47,8 @@ describe('Bundle Installer Script E2E', () => {
     expect(packageJson.scripts['test']).toBe('vp test');
     expect(packageJson.scripts['build']).toBe('vp build');
     expect(packageJson.devDependencies['vite-plus']).toBeDefined();
+    expect(packageJson.devDependencies['@vitejs/plugin-react']).toBeDefined();
+    expect(packageJson.devDependencies['@shadcn/lint']).toBeDefined();
 
     const constitutionPath = path.join(tempDir, '.specify/memory/constitution.md');
     expect(fs.existsSync(constitutionPath)).toBe(true);
