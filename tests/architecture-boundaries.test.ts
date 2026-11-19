@@ -41,4 +41,10 @@ describe('Clean Architecture boundaries for vertical slices', () => {
     expect(content).toContain("files: ['**/src/**/ui/**', '**/src/ui/**']");
     expect(content).toContain("'max-lines-per-function': 'off'");
   });
+
+  it('exempts test files from the 50-line function length limit', () => {
+    const content = fs.readFileSync(viteTmpl, 'utf8');
+    expect(content).toContain("'**/*.test.{ts,tsx,js,jsx}'");
+    expect(content).toContain("'**/tests/**'");
+  });
 });

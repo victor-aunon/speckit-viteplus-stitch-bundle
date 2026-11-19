@@ -40,7 +40,7 @@ src/features/<slice>/
   - **Tailwind CSS**: Use semantic utility classes. Arbitrary brackets (e.g. `p-[13px]`) and raw unsemantic colors are forbidden by `@shadcn/lint`.
   - **Vanilla CSS**: All class names in JSX `className` must correspond to declared CSS rules in project stylesheets or design tokens (`tokens.css`). Ghost classes will fail `.specify/scripts/bash/check-ghost-classes.sh`.
 - **Atomic Design**: Strictly **one React component per file** (`react/no-multi-comp`).
-- **Function Line Limits**: Business logic functions (`domain`, `application`, `infrastructure`) must not exceed 50 lines or cyclomatic complexity 10. Presentation components under `src/**/ui/**` are legitimately exempt (`max-lines-per-function: 'off'`) to accommodate accessible JSX and ARIA attributes.
+- **Function Line Limits**: Business logic functions (`domain`, `application`, `infrastructure`) must not exceed 50 lines or cyclomatic complexity 10. Presentation components under `src/**/ui/**` and test suites (`**/*.test.*`, `tests/**`) are legitimately exempt (`max-lines-per-function: 'off'`) to accommodate accessible JSX and comprehensive `describe`/`it` test suites.
 
 ---
 

@@ -127,6 +127,18 @@ export default defineConfig({
           ],
         },
       },
+      // Test suites: omit function length limits for describe/it blocks
+      {
+        files: [
+          '**/*.test.{ts,tsx,js,jsx}',
+          '**/*.spec.{ts,tsx,js,jsx}',
+          '**/tests/**',
+          '**/test/**',
+        ],
+        rules: {
+          'max-lines-per-function': 'off',
+        },
+      },
     ],
   },
   fmt: {
