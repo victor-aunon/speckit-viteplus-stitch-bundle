@@ -76,6 +76,16 @@ In autonomous development, code that works functionally must also be inclusive a
 - **Accessibility Standards**: Every UI route tested with Playwright is audited for WCAG 2.1 AA violations (missing alt attributes, button accessible names, form labels, and color contrast). Any critical or serious violation fails the visual gate.
 - **Production Performance Budget**: The production build (`check-bundle-budget.sh`) strictly enforces asset size limits: individual chunks must not exceed 250 KB and total bundle size must not exceed 1000 KB. Agents must use code-splitting, dynamic imports, and treeshaking, and are forbidden from installing bloated libraries.
 
+## Complete Styling Pipeline Integrity (Closed-Circuit Wiring)
+
+When a project utilizes Tailwind CSS or a dynamic utility framework:
+- **Never leave styling unwired**: Creating `tailwind.config.*` or installing `tailwindcss` without connecting the bundler pipeline is strictly prohibited.
+- **Three-Point Connection Required**:
+  1. **Bundler Integration**: Register the Tailwind plugin in `vite.config.ts` (e.g. `@tailwindcss/vite` for Tailwind v4) or configure `postcss.config.js`.
+  2. **Stylesheet Directives**: Declare Tailwind in your primary stylesheet (e.g. `@import "tailwindcss";` in `src/styles/app.css` for v4, or `@tailwind base; @tailwind components; @tailwind utilities;` for v3).
+  3. **Application Consumption**: Import the primary stylesheet in the application entrypoint (`src/main.tsx` or `index.html`).
+- The `check-ghost-classes.sh` gate validates that all three links are active. Unwired utility classes in JSX without a functioning bundler pipeline will fail the gate immediately.
+
 
 
 

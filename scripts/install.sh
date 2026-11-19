@@ -257,7 +257,21 @@ if [ ! -f "$PACKAGE_FILE" ]; then
   fi
 fi
 
-# 8. Register in workflow-registry.json if present
+# 8. Provision .npmrc with legacy-peer-deps=true for Vite+ peer dependency resolution
+NPMRC_FILE="$TARGET_DIR/.npmrc"
+if [ ! -f "$NPMRC_FILE" ]; then
+  if [ -f "$BUNDLE_ROOT/templates/.npmrc.tmpl" ]; then
+    cp "$BUNDLE_ROOT/templates/.npmrc.tmpl" "$NPMRC_FILE"
+  else
+    echo "legacy-peer-deps=true" > "$NPMRC_FILE"
+  fi
+  echo "✓ Initialized .npmrc (legacy-peer-deps=true) for Vite+ compatibility"
+elif ! grep -q "legacy-peer-deps" "$NPMRC_FILE"; then
+  echo "legacy-peer-deps=true" >> "$NPMRC_FILE"
+  echo "✓ Added legacy-peer-deps=true to existing .npmrc"
+fi
+
+# 9. Register in workflow-registry.json if present
 REGISTRY_FILE="$SPECIFY_DIR/workflows/workflow-registry.json"
 if [ -f "$REGISTRY_FILE" ]; then
   TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u)"

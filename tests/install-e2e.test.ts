@@ -49,6 +49,12 @@ describe('Bundle Installer Script E2E', () => {
     expect(packageJson.devDependencies['vite-plus']).toBeDefined();
     expect(packageJson.devDependencies['@vitejs/plugin-react']).toBeDefined();
     expect(packageJson.devDependencies['@shadcn/lint']).toBeDefined();
+    expect(packageJson.overrides).toBeDefined();
+    expect(packageJson.overrides['@vitejs/plugin-react']).toEqual({ vite: '$vite' });
+
+    const npmrcPath = path.join(tempDir, '.npmrc');
+    expect(fs.existsSync(npmrcPath)).toBe(true);
+    expect(fs.readFileSync(npmrcPath, 'utf8')).toContain('legacy-peer-deps=true');
 
     const constitutionPath = path.join(tempDir, '.specify/memory/constitution.md');
     expect(fs.existsSync(constitutionPath)).toBe(true);

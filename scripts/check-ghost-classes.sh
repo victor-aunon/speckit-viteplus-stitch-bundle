@@ -86,10 +86,123 @@ if (!force) {
     'css-in-js',
   ];
 
+  function verifyTailwindWiring(srcDir) {
+    const issues = [];
+
+    // 1. Check Bundler / PostCSS configuration
+    const viteConfigs = [
+      'vite.config.ts', 'vite.config.js', 'vite.config.mjs', 'vite.config.cjs',
+      path.join(process.cwd(), 'vite.config.ts'), path.join(process.cwd(), 'vite.config.js'),
+    ];
+    const postcssConfigs = [
+      'postcss.config.js', 'postcss.config.ts', 'postcss.config.cjs', 'postcss.config.mjs',
+      '.postcssrc', '.postcssrc.json', '.postcssrc.js',
+      path.join(process.cwd(), 'postcss.config.js'), path.join(process.cwd(), 'postcss.config.cjs'),
+    ];
+
+    let bundlerWired = false;
+    for (const vc of viteConfigs) {
+      if (fs.existsSync(vc)) {
+        const content = fs.readFileSync(vc, 'utf8');
+        if (/@tailwindcss\/vite|tailwindcss/i.test(content)) {
+          bundlerWired = true;
+          break;
+        }
+      }
+    }
+    if (!bundlerWired) {
+      for (const pc of postcssConfigs) {
+        if (fs.existsSync(pc)) {
+          const content = fs.readFileSync(pc, 'utf8');
+          if (/tailwindcss|@tailwindcss\/postcss/i.test(content)) {
+            bundlerWired = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // 2. Check CSS file with Tailwind directives
+    let cssFileWithTailwind = null;
+    function findTailwindCss(dir) {
+      if (!fs.existsSync(dir)) return null;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!['node_modules', '.git', 'dist'].includes(entry.name)) {
+            const found = findTailwindCss(fullPath);
+            if (found) return found;
+          }
+        } else if (entry.isFile() && entry.name.endsWith('.css')) {
+          const content = fs.readFileSync(fullPath, 'utf8');
+          if (/@import\s+["']tailwindcss["']|@tailwind\b|@theme\b/.test(content)) {
+            return fullPath;
+          }
+        }
+      }
+      return null;
+    }
+    cssFileWithTailwind = findTailwindCss(srcDir) || findTailwindCss('.');
+
+    // 3. Check App entrypoint importing the CSS
+    let appImportsCss = false;
+    const entryCandidates = [
+      path.join(srcDir, 'main.tsx'), path.join(srcDir, 'main.jsx'),
+      path.join(srcDir, 'index.tsx'), path.join(srcDir, 'index.jsx'),
+      path.join(srcDir, 'App.tsx'), path.join(srcDir, 'App.jsx'),
+      'index.html', path.join(process.cwd(), 'index.html'),
+    ];
+
+    for (const entry of entryCandidates) {
+      if (fs.existsSync(entry)) {
+        const content = fs.readFileSync(entry, 'utf8');
+        if (cssFileWithTailwind) {
+          const cssBase = path.basename(cssFileWithTailwind);
+          if (content.includes(cssBase) || /\.css['"]/.test(content) || /<link[^>]+rel=["']stylesheet["']/i.test(content)) {
+            appImportsCss = true;
+            break;
+          }
+        } else if (/\.css['"]/.test(content) || /<link[^>]+rel=["']stylesheet["']/i.test(content)) {
+          appImportsCss = true;
+          break;
+        }
+      }
+    }
+
+    if (!bundlerWired) {
+      issues.push("Bundler missing Tailwind plugin: neither '@tailwindcss/vite' in vite.config.* nor 'tailwindcss' in postcss.config.* found.");
+    }
+    if (!cssFileWithTailwind) {
+      issues.push("No project stylesheet declares Tailwind directives (e.g. '@import \"tailwindcss\";' for v4 or '@tailwind base;' for v3).");
+    }
+    if (!appImportsCss) {
+      issues.push("Application entrypoint (e.g. src/main.tsx, src/App.tsx, or index.html) does not import any CSS stylesheet.");
+    }
+
+    return { isWired: issues.length === 0, issues };
+  }
+
   if (engine === 'css' || engine === 'static') {
     // Explicitly requested static CSS verification
   } else if (engine !== 'auto') {
-    if (dynamicEngines.includes(engine)) {
+    if (engine === 'tailwind' || engine === 'tailwindcss') {
+      const wiring = verifyTailwindWiring(srcDirArg);
+      if (!wiring.isWired) {
+        console.error(`❌ [STYLE WIRING VIOLATION]: Tailwind CSS explicitly configured, but the styling pipeline is disconnected:`);
+        wiring.issues.forEach(issue => console.error(`   - ${issue}`));
+        console.error('\nWithout complete bundler & stylesheet wiring, the browser will receive utility class names without any matching CSS rules!');
+        if (!dryRun) {
+          process.exit(1);
+        }
+      } else {
+        console.log(`ℹ️  [GHOST CLASSES GATE]: Style engine 'tailwind' explicitly configured.`);
+        console.log('✓ Verified: Bundler plugin, Tailwind CSS directives, and application entrypoint are fully wired.');
+        console.log('ℹ️  Dynamic/scoped classes in use; skipping static CSS declaration checks.');
+        console.log(`\n✅ [GHOST CLASSES GATE PASSED]: tailwind active and properly wired.`);
+        process.exit(0);
+      }
+    } else if (dynamicEngines.includes(engine)) {
       console.log(`ℹ️  [GHOST CLASSES GATE]: Style engine '${engine}' explicitly configured.`);
       console.log('ℹ️  Dynamic/scoped classes in use; skipping static CSS declaration checks.');
       console.log(`\n✅ [GHOST CLASSES GATE PASSED]: ${engine} active.`);
@@ -240,7 +353,24 @@ if (!force) {
       }
     }
 
-    if (detectedEngine) {
+    if (detectedEngine === 'Tailwind CSS') {
+      const wiring = verifyTailwindWiring(srcDirArg);
+      if (!wiring.isWired) {
+        console.error(`❌ [STYLE WIRING VIOLATION]: Tailwind CSS detected in project (${detectReason}), but the styling pipeline is disconnected:`);
+        wiring.issues.forEach(issue => console.error(`   - ${issue}`));
+        console.error('\nWithout complete bundler & stylesheet wiring, the browser receives utility class names without any matching CSS rules!');
+        console.error('Please connect Tailwind in vite.config.ts / postcss.config.js, import it in CSS, and load the stylesheet in your application entrypoint.');
+        if (!dryRun) {
+          process.exit(1);
+        }
+      } else {
+        console.log(`ℹ️  [GHOST CLASSES GATE]: Tailwind CSS detected in project (${detectReason}).`);
+        console.log('✓ Verified: Bundler plugin, Tailwind CSS directives, and application entrypoint are fully wired.');
+        console.log('ℹ️  Utility classes are generated dynamically by the active pipeline; skipping static CSS declaration checks.');
+        console.log('\n✅ [GHOST CLASSES GATE PASSED]: Tailwind CSS active and properly wired.');
+        process.exit(0);
+      }
+    } else if (detectedEngine) {
       console.log(`ℹ️  [GHOST CLASSES GATE]: ${detectedEngine} detected in project (${detectReason}).`);
       console.log('ℹ️  Dynamic/scoped classes in use; skipping static CSS declaration checks.');
       console.log(`\n✅ [GHOST CLASSES GATE PASSED]: ${detectedEngine} active.`);
