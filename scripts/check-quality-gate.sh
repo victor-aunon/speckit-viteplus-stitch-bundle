@@ -78,6 +78,20 @@ for arg in "$@"; do
   esac
 done
 
+# Resolve scope from environment variable if not passed as CLI argument
+if [ -z "$SCOPE_DIR" ] && [ -n "${SPECIFY_SCOPE:-}" ]; then
+  SCOPE_DIR="$SPECIFY_SCOPE"
+fi
+
+# Auto-detect scope if inside a git work tree and changes are isolated to a single feature slice
+if [ -z "$SCOPE_DIR" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  MODIFIED_SLICES=($(git status --porcelain 2>/dev/null | awk '{print $2}' | grep -E '^src/features/[^/]+' | cut -d/ -f1-3 | sort -u || true))
+  if [ ${#MODIFIED_SLICES[@]} -eq 1 ]; then
+    SCOPE_DIR="${MODIFIED_SLICES[0]}"
+    echo "ℹ️  Auto-detected feature scope from git status: $SCOPE_DIR"
+  fi
+fi
+
 echo "======================================================================"
 echo "[QUALITY GATE] Starting deterministic quality check with Vite+"
 echo "======================================================================"
@@ -197,6 +211,10 @@ if [ "$SKIP_TESTS" = false ]; then
   fi
 
   if [ -n "$TEST_CMD" ]; then
+    if [ -n "$SCOPE_DIR" ]; then
+      echo "ℹ️  Scoped regression check active: filtering test execution to '$SCOPE_DIR'"
+      TEST_CMD="$TEST_CMD $SCOPE_DIR"
+    fi
     echo "✓ Test runner detected: $TEST_CMD"
     TEST_STATUS=0
     $TEST_CMD || TEST_STATUS=$?

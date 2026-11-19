@@ -37,6 +37,7 @@ FEATURE_DIR=""
 UPDATE_SNAPSHOTS=false
 TOKENS_ONLY=false
 SKIP_ORPHANS=false
+SCOPE_DIR=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -55,6 +56,9 @@ for arg in "$@"; do
       ;;
     --skip-orphans)
       SKIP_ORPHANS=true
+      ;;
+    --scope=*)
+      SCOPE_DIR="${arg#*=}"
       ;;
     *)
       ;;
@@ -120,6 +124,9 @@ if [ -f "$CONTRACT_SCRIPT" ]; then
   CONTRACT_FLAGS=("--feature-dir=$FEATURE_DIR" "--check-atomic")
   if [ "$SKIP_ORPHANS" = false ]; then
     CONTRACT_FLAGS+=("--check-orphans")
+  fi
+  if [ -n "$SCOPE_DIR" ]; then
+    CONTRACT_FLAGS+=("--scope=$SCOPE_DIR")
   fi
   if ! bash "$CONTRACT_SCRIPT" "${CONTRACT_FLAGS[@]}"; then
     echo ""

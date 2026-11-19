@@ -84,6 +84,8 @@ describe('Workflow YAML Schema Validation', () => {
     expect(reviewDesignGate.on_reject).toBe('abort');
 
     expect(wf.inputs.spec).toBeDefined();
+    expect(wf.inputs.scope).toBeDefined();
+    expect(wf.inputs.scope.default).toBe('');
     expect(wf.inputs.has_ui).toBeDefined();
     expect(wf.inputs.has_ui.default).toBe(true);
     expect(wf.inputs.enable_stitch).toBeDefined();

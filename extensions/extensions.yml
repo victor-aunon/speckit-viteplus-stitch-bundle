@@ -3,18 +3,18 @@ schema_version: "1.0"
 hooks:
   after_task:
     - name: "viteplus-quality-gate"
-      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, typed env config guard, and regression tests)"
-      command: ".specify/scripts/bash/check-quality-gate.sh"
+      description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, typed env config guard, and scoped regression tests without build)"
+      command: ".specify/scripts/bash/check-quality-gate.sh --skip-build ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
       optional: false
 
     - name: "stitch-tokens-gate"
       description: "Validates Stitch CSS design tokens without running full visual Playwright suite"
-      command: ".specify/scripts/bash/verify-stitch-design.sh --tokens-only"
+      command: ".specify/scripts/bash/verify-stitch-design.sh --tokens-only --skip-orphans ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
       optional: false
 
   after_implement:
     - name: "final-quality-gate"
-      description: "Comprehensive final verification of quality, architecture, and full test suite"
+      description: "Comprehensive final verification of quality, architecture, production build, and full test suite"
       command: ".specify/scripts/bash/check-quality-gate.sh"
       optional: false
     - name: "bundle-budget-gate"

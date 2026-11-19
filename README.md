@@ -197,6 +197,7 @@ When running `specify workflow run viteplus-stitch`, you can configure the behav
 | Input Parameter | Type | Default | Required? | Description & Usage |
 |---|:---:|:---:|:---:|---|
 | **`spec`** | `string` | — | **Yes** | Natural language description or feature prompt detailing what to build. |
+| **`scope`** | `string` | `""` | No | Restricts all code changes, test executions, and blast radius checks to a specific feature slice (e.g. `src/features/billing`). When empty, auto-detects from git status or targets the full project. |
 | **`has_ui`** | `boolean` | `true` | No | Controls UI-specific phases. When `false`, completely skips Google Stitch, Impeccable critique, Playwright visual gates, route contracts, and ghost classes check. Ideal for backend, domain, or CLI features. |
 | **`enable_stitch`** | `boolean` | `true` | No | When `has_ui: true`, toggles whether to use Google Stitch MCP for automated design generation (`true`) or use component wireframes defined directly in `plan.md` (`false`). |
 | **`auto_continue`** | `boolean` | `false` | No | Enables **Unattended Mode**. When `true`, automatically bypasses human approval gates (`review-spec`, `review-design`, and phase-by-phase pauses) once automated quality gates pass. When `false` (default), pauses for human confirmation. |
@@ -209,22 +210,27 @@ When running `specify workflow run viteplus-stitch`, you can configure the behav
 specify workflow run viteplus-stitch \
   -i spec="Create a Daily Habit & Streak Tracker with weekly analytics"
 
-# 2. Unattended Full UI Workflow: Runs all phases autonomously until completion
+# 2. Scoped Feature Workflow: Constrains changes and regression tests to a single slice
+specify workflow run viteplus-stitch \
+  -i spec="Add weekly streak chart" \
+  -i scope="src/features/habits"
+
+# 3. Unattended Full UI Workflow: Runs all phases autonomously until completion
 specify workflow run viteplus-stitch \
   -i spec="Create a Daily Habit & Streak Tracker" \
   -i auto_continue=true
 
-# 3. Non-UI / Backend Feature: Skips visual design and UI gates entirely
+# 4. Non-UI / Backend Feature: Skips visual design and UI gates entirely
 specify workflow run viteplus-stitch \
   -i spec="Add JWT authentication middleware and token refresher" \
   -i has_ui=false
 
-# 4. UI Feature without Google Stitch: Uses local wireframes and Impeccable craft
+# 5. UI Feature without Google Stitch: Uses local wireframes and Impeccable craft
 specify workflow run viteplus-stitch \
   -i spec="Add billing plans selector" \
   -i enable_stitch=false
 
-# 5. Force specific AI model runner
+# 6. Force specific AI model runner
 specify workflow run viteplus-stitch \
   -i spec="Implement user settings profile" \
   -i integration=gemini
@@ -245,13 +251,16 @@ Runs formatting (Oxfmt Airbnb), linting (Oxlint with complexity limits), TypeScr
 # Run all deterministic checks (including tests and compilation)
 bash .specify/scripts/bash/check-quality-gate.sh
 
+# Target a specific feature slice (scopes blast-radius and limits regression tests to that slice)
+bash .specify/scripts/bash/check-quality-gate.sh --scope=src/features/billing
+
 # Automatically format code issues via Oxfmt / Vite+
 bash .specify/scripts/bash/check-quality-gate.sh --fix
 
 # Skip regression tests
 bash .specify/scripts/bash/check-quality-gate.sh --skip-tests
 
-# Skip application compilation/build
+# Skip application compilation/build (used during intermediate after_task checks)
 bash .specify/scripts/bash/check-quality-gate.sh --skip-build
 
 # Report violations without exiting with error code
@@ -275,19 +284,30 @@ bash .specify/scripts/bash/check-contracts.sh \
   --check-atomic
 ```
 
-### 3. `check-ghost-classes.sh` (Ghost Classes Gate & Tailwind Auto-Detection)
+### 3. `check-ghost-classes.sh` (Ghost Classes Gate & Multi-Engine Styling Support)
 Scans all JSX/TSX files for class names in `className` attributes and verifies that each referenced class exists in at least one stylesheet (`src/**/*.css`, `tokens.css`).
 
-**Tailwind CSS Compatibility:** Automatically detects if the project uses Tailwind CSS (`tailwind.config.*`, `@tailwindcss` in `package.json`, or `@import "tailwindcss"` in stylesheets). When Tailwind is active, dynamic utility classes are generated on demand, so static CSS class checks are automatically skipped. You can pass `--force` to mandate static declarations.
+**Multi-Engine Style Auto-Detection:** Automatically detects if the project uses a dynamic or scoped CSS solution:
+- **Tailwind CSS:** `tailwind.config.*`, `@tailwindcss` in `package.json`, `@import "tailwindcss"`, `@theme`, `@tailwind`.
+- **UnoCSS:** `uno.config.*`, `unocss.config.*`, `unocss` dependencies.
+- **Panda CSS:** `panda.config.*`, `@pandacss/dev` dependencies.
+- **Vanilla Extract:** `*.css.ts` files, `@vanilla-extract/css` dependencies.
+- **CSS Modules:** `*.module.css` / `*.module.scss` files.
+- **CSS-in-JS:** `styled-components`, `@emotion/react`, `@stylexjs/stylex`.
+
+When a dynamic/scoped engine is active, static class declaration checks are automatically skipped. You can pass `--force` or `--style-engine=css` to mandate static CSS declarations, or `--style-engine=<engine>` to explicitly set the style engine.
 
 ```bash
-# Check for ghost classes in src/ (auto-detects Tailwind)
+# Check for ghost classes in src/ (auto-detects style engine)
 bash .specify/scripts/bash/check-ghost-classes.sh
+
+# Explicitly declare style engine (tailwind, css-modules, unocss, panda, vanilla-extract, styled-components, emotion, css)
+bash .specify/scripts/bash/check-ghost-classes.sh --style-engine=css-modules
 
 # Custom source directory
 bash .specify/scripts/bash/check-ghost-classes.sh --src-dir=src/components
 
-# Force static CSS verification even if Tailwind is present
+# Force static CSS verification even if a dynamic engine is present
 bash .specify/scripts/bash/check-ghost-classes.sh --force
 
 # Dry run mode

@@ -18,11 +18,16 @@ set -euo pipefail
 SRC_DIR="src"
 DRY_RUN=false
 FORCE=false
+STYLE_ENGINE="auto"
 
 for arg in "$@"; do
   case $arg in
     --src-dir=*)
       SRC_DIR="${arg#*=}"
+      shift
+      ;;
+    --style-engine=*)
+      STYLE_ENGINE="${arg#*=}"
       shift
       ;;
     --dry-run)
@@ -37,10 +42,11 @@ for arg in "$@"; do
       echo "Usage: check-ghost-classes.sh [OPTIONS]"
       echo ""
       echo "Options:"
-      echo "  --src-dir=<path>   Path to component source directory (default: src)"
-      echo "  --dry-run          Report violations without exiting with non-zero code"
-      echo "  --force            Enforce static class check even if Tailwind CSS is detected"
-      echo "  --help             Show this help message"
+      echo "  --src-dir=<path>        Path to component source directory (default: src)"
+      echo "  --style-engine=<engine> Override style engine (auto, tailwind, css-modules, unocss, panda, vanilla-extract, styled-components, emotion, css)"
+      echo "  --dry-run               Report violations without exiting with non-zero code"
+      echo "  --force                 Enforce static class check even if a dynamic style engine is detected"
+      echo "  --help                  Show this help message"
       exit 0
       ;;
     *)
@@ -57,82 +63,189 @@ if [ ! -d "$SRC_DIR" ]; then
   exit 0
 fi
 
-node - "$SRC_DIR" "$DRY_RUN" "$FORCE" << 'NODE_SCRIPT'
+node - "$SRC_DIR" "$DRY_RUN" "$FORCE" "$STYLE_ENGINE" << 'NODE_SCRIPT'
 const fs = require('fs');
 const path = require('path');
 
-const [,, srcDirArg, dryRunArg, forceArg] = process.argv;
+const [,, srcDirArg, dryRunArg, forceArg, styleEngineArg = 'auto'] = process.argv;
 const dryRun = dryRunArg === 'true';
 const force = forceArg === 'true';
+const engine = (styleEngineArg || 'auto').toLowerCase();
 
-// 0. Auto-detect Tailwind CSS
+// 0. Auto-detect or validate Style Engine
 if (!force) {
-  let hasTailwind = false;
-  let tailwindReason = '';
-
-  // Check config files
-  const twConfigs = [
-    'tailwind.config.js',
-    'tailwind.config.ts',
-    'tailwind.config.cjs',
-    'tailwind.config.mjs',
-    path.join(process.cwd(), 'tailwind.config.js'),
-    path.join(process.cwd(), 'tailwind.config.ts'),
-    path.join(process.cwd(), 'tailwind.config.cjs'),
-    path.join(process.cwd(), 'tailwind.config.mjs'),
+  const dynamicEngines = [
+    'tailwind', 'tailwindcss',
+    'css-modules', 'modules',
+    'unocss',
+    'panda', 'pandacss',
+    'vanilla-extract',
+    'styled-components',
+    'emotion',
+    'stylex',
+    'css-in-js',
   ];
-  for (const cfg of twConfigs) {
-    if (fs.existsSync(cfg)) {
-      hasTailwind = true;
-      tailwindReason = `config file '${path.basename(cfg)}' found`;
-      break;
+
+  if (engine === 'css' || engine === 'static') {
+    // Explicitly requested static CSS verification
+  } else if (engine !== 'auto') {
+    if (dynamicEngines.includes(engine)) {
+      console.log(`ℹ️  [GHOST CLASSES GATE]: Style engine '${engine}' explicitly configured.`);
+      console.log('ℹ️  Dynamic/scoped classes in use; skipping static CSS declaration checks.');
+      console.log(`\n✅ [GHOST CLASSES GATE PASSED]: ${engine} active.`);
+      process.exit(0);
     }
-  }
+  } else {
+    let detectedEngine = '';
+    let detectReason = '';
 
-  // Check package.json
-  if (!hasTailwind && fs.existsSync('package.json')) {
-    try {
-      const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-      const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-      if (deps['tailwindcss'] || deps['@tailwindcss/vite'] || deps['@tailwindcss/postcss']) {
-        hasTailwind = true;
-        tailwindReason = 'Tailwind CSS dependency in package.json';
+    // 0.A Tailwind CSS configs
+    const twConfigs = [
+      'tailwind.config.js', 'tailwind.config.ts', 'tailwind.config.cjs', 'tailwind.config.mjs',
+      path.join(process.cwd(), 'tailwind.config.js'), path.join(process.cwd(), 'tailwind.config.ts'),
+      path.join(process.cwd(), 'tailwind.config.cjs'), path.join(process.cwd(), 'tailwind.config.mjs'),
+    ];
+    for (const cfg of twConfigs) {
+      if (fs.existsSync(cfg)) {
+        detectedEngine = 'Tailwind CSS';
+        detectReason = `config file '${path.basename(cfg)}' found`;
+        break;
       }
-    } catch (e) {}
-  }
+    }
 
-  // Check CSS files for @import "tailwindcss" or @tailwind directives
-  if (!hasTailwind) {
-    function checkCssForTailwind(dir) {
-      if (!fs.existsSync(dir)) return false;
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (!['node_modules', '.git', 'dist'].includes(entry.name)) {
-            if (checkCssForTailwind(fullPath)) return true;
+    // 0.B UnoCSS configs
+    if (!detectedEngine) {
+      const unoConfigs = ['uno.config.js', 'uno.config.ts', 'unocss.config.js', 'unocss.config.ts'];
+      for (const cfg of unoConfigs) {
+        if (fs.existsSync(cfg) || fs.existsSync(path.join(process.cwd(), cfg))) {
+          detectedEngine = 'UnoCSS';
+          detectReason = `config file '${cfg}' found`;
+          break;
+        }
+      }
+    }
+
+    // 0.C Panda CSS configs
+    if (!detectedEngine) {
+      const pandaConfigs = ['panda.config.js', 'panda.config.ts', 'panda.config.mjs', 'panda.config.cjs'];
+      for (const cfg of pandaConfigs) {
+        if (fs.existsSync(cfg) || fs.existsSync(path.join(process.cwd(), cfg))) {
+          detectedEngine = 'Panda CSS';
+          detectReason = `config file '${cfg}' found`;
+          break;
+        }
+      }
+    }
+
+    // 0.D Check package.json dependencies
+    if (!detectedEngine && fs.existsSync('package.json')) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+        const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+        if (deps['tailwindcss'] || deps['@tailwindcss/vite'] || deps['@tailwindcss/postcss']) {
+          detectedEngine = 'Tailwind CSS';
+          detectReason = 'Tailwind CSS dependency in package.json';
+        } else if (deps['unocss'] || deps['@unocss/vite'] || deps['@unocss/postcss']) {
+          detectedEngine = 'UnoCSS';
+          detectReason = 'UnoCSS dependency in package.json';
+        } else if (deps['@pandacss/dev']) {
+          detectedEngine = 'Panda CSS';
+          detectReason = 'Panda CSS dependency in package.json';
+        } else if (deps['@vanilla-extract/css'] || deps['@vanilla-extract/vite-plugin']) {
+          detectedEngine = 'Vanilla Extract';
+          detectReason = 'Vanilla Extract dependency in package.json';
+        } else if (deps['styled-components']) {
+          detectedEngine = 'Styled Components';
+          detectReason = 'styled-components dependency in package.json';
+        } else if (deps['@emotion/react'] || deps['@emotion/styled']) {
+          detectedEngine = 'Emotion';
+          detectReason = 'Emotion dependency in package.json';
+        } else if (deps['@stylexjs/stylex']) {
+          detectedEngine = 'StyleX';
+          detectReason = 'StyleX dependency in package.json';
+        }
+      } catch (e) {}
+    }
+
+    // 0.E Check CSS files for Tailwind directives
+    if (!detectedEngine) {
+      function checkCssForTailwind(dir) {
+        if (!fs.existsSync(dir)) return false;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (!['node_modules', '.git', 'dist'].includes(entry.name)) {
+              if (checkCssForTailwind(fullPath)) return true;
+            }
+          } else if (entry.isFile() && entry.name.endsWith('.css')) {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            if (/@import\s+["']tailwindcss["']|@tailwind\b|@theme\b/.test(content)) {
+              return true;
+            }
           }
-        } else if (entry.isFile() && entry.name.endsWith('.css')) {
-          const content = fs.readFileSync(fullPath, 'utf8');
-          if (/@import\s+["']tailwindcss["']|@tailwind\b|@theme\b/.test(content)) {
+        }
+        return false;
+      }
+
+      if (checkCssForTailwind(srcDirArg) || checkCssForTailwind('.')) {
+        detectedEngine = 'Tailwind CSS';
+        detectReason = 'Tailwind CSS @import or directive found in stylesheet';
+      }
+    }
+
+    // 0.F Check for CSS Modules (*.module.css / *.module.scss)
+    if (!detectedEngine) {
+      function checkCssModules(dir) {
+        if (!fs.existsSync(dir)) return false;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (!['node_modules', '.git', 'dist'].includes(entry.name)) {
+              if (checkCssModules(fullPath)) return true;
+            }
+          } else if (entry.isFile() && /\.module\.(css|scss|sass|less)$/.test(entry.name)) {
             return true;
           }
         }
+        return false;
       }
-      return false;
+      if (checkCssModules(srcDirArg)) {
+        detectedEngine = 'CSS Modules';
+        detectReason = 'CSS Modules (*.module.css) files detected';
+      }
     }
 
-    if (checkCssForTailwind(srcDirArg) || checkCssForTailwind('.')) {
-      hasTailwind = true;
-      tailwindReason = 'Tailwind CSS @import or directive found in stylesheet';
+    // 0.G Check for Vanilla Extract files (*.css.ts)
+    if (!detectedEngine) {
+      function checkVanillaExtract(dir) {
+        if (!fs.existsSync(dir)) return false;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (!['node_modules', '.git', 'dist'].includes(entry.name)) {
+              if (checkVanillaExtract(fullPath)) return true;
+            }
+          } else if (entry.isFile() && entry.name.endsWith('.css.ts')) {
+            return true;
+          }
+        }
+        return false;
+      }
+      if (checkVanillaExtract(srcDirArg)) {
+        detectedEngine = 'Vanilla Extract';
+        detectReason = 'Vanilla Extract (*.css.ts) files detected';
+      }
     }
-  }
 
-  if (hasTailwind) {
-    console.log(`ℹ️  [GHOST CLASSES GATE]: Tailwind CSS detected in project (${tailwindReason}).`);
-    console.log('ℹ️  Utility classes are generated dynamically; skipping static CSS declaration checks.');
-    console.log('\n✅ [GHOST CLASSES GATE PASSED]: Tailwind CSS active.');
-    process.exit(0);
+    if (detectedEngine) {
+      console.log(`ℹ️  [GHOST CLASSES GATE]: ${detectedEngine} detected in project (${detectReason}).`);
+      console.log('ℹ️  Dynamic/scoped classes in use; skipping static CSS declaration checks.');
+      console.log(`\n✅ [GHOST CLASSES GATE PASSED]: ${detectedEngine} active.`);
+      process.exit(0);
+    }
   }
 }
 

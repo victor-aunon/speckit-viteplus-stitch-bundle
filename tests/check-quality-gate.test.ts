@@ -60,6 +60,14 @@ describe('check-quality-gate.sh', () => {
     expect(content).toContain('exit 1');
   });
 
+  it('should support --scope and filter regression test execution', () => {
+    const content = fs.readFileSync(scriptPath, 'utf8');
+    expect(content).toContain('Scoped regression check active');
+    expect(content).toContain('TEST_CMD="$TEST_CMD $SCOPE_DIR"');
+    expect(content).toContain('SPECIFY_SCOPE');
+    expect(content).toContain('Auto-detected feature scope from git status');
+  });
+
   it('should fail from a real project when application code reads env directly', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-gate-env-test-'));
     const featureDir = path.join(tempDir, 'src/features/billing');

@@ -14,6 +14,10 @@ inputs:
     type: string
     required: true
     prompt: "Describe the feature you want to build"
+  scope:
+    type: string
+    default: ""
+    prompt: "Target feature directory slice (e.g. src/features/billing; leave empty for auto-detection)"
   has_ui:
     type: boolean
     default: true
@@ -40,7 +44,10 @@ steps:
       Before any work starts, read `.specify/workflows/viteplus-stitch/GUARDRAILS.md`
       and `.specify/memory/constitution.md` (sections "Quality Gate Integrity" and
       "Impeccable UI Craft Lifecycle").
-
+      {% if inputs.scope %}
+      FEATURE SCOPE RESTRICTION: All work is restricted to slice '{{ inputs.scope }}'.
+      Do NOT modify or create application source files outside this directory.
+      {% endif %}
       NON-NEGOTIABLE RULE: at no point may you modify Vite settings
       (`vite.config.ts` or any Vite/Vite+ config), weaken `package.json` quality scripts,
       alter the quality scripts (`.specify/scripts/bash/check-quality-gate.sh`,
@@ -92,7 +99,7 @@ steps:
     command: speckit.plan
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.spec }} --with-viteplus {% if inputs.has_ui and inputs.enable_stitch %}--with-stitch{% endif %}"
+      args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --with-viteplus {% if inputs.has_ui and inputs.enable_stitch %}--with-stitch{% endif %}"
 
   - id: generate-designs
     type: if
@@ -165,7 +172,7 @@ steps:
     command: speckit.tasks
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.spec }} --phased {% if inputs.has_ui %}--with-impeccable-lifecycle{% endif %}"
+      args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased {% if inputs.has_ui %}--with-impeccable-lifecycle{% endif %}"
 
   - id: implement
     type: if
@@ -175,13 +182,13 @@ steps:
         command: speckit.implement
         integration: "{{ inputs.integration }}"
         input:
-          args: "{{ inputs.spec }} --phased --verify-gates --auto-continue"
+          args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --auto-continue"
     else:
       - id: implement-paused
         command: speckit.implement
         integration: "{{ inputs.integration }}"
         input:
-          args: "{{ inputs.spec }} --phased --verify-gates --pause-after-phase"
+          args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --pause-after-phase"
 
   - id: verify
     type: prompt

@@ -166,4 +166,149 @@ describe('check-ghost-classes.sh', () => {
       removeDir(tempDir);
     }
   });
+
+  it('skips ghost classes check when --style-engine explicitly specifies a dynamic engine', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-style-engine-flag-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(srcDir, 'Card.tsx'),
+        'export const Card = () => <div className="dynamic-scoped-class">Component</div>;\n',
+      );
+
+      const result = runBash(scriptPath, [`--src-dir=${srcDir}`, '--style-engine=styled-components'], { cwd: tempDir });
+      expect(result).toContain("Style engine 'styled-components' explicitly configured");
+      expect(result).toContain('GHOST CLASSES GATE PASSED');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('autodetects UnoCSS and skips static check', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-unocss-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(tempDir, 'uno.config.ts'), 'export default {};\n');
+      fs.writeFileSync(
+        path.join(srcDir, 'Header.tsx'),
+        'export const Header = () => <header className="text-red-500 font-bold">Uno</header>;\n',
+      );
+
+      const result = runBash(scriptPath, [`--src-dir=${srcDir}`], { cwd: tempDir });
+      expect(result).toContain('UnoCSS detected');
+      expect(result).toContain('GHOST CLASSES GATE PASSED');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('autodetects Panda CSS and skips static check', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-panda-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(tempDir, 'panda.config.ts'), 'export default {};\n');
+      fs.writeFileSync(
+        path.join(srcDir, 'Box.tsx'),
+        'export const Box = () => <div className="panda-box">Panda</div>;\n',
+      );
+
+      const result = runBash(scriptPath, [`--src-dir=${srcDir}`], { cwd: tempDir });
+      expect(result).toContain('Panda CSS detected');
+      expect(result).toContain('GHOST CLASSES GATE PASSED');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('autodetects CSS Modules (*.module.css) and skips static check', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-modules-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(srcDir, 'Button.module.css'), '.btn { color: red; }\n');
+      fs.writeFileSync(
+        path.join(srcDir, 'Button.tsx'),
+        'import styles from "./Button.module.css"; export const Button = () => <button className={styles.btn}>Click</button>;\n',
+      );
+
+      const result = runBash(scriptPath, [`--src-dir=${srcDir}`], { cwd: tempDir });
+      expect(result).toContain('CSS Modules detected');
+      expect(result).toContain('GHOST CLASSES GATE PASSED');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('autodetects Vanilla Extract in package.json and skips static check', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-ve-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(tempDir, 'package.json'),
+        JSON.stringify({ dependencies: { '@vanilla-extract/css': '^1.14.0' } }),
+      );
+      fs.writeFileSync(
+        path.join(srcDir, 'Text.tsx'),
+        'export const Text = () => <span className="ve-text">Hello</span>;\n',
+      );
+
+      const result = runBash(scriptPath, [`--src-dir=${srcDir}`], { cwd: tempDir });
+      expect(result).toContain('Vanilla Extract detected');
+      expect(result).toContain('GHOST CLASSES GATE PASSED');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('autodetects Styled Components in package.json and skips static check', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-styled-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(tempDir, 'package.json'),
+        JSON.stringify({ dependencies: { 'styled-components': '^6.1.0' } }),
+      );
+      fs.writeFileSync(
+        path.join(srcDir, 'Title.tsx'),
+        'export const Title = () => <h1 className="sc-heading">Styled</h1>;\n',
+      );
+
+      const result = runBash(scriptPath, [`--src-dir=${srcDir}`], { cwd: tempDir });
+      expect(result).toContain('Styled Components detected');
+      expect(result).toContain('GHOST CLASSES GATE PASSED');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('forces static CSS checking when --style-engine=css is provided even with config present', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghost-test-force-css-'));
+    try {
+      const srcDir = path.join(tempDir, 'src');
+      fs.mkdirSync(srcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(tempDir, 'tailwind.config.js'), 'module.exports = {};\n');
+      fs.writeFileSync(
+        path.join(srcDir, 'Card.tsx'),
+        'export const Card = () => <div className="undeclared-class">Static Required</div>;\n',
+      );
+
+      expect(() => {
+        runBash(scriptPath, [`--src-dir=${srcDir}`, '--style-engine=css'], { cwd: tempDir });
+      }).toThrow();
+    } finally {
+      removeDir(tempDir);
+    }
+  });
 });

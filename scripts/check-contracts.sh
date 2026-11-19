@@ -41,6 +41,7 @@ MANIFEST_FILE=""
 CHECK_ORPHANS=false
 CHECK_ATOMIC=false
 DRY_RUN=false
+SCOPE_DIR=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -59,6 +60,9 @@ for arg in "$@"; do
       ;;
     --check-atomic)
       CHECK_ATOMIC=true
+      ;;
+    --scope=*)
+      SCOPE_DIR="${arg#*=}"
       ;;
     --dry-run)
       DRY_RUN=true
@@ -92,14 +96,15 @@ fi
 echo "✓ Manifest detected: $MANIFEST_FILE"
 
 # Execute contract validation using Node.js for robust AST & JSON parsing
-node - "$MANIFEST_FILE" "$CHECK_ORPHANS" "$CHECK_ATOMIC" "$DRY_RUN" << 'NODE_SCRIPT'
+node - "$MANIFEST_FILE" "$CHECK_ORPHANS" "$CHECK_ATOMIC" "$DRY_RUN" "$SCOPE_DIR" << 'NODE_SCRIPT'
 const fs = require('fs');
 const path = require('path');
 
-const [,, manifestPath, checkOrphansStr, checkAtomicStr, dryRunStr] = process.argv;
+const [,, manifestPath, checkOrphansStr, checkAtomicStr, dryRunStr, scopeDirArg] = process.argv;
 const checkOrphans = checkOrphansStr === 'true';
 const checkAtomic = checkAtomicStr === 'true';
 const dryRun = dryRunStr === 'true';
+const scanScope = scopeDirArg && fs.existsSync(scopeDirArg) ? scopeDirArg : 'src';
 
 let violations = 0;
 
@@ -184,7 +189,7 @@ if (checkOrphans && fs.existsSync('src')) {
     }
   }
 
-  collectTsx('src');
+  collectTsx(scanScope);
 
   // Read all src files to detect imports
   const allSrcContent = [];
@@ -239,7 +244,7 @@ if (checkAtomic && fs.existsSync('src')) {
     }
   }
 
-  collectTsxFiles('src');
+  collectTsxFiles(scanScope);
 
   // Matches top-level function ComponentName or const ComponentName = ...
   const COMPONENT_DECLARATION_REGEX = /(?:export\s+(?:default\s+)?)?(?:function\s+([A-Z][A-Za-z0-9_]*)\s*\(|(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)\s*(?::\s*[^=]+)?\s*=\s*(?:\([^)]*\)|[A-Za-z0-9_]+)\s*=>)/g;
