@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite';
-import { plugin as shadcn } from '@shadcn/lint';
 
 export default defineConfig({
   // Vite+ (vp) Code Quality Configuration
@@ -8,8 +7,8 @@ export default defineConfig({
       typeAware: true,
       typeCheck: true, // Strict TypeScript type checking
     },
-    plugins: [
-      shadcn, // Tailwind component contract validation
+    jsPlugins: [
+      '@shadcn/lint', // Tailwind component contract validation
     ],
     rules: {
       // 1. Cyclomatic Complexity and Structure Rules
