@@ -42,7 +42,11 @@ describe('Bundle Installer Script E2E', () => {
     expect(fs.existsSync(packageJsonPath)).toBe(true);
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
     expect(packageJson.scripts['check-quality']).toBeDefined();
-    expect(packageJson.scripts['dev']).toBeDefined();
+    expect(packageJson.scripts['dev']).toBe('vp dev');
+    expect(packageJson.scripts['check']).toBe('vp check');
+    expect(packageJson.scripts['test']).toBe('vp test');
+    expect(packageJson.scripts['build']).toBe('vp build');
+    expect(packageJson.devDependencies['vite-plus']).toBeDefined();
 
     const constitutionPath = path.join(tempDir, '.specify/memory/constitution.md');
     expect(fs.existsSync(constitutionPath)).toBe(true);
