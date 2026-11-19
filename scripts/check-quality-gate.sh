@@ -31,6 +31,7 @@ Options:
   --dry-run        Verify tooling availability without running full check
   --fix            Automatically fix formatting and auto-fixable lint issues
   --skip-tests     Skip running the automated test suite
+  --skip-build     Skip application compilation and build verification
   --scope=<path>   Restrict allowed modifications to a feature slice (e.g. src/features/billing)
   --reset-breaker  Reset the consecutive failure circuit breaker counter
 
@@ -44,6 +45,7 @@ EOF
 DRY_RUN=false
 AUTO_FIX=false
 SKIP_TESTS=false
+SKIP_BUILD=false
 SCOPE_DIR=""
 RESET_BREAKER=false
 
@@ -61,6 +63,9 @@ for arg in "$@"; do
       ;;
     --skip-tests)
       SKIP_TESTS=true
+      ;;
+    --skip-build)
+      SKIP_BUILD=true
       ;;
     --scope=*)
       SCOPE_DIR="${arg#*=}"
@@ -209,6 +214,48 @@ if [ "$SKIP_TESTS" = false ]; then
   fi
 else
   echo "ℹ️  --skip-tests flag specified; skipping regression tests."
+fi
+
+# 5. Build and compile application (Build Gate)
+if [ "$SKIP_BUILD" = false ]; then
+  echo ""
+  echo "Executing application build and compilation (Build Gate)..."
+
+  BUILD_CMD=""
+  if [ -f "vite.config.ts" ] || [ -f "vite.config.js" ]; then
+    if command -v vp >/dev/null 2>&1; then
+      BUILD_CMD="vp build"
+    elif [ -x "./node_modules/.bin/vp" ]; then
+      BUILD_CMD="./node_modules/.bin/vp build"
+    elif [ -x "./node_modules/.bin/vite" ]; then
+      BUILD_CMD="./node_modules/.bin/vite build"
+    fi
+  fi
+
+  if [ -z "$BUILD_CMD" ] && [ -f "package.json" ]; then
+    if grep -q '"build":' package.json; then
+      BUILD_CMD="npm run build"
+    fi
+  fi
+
+  if [ -n "$BUILD_CMD" ]; then
+    echo "✓ Build tool detected: $BUILD_CMD"
+    BUILD_STATUS=0
+    $BUILD_CMD || BUILD_STATUS=$?
+
+    if [ $BUILD_STATUS -ne 0 ]; then
+      record_failure
+      echo ""
+      echo "❌ [QUALITY GATE FAILED]: Application build / compilation failed with errors (exit code: $BUILD_STATUS)."
+      echo "Please fix bundling, syntax, or module resolution errors before proceeding."
+      exit 1
+    fi
+    echo "✓ Application compiled and built successfully with zero errors."
+  else
+    echo "ℹ️  No build script or configuration found; skipping compilation gate."
+  fi
+else
+  echo "ℹ️  --skip-build flag specified; skipping application build."
 fi
 
 record_success

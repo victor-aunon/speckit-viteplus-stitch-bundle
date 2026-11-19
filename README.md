@@ -239,17 +239,20 @@ specify workflow run viteplus-stitch \
 All quality gates installed in `.specify/scripts/bash/` can be executed independently in local development or in CI/CD pipelines:
 
 ### 1. `check-quality-gate.sh` (Core Deterministic Gate)
-Runs formatting (Oxfmt Airbnb), linting (Oxlint with complexity limits), TypeScript strict types, Clean Architecture boundary checks, centralized env guard, and the regression test suite.
+Runs formatting (Oxfmt Airbnb), linting (Oxlint with complexity limits), TypeScript strict types, Clean Architecture boundary checks, centralized env guard, regression test suite, and application compilation/build verification.
 
 ```bash
-# Run all deterministic checks
+# Run all deterministic checks (including tests and compilation)
 bash .specify/scripts/bash/check-quality-gate.sh
 
 # Automatically format code issues via Oxfmt / Vite+
 bash .specify/scripts/bash/check-quality-gate.sh --fix
 
-# Skip regression tests (lint, types, env, and architecture only)
+# Skip regression tests
 bash .specify/scripts/bash/check-quality-gate.sh --skip-tests
+
+# Skip application compilation/build
+bash .specify/scripts/bash/check-quality-gate.sh --skip-build
 
 # Report violations without exiting with error code
 bash .specify/scripts/bash/check-quality-gate.sh --dry-run

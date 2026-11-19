@@ -26,6 +26,7 @@ describe('check-quality-gate.sh', () => {
     expect(output).toContain('Vite+');
     expect(output).toContain('Airbnb');
     expect(output).toContain('--skip-tests');
+    expect(output).toContain('--skip-build');
   });
 
   it('should integrate automated regression test execution', () => {
@@ -35,6 +36,15 @@ describe('check-quality-gate.sh', () => {
     expect(content).toContain('vp test --run --passWithNoTests');
     expect(content).toContain('Test suite failed with regressions');
     expect(content).toContain('SKIP_TESTS');
+  });
+
+  it('should integrate application compilation and build gate', () => {
+    const content = fs.readFileSync(scriptPath, 'utf8');
+    expect(content).toContain('Build Gate');
+    expect(content).toContain('BUILD_CMD');
+    expect(content).toContain('BUILD_STATUS=$?');
+    expect(content).toContain('SKIP_BUILD');
+    expect(content).toContain('Application build / compilation failed');
   });
 
   it('should support --dry-run mode and verify tooling without running full check', () => {
