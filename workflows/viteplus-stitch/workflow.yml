@@ -42,11 +42,12 @@ steps:
       "Impeccable UI Craft Lifecycle").
 
       NON-NEGOTIABLE RULE: at no point may you modify Vite settings
-      (`vite.config.ts` or any Vite/Vite+ config), the quality scripts
-      (`.specify/scripts/bash/check-quality-gate.sh`, `check-env-config.sh`,
-      `verify-stitch-design.sh`), `package.json` quality scripts,
-      `.specify/extensions.yml`, test files/snapshots, or any lint/type/complexity
-      rule to make a failing gate or test pass. Fix the application code instead.
+      (`vite.config.ts` or any Vite/Vite+ config), weaken `package.json` quality scripts,
+      alter the quality scripts (`.specify/scripts/bash/check-quality-gate.sh`,
+      `check-env-config.sh`, `verify-stitch-design.sh`), `.specify/extensions.yml`,
+      test files/snapshots, or any lint/type/complexity rule to make a failing gate
+      or test pass. (Creating `package.json`, managing dependencies with npm, and
+      writing product code is expected and required). Fix the application code instead.
       If you believe a gate is genuinely wrong, stop and ask the human for explicit
       approval before changing it.
 
@@ -140,7 +141,7 @@ steps:
           This feature includes UI components.
           Before the human design review gate, perform an Impeccable Design Critique:
 
-          1. Activate the `impeccable` skill and review the UI architecture:
+          1. Activate the `impeccable` skill using the `activate_skill(name: 'impeccable')` tool (do NOT use `read_file` on external paths outside the workspace) and review the UI architecture:
              - If Stitch was enabled: inspect screens in `specs/<feature>/designs/*.html` and `tokens.css`.
              - If Stitch was NOT enabled: inspect UI wireframes, component contracts, and design tokens specified in `plan.md`.
           2. Evaluate visual hierarchy, cognitive load (Operate vs Persuade), contrast ratios (WCAG AA), typographic rhythm, and Tailwind/shadcn tokens.
@@ -191,7 +192,7 @@ steps:
 
       1. Inspect `specs/<feature>/spec.md`, `tasks.md`, test outputs, and quality gate results.
       2. If this feature has UI (`has_ui: true`):
-         - Activate the `impeccable` skill and perform a comprehensive Accessibility & Design Audit (`impeccable audit` checklist: WCAG 2.1 AA contrast, keyboard navigation `:focus-visible`, minimum 44px touch targets, and responsive layout scaling).
+         - Activate the `impeccable` skill using the `activate_skill(name: 'impeccable')` tool (do NOT use `read_file` on external paths outside the workspace) and perform a comprehensive Accessibility & Design Audit (`impeccable audit` checklist: WCAG 2.1 AA contrast, keyboard navigation `:focus-visible`, minimum 44px touch targets, and responsive layout scaling).
          - Confirm micro-interactions and transitions respect `@media (prefers-reduced-motion: reduce)` (`impeccable animate`).
       3. Verify each acceptance scenario (Given/When/Then) against concrete empirical evidence:
          - Unit, integration, and regression tests passing with zero failures

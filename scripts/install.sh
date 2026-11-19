@@ -248,7 +248,16 @@ elif ! grep -q "viteplus-stitch:agents-instructions" "$AGENTS_FILE"; then
   fi
 fi
 
-# 7. Register in workflow-registry.json if present
+# 7. Provision starter package.json if the project root does not have one
+PACKAGE_FILE="$TARGET_DIR/package.json"
+if [ ! -f "$PACKAGE_FILE" ]; then
+  if [ -f "$BUNDLE_ROOT/templates/package.json.tmpl" ]; then
+    cp "$BUNDLE_ROOT/templates/package.json.tmpl" "$PACKAGE_FILE"
+    echo "✓ Initialized starter package.json with scripts and dependencies"
+  fi
+fi
+
+# 8. Register in workflow-registry.json if present
 REGISTRY_FILE="$SPECIFY_DIR/workflows/workflow-registry.json"
 if [ -f "$REGISTRY_FILE" ]; then
   TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u)"

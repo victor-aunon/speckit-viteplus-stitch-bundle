@@ -1,0 +1,23 @@
+{
+  "name": "viteplus-stitch-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "test": "vitest run --passWithNoTests",
+    "build": "vite build",
+    "check-quality": "bash .specify/scripts/bash/check-quality-gate.sh",
+    "verify-design": "bash .specify/scripts/bash/verify-stitch-design.sh"
+  },
+  "dependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}

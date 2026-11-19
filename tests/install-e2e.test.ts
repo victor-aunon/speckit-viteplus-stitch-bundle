@@ -38,6 +38,12 @@ describe('Bundle Installer Script E2E', () => {
     const extContent = yaml.parse(fs.readFileSync(path.join(tempDir, '.specify/extensions.yml'), 'utf8'));
     expect(extContent.hooks.after_task.length).toBeGreaterThan(0);
 
+    const packageJsonPath = path.join(tempDir, 'package.json');
+    expect(fs.existsSync(packageJsonPath)).toBe(true);
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    expect(packageJson.scripts['check-quality']).toBeDefined();
+    expect(packageJson.scripts['dev']).toBeDefined();
+
     const constitutionPath = path.join(tempDir, '.specify/memory/constitution.md');
     expect(fs.existsSync(constitutionPath)).toBe(true);
     const constitution = fs.readFileSync(constitutionPath, 'utf8');

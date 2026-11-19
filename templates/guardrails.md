@@ -7,7 +7,7 @@ This workflow is defined by its gates. A green suite that was obtained by weaken
 The agent MUST NOT edit, weaken, disable, skip, or delete any of the following in order to make a quality gate, test, or build pass:
 
 - `vite.config.ts` (or any Vite/Vite+ configuration file, e.g. `vitest.config.ts`, `vite.config.*`)
-- `package.json` quality scripts (`test`, `check-quality`, `check-env`, `verify-design`, and any lint/type/test script)
+- `package.json` quality scripts (creating `package.json`, managing dependencies with npm, and adding scripts during project setup is required; only weakening or deleting quality scripts to bypass a failure is forbidden)
 - `.specify/scripts/bash/check-quality-gate.sh`
 - `.specify/scripts/bash/check-env-config.sh`
 - `.specify/scripts/bash/verify-stitch-design.sh`
