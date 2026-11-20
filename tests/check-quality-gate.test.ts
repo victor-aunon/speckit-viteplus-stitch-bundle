@@ -68,6 +68,44 @@ describe('check-quality-gate.sh', () => {
     expect(content).toContain('Auto-detected feature scope from git status');
   });
 
+  it('should propagate --scope to check-env-config.sh so inherited debt does not block the agent', () => {
+    expect(fs.readFileSync(scriptPath, 'utf8')).toContain('ENV_ARGS+=("--path=$SCOPE_DIR")');
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-gate-env-scope-'));
+    const configDir = path.join(tempDir, 'src/config');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, 'env.ts'),
+      'export type Env = { API_URL: string };\nexport const env: Env = { API_URL: import.meta.env.VITE_API_URL ?? "x" };\n',
+      'utf8'
+    );
+
+    // In-scope slice is clean...
+    const featureDir = path.join(tempDir, 'src/features/billing');
+    fs.mkdirSync(featureDir, { recursive: true });
+    fs.writeFileSync(path.join(featureDir, 'charge.ts'), 'export const fee = 1;\n', 'utf8');
+
+    // ...while legacy code outside the slice keeps its deprecated direct access.
+    const legacyDir = path.join(tempDir, 'src/features/legacy');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, 'old.ts'), 'export const key = process.env.STRIPE_KEY;\n', 'utf8');
+
+    try {
+      try {
+        runBash(scriptPath, ['--scope=src/features/billing'], { cwd: tempDir, stdio: 'pipe' });
+        expect.fail('quality gate should stop before running vp in a project without Vite+');
+      } catch (error: any) {
+        const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+        expect(combined).toContain("Scoped env-config check active: scanning 'src/features/billing'");
+        expect(combined).not.toContain('ENV CONFIG GATE FAILED');
+        // It moves past the env gate and only stops later, when vp cannot run here.
+        expect(combined).toContain('Engine detected');
+      }
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
   it('should fail from a real project when application code reads env directly', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-gate-env-test-'));
     const featureDir = path.join(tempDir, 'src/features/billing');

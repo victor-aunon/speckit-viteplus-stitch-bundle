@@ -27,6 +27,8 @@ Options:
   --manifest=<path>         Direct path to routes-manifest.json
   --check-orphans           Scan for unimported/orphan UI components in src/
   --check-atomic            Enforce Atomic Design (strictly max 1 component per file)
+  --scope=<path>            Feature slice to audit (default: src). Propagated to
+                            check-ghost-classes.sh and orphan/atomic scans
   --dry-run                 Simulate validation without failing
 
 Exit Codes:
@@ -289,6 +291,12 @@ if [ -f "$GHOST_SCRIPT" ]; then
   GHOST_ARGS=()
   if [ "$DRY_RUN" = true ]; then
     GHOST_ARGS+=("--dry-run")
+  fi
+  # Brownfield safety: inherit the feature scope so legacy screens outside the
+  # slice cannot fail the gate.
+  if [ -n "$SCOPE_DIR" ]; then
+    GHOST_ARGS+=("--src-dir=$SCOPE_DIR")
+    echo "ℹ️  Scoped ghost-classes check active: scanning '$SCOPE_DIR' only"
   fi
   if ! bash "$GHOST_SCRIPT" "${GHOST_ARGS[@]}"; then
     exit 1

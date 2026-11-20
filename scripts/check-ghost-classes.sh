@@ -8,7 +8,8 @@
 #
 # Flags:
 #   --src-dir=<path>   Directory containing JSX/TSX components (default: src)
-#   --css-dir=<path>   Directory containing CSS stylesheets (default: src and specs/**/designs)
+#   --css-dir=<path>   Directory containing CSS stylesheets (repeatable or comma-separated;
+#                      default: the whole project, so scoped runs keep a global token pool)
 #   --dry-run          Run checks without failing
 #   --help             Display usage information
 # ==============================================================================
@@ -19,11 +20,21 @@ SRC_DIR="src"
 DRY_RUN=false
 FORCE=false
 STYLE_ENGINE="auto"
+CSS_DIRS=()
 
 for arg in "$@"; do
   case $arg in
     --src-dir=*)
       SRC_DIR="${arg#*=}"
+      shift
+      ;;
+    --css-dir=*)
+      IFS=',' read -r -a CSS_DIR_ENTRIES <<< "${arg#*=}"
+      for css_dir in "${CSS_DIR_ENTRIES[@]}"; do
+        if [ -n "$css_dir" ]; then
+          CSS_DIRS+=("$css_dir")
+        fi
+      done
       shift
       ;;
     --style-engine=*)
@@ -43,6 +54,7 @@ for arg in "$@"; do
       echo ""
       echo "Options:"
       echo "  --src-dir=<path>        Path to component source directory (default: src)"
+      echo "  --css-dir=<path>        Stylesheet root(s), repeatable or comma-separated (default: whole project)"
       echo "  --style-engine=<engine> Override style engine (auto, tailwind, css-modules, unocss, panda, vanilla-extract, styled-components, emotion, css)"
       echo "  --dry-run               Report violations without exiting with non-zero code"
       echo "  --force                 Enforce static class check even if a dynamic style engine is detected"
@@ -63,11 +75,19 @@ if [ ! -d "$SRC_DIR" ]; then
   exit 0
 fi
 
-node - "$SRC_DIR" "$DRY_RUN" "$FORCE" "$STYLE_ENGINE" << 'NODE_SCRIPT'
+if [ ${#CSS_DIRS[@]} -eq 0 ]; then
+  CSS_DIRS=(".")
+fi
+
+node - "$SRC_DIR" "$DRY_RUN" "$FORCE" "$STYLE_ENGINE" "${CSS_DIRS[@]}" << 'NODE_SCRIPT'
 const fs = require('fs');
 const path = require('path');
 
 const [,, srcDirArg, dryRunArg, forceArg, styleEngineArg = 'auto'] = process.argv;
+// Declaration pool roots: kept project-wide by default so a scoped --src-dir never
+// turns globally declared classes into false-positive ghost classes.
+const cssDirs = process.argv.slice(6).filter(Boolean);
+if (cssDirs.length === 0) cssDirs.push('.');
 const dryRun = dryRunArg === 'true';
 const force = forceArg === 'true';
 const engine = (styleEngineArg || 'auto').toLowerCase();
@@ -301,7 +321,7 @@ if (!force) {
         return false;
       }
 
-      if (checkCssForTailwind(srcDirArg) || checkCssForTailwind('.')) {
+      if (cssDirs.some((dir) => checkCssForTailwind(dir)) || checkCssForTailwind('.')) {
         detectedEngine = 'Tailwind CSS';
         detectReason = 'Tailwind CSS @import or directive found in stylesheet';
       }
@@ -324,7 +344,7 @@ if (!force) {
         }
         return false;
       }
-      if (checkCssModules(srcDirArg)) {
+      if (cssDirs.some((dir) => checkCssModules(dir))) {
         detectedEngine = 'CSS Modules';
         detectReason = 'CSS Modules (*.module.css) files detected';
       }
@@ -347,7 +367,7 @@ if (!force) {
         }
         return false;
       }
-      if (checkVanillaExtract(srcDirArg)) {
+      if (cssDirs.some((dir) => checkVanillaExtract(dir))) {
         detectedEngine = 'Vanilla Extract';
         detectReason = 'Vanilla Extract (*.css.ts) files detected';
       }
@@ -382,13 +402,15 @@ if (!force) {
 // 1. Collect all CSS classes defined across project CSS files
 const definedClasses = new Set();
 
+const CSS_SKIP_DIRS = ['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '.next', '.output', '.specify'];
+
 function collectCssClasses(dir) {
   if (!fs.existsSync(dir)) return;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name !== 'node_modules' && entry.name !== '.git' && entry.name !== 'dist') {
+      if (!CSS_SKIP_DIRS.includes(entry.name)) {
         collectCssClasses(fullPath);
       }
     } else if (entry.isFile() && entry.name.endsWith('.css')) {
@@ -403,10 +425,8 @@ function collectCssClasses(dir) {
   }
 }
 
-collectCssClasses(srcDirArg);
-// Also search in specs/**/designs and public
-collectCssClasses('specs');
-collectCssClasses('public');
+// The declaration pool is project-wide (specs/**/designs and public included).
+cssDirs.forEach((dir) => collectCssClasses(dir));
 
 // Common dynamic/utility or pseudoclass tokens to allow
 const allowedTokens = new Set([

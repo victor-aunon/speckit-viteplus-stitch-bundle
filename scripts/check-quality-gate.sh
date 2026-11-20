@@ -32,7 +32,8 @@ Options:
   --fix            Automatically fix formatting and auto-fixable lint issues
   --skip-tests     Skip running the automated test suite
   --skip-build     Skip application compilation and build verification
-  --scope=<path>   Restrict allowed modifications to a feature slice (e.g. src/features/billing)
+  --scope=<path>   Restrict allowed modifications to a feature slice (e.g. src/features/billing).
+                   Also narrows the env-config audit and regression tests to that slice.
   --reset-breaker  Reset the consecutive failure circuit breaker counter
 
 Exit Codes:
@@ -134,7 +135,14 @@ fi
 if [ "$DRY_RUN" = false ]; then
   ENV_CHECK="$SCRIPT_DIR/check-env-config.sh"
   if [ -f "$ENV_CHECK" ]; then
-    if ! bash "$ENV_CHECK"; then
+    # Brownfield safety: when a feature scope is active, only audit that slice so
+    # inherited env-access debt outside the scope does not block the agent.
+    ENV_ARGS=()
+    if [ -n "$SCOPE_DIR" ]; then
+      ENV_ARGS+=("--path=$SCOPE_DIR")
+      echo "ℹ️  Scoped env-config check active: scanning '$SCOPE_DIR' only"
+    fi
+    if ! bash "$ENV_CHECK" "${ENV_ARGS[@]}"; then
       record_failure
       echo ""
       echo "❌ [QUALITY GATE FAILED]: Environment variable configuration violations detected."

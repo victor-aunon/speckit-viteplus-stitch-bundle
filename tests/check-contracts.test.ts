@@ -162,6 +162,52 @@ describe('check-contracts.sh', () => {
     }
   });
 
+  it('should propagate --scope to check-ghost-classes.sh so legacy screens do not block the agent', () => {
+    const manifestPath = path.join(tempDir, 'routes-manifest.json');
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({ screens: [{ id: 's1', route: '/home', selector: 'main' }] }),
+      'utf8'
+    );
+
+    // Global stylesheet lives outside the slice: it must still count as a declaration pool.
+    fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'src/styles.css'), '.card { color: red; }\n', 'utf8');
+
+    const featureDir = path.join(tempDir, 'src/features/billing');
+    fs.mkdirSync(featureDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(featureDir, 'BillingCard.tsx'),
+      'export const BillingCard = () => <div className="card">ok</div>;',
+      'utf8'
+    );
+
+    const legacyDir = path.join(tempDir, 'src/features/legacy');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(legacyDir, 'LegacyScreen.tsx'),
+      'export const LegacyScreen = () => <div className="ghost-legacy-class">legacy</div>;',
+      'utf8'
+    );
+
+    // Scoped run: only the slice is audited, so the legacy ghost class is ignored.
+    const scopedOutput = runBash(scriptPath, [`--manifest=${manifestPath}`, '--scope=src/features/billing'], {
+      cwd: tempDir,
+    });
+    expect(scopedOutput).toContain("Scoped ghost-classes check active: scanning 'src/features/billing' only");
+    expect(scopedOutput).toContain('CONTRACT GATE PASSED');
+    expect(scopedOutput).not.toContain('ghost-legacy-class');
+
+    // Unscoped run keeps full rigor and flags the inherited violation.
+    try {
+      runBash(scriptPath, [`--manifest=${manifestPath}`], { cwd: tempDir, stdio: 'pipe' });
+      expect.fail('Unscoped run should fail on the legacy ghost class');
+    } catch (error: any) {
+      expect(error.status).toBe(1);
+      expect(`${error.stdout ?? ''}${error.stderr ?? ''}`).toContain('ghost-legacy-class');
+    }
+  });
+
   it('verify-stitch-design.sh should integrate check-contracts.sh with --check-atomic', () => {
     const vPath = path.resolve(__dirname, '../scripts/verify-stitch-design.sh');
     const content = fs.readFileSync(vPath, 'utf8');
