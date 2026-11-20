@@ -43,7 +43,7 @@ The workflow will autonomously execute specification audits, UI critiques, atomi
    ```bash
    curl -fsSL https://vite.plus | bash
    ```
-3. **Google Stitch MCP** configured in your AI agent environment (optional, only needed for UI features).
+3. **Google Stitch MCP** configured in your AI agent environment (**fully optional**). The bundle no longer declares Stitch under `requires.mcp`, so `specify bundle install` works on any machine; without the MCP server the workflow degrades to local wireframe HTML + `routes-manifest.json` (see `enable_stitch`).
 4. **Playwright** installed in the project (`npx playwright install --with-deps chromium`).
 
 > **Windows note:** use **Git Bash** to run the installer and the `.sh` quality gates. PowerShell works for `npm test`, but if `bash` resolves to WSL (`C:\Windows\System32\bash.exe`), the test suite automatically prefers Git Bash when it is installed. Git Bash is recommended for the workflow scripts themselves.
@@ -259,7 +259,7 @@ Runs formatting (Oxfmt Airbnb), linting (Oxlint with complexity limits), TypeScr
 # Run all deterministic checks (including tests and compilation)
 bash .specify/scripts/bash/check-quality-gate.sh
 
-# Target a specific feature slice (scopes blast-radius and limits regression tests to that slice)
+# Target a specific feature slice: scopes blast-radius, env-config audit, and regression tests
 bash .specify/scripts/bash/check-quality-gate.sh --scope=src/features/billing
 
 # Automatically format code issues via Oxfmt / Vite+
@@ -290,6 +290,9 @@ bash .specify/scripts/bash/check-contracts.sh \
   --manifest=specs/001-feature/designs/routes-manifest.json \
   --check-orphans \
   --check-atomic
+
+# Audit a single feature slice (inherited ghost classes elsewhere are ignored)
+bash .specify/scripts/bash/check-contracts.sh --manifest=specs/001-feature/designs/routes-manifest.json --scope=src/features/billing
 ```
 
 ### 3. `check-ghost-classes.sh` (Ghost Classes Gate & Multi-Engine Styling Support)
@@ -312,8 +315,11 @@ bash .specify/scripts/bash/check-ghost-classes.sh
 # Explicitly declare style engine (tailwind, css-modules, unocss, panda, vanilla-extract, styled-components, emotion, css)
 bash .specify/scripts/bash/check-ghost-classes.sh --style-engine=css-modules
 
-# Custom source directory
-bash .specify/scripts/bash/check-ghost-classes.sh --src-dir=src/components
+# Custom source directory (the CSS declaration pool stays project-wide)
+bash .specify/scripts/bash/check-ghost-classes.sh --src-dir=src/features/billing
+
+# Restrict the stylesheet pool too (repeatable or comma-separated)
+bash .specify/scripts/bash/check-ghost-classes.sh --src-dir=src/features/billing --css-dir=src/styles,specs
 
 # Force static CSS verification even if a dynamic engine is present
 bash .specify/scripts/bash/check-ghost-classes.sh --force
@@ -346,8 +352,30 @@ Executes `vp build` (Rolldown engine) and inspects production bundle sizes again
 bash .specify/scripts/bash/check-bundle-budget.sh
 
 # Custom budget thresholds
-bash .specify/scripts/bash/check-bundle-budget.sh --max-chunk=180 --max-total=800
+bash .specify/scripts/bash/check-bundle-budget.sh --max-chunk-kb=180 --max-total-kb=800
+
+# Brownfield: grandfather the inherited total and enforce no growth from now on
+bash .specify/scripts/bash/check-bundle-budget.sh --baseline-total-kb=1450
+
+# Brownfield: exempt legacy vendor chunks from the per-chunk budget
+BUNDLE_IGNORE_CHUNKS="vendor-three-*.js,vendor-charts-*.js" bash .specify/scripts/bash/check-bundle-budget.sh
+
+# Always enforce the total budget (greenfield / strict CI)
+bash .specify/scripts/bash/check-bundle-budget.sh --strict
 ```
+
+**Budget resolution order:** CLI flags → environment variables → `.bundle-budget.json` → built-in defaults.
+
+| Setting | CLI flag | Env var | Config key | Default |
+|---|---|---|---|---|
+| Per-chunk budget | `--max-chunk-kb` | `BUNDLE_MAX_CHUNK_KB` | `maxChunkKb` | `250` |
+| Total budget | `--max-total-kb` | `BUNDLE_MAX_TOTAL_KB` | `maxTotalKb` | `1000` |
+| Inherited total | `--baseline-total-kb` | `BUNDLE_BASELINE_TOTAL_KB` | `baselineTotalKb` | _unset_ |
+| Allowed growth | — | `BUNDLE_TOLERANCE_KB` | `toleranceKb` | `25` |
+| Legacy chunk globs | — | `BUNDLE_IGNORE_CHUNKS` | `ignoreChunks` | `[]` |
+| Strict total gate | `--strict` | `BUNDLE_STRICT` | `strict` | `false` |
+
+**Brownfield grandfathering:** the *total* budget never blocks on inherited weight. If `dist/` already exceeds the total budget and no baseline is recorded, the gate passes with a `[BROWNFIELD BUDGET]` warning and prints the exact command to record the baseline. Once a baseline exists, any growth beyond `baseline + tolerance` fails. Per-chunk budgets stay enforced (except for `ignoreChunks` matches), so an agent-authored heavy chunk is still blocked.
 
 ### 6. `check-env-config.sh` (Direct Environment Access Guard)
 Ensures that no application file accesses `process.env` or `import.meta.env` directly outside the designated typed module.
@@ -362,6 +390,36 @@ Prevents autonomous agents from modifying protected quality scripts, workflows, 
 ```bash
 bash .specify/scripts/bash/check-blast-radius.sh --scope=src/features/billing
 ```
+
+---
+
+## Greenfield & Brownfield Compatibility
+
+Every quality gate works in two modes:
+
+| Mode | Behavior |
+|---|---|
+| **Unscoped** (no `--scope`) | Full rigor: the gate audits all of `src/`. Ideal for greenfield projects and final full-project verification. |
+| **Scoped** (`--scope=src/features/<slice>`) | The agent is accountable only for what it touches: env-config audit, ghost-class scanning, orphan/atomic scans, blast radius, and regression tests are narrowed to the slice. Inherited debt elsewhere never blocks the feature. |
+
+Scope flows end-to-end without manual wiring:
+
+```text
+workflow input `scope`  →  SPECIFY_SCOPE env var  →  check-quality-gate.sh --scope
+                                                    ├─ check-blast-radius.sh --scope
+                                                    ├─ check-env-config.sh --path=<scope>
+                                                    └─ scoped test execution
+SPECIFY_SCOPE           →  verify-stitch-design.sh --scope
+                                                    └─ check-contracts.sh --scope
+                                                         └─ check-ghost-classes.sh --src-dir=<scope>
+```
+
+Key brownfield guarantees:
+
+1. **Env guard is scoped**: `check-env-config.sh --path=<scope>` only flags direct `process.env` / `import.meta.env` access inside the slice.
+2. **Ghost classes are scoped**: JSX scanning is narrowed to the slice, while the CSS declaration pool stays project-wide so global stylesheets never produce false-positive ghosts.
+3. **Bundle budgets are grandfathered**: see `check-bundle-budget.sh` above (baseline + tolerated growth + `ignoreChunks`).
+4. **No hard MCP requirement**: Stitch is opt-in via `enable_stitch`, never a `requires.mcp` install blocker.
 
 ---
 
@@ -395,3 +453,19 @@ The rule strictly forbids modifying:
 - Suppressions like `eslint-disable`, `oxlint-disable`, `@ts-ignore`, `@ts-expect-error`
 
 When a gate fails, the model must fix the application code. If a gate is genuinely wrong, it must stop and request explicit human approval before changing it.
+
+---
+
+## Local Development & CI
+
+The repository ships its own regression suite (Vitest, 90+ specs covering every gate script, the installer, the manifest schema, and the workflow schema).
+
+```bash
+npm ci          # Install dev dependencies
+npm test        # Run the full suite (vitest run)
+npm run test:watch
+```
+
+GitHub Actions runs `npm ci` + bash syntax validation + manifest validation + `npm test` on **every push**, every pull request and manually via **workflow_dispatch**, on Node 20 and 22 (`.github/workflows/ci.yml`).
+
+> Tests that need external tooling degrade gracefully: the ZIP installer E2E self-skips unless both `unzip` and the Spec Kit CLI (`specify`) are available.
