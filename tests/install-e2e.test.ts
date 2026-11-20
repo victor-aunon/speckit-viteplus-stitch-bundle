@@ -142,7 +142,9 @@ describe('Bundle Installer Script E2E', () => {
     removeDir(tempDir);
   });
 
-  it.skipIf(!bashHasCommand('unzip'))('should install cleanly from a built .zip artifact using --zip option', () => {
+  // Requires both `unzip` and the Spec Kit CLI (`specify bundle build`); skipped when
+  // either tool is missing (e.g. a bare CI runner).
+  it.skipIf(!bashHasCommand('unzip') || !bashHasCommand('specify'))('should install cleanly from a built .zip artifact using --zip option', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-zip-install-test-'));
     fs.mkdirSync(path.join(tempDir, '.specify'), { recursive: true });
 

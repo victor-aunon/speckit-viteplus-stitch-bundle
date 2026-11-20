@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify bash script syntax
+        run: |
+          for script in scripts/*.sh scripts/**/*.sh; do
+            [ -e "$script" ] || continue
+            bash -n "$script"
+            echo "ok: $script"
+          done
+
+      - name: Verify bundle manifest
+        run: |
+          node -e "
+            const fs = require('fs');
+            const yaml = require('yaml');
+            const manifest = yaml.parse(fs.readFileSync('bundle.yml', 'utf8'));
+            if (!manifest.requires || !manifest.requires.speckit_version) {
+              throw new Error('bundle.yml must declare requires.speckit_version');
+            }
+            console.log('bundle.yml OK:', manifest.bundle.id, manifest.bundle.version);
+          "
+
+      - name: Run test suite
+        run: npm test
