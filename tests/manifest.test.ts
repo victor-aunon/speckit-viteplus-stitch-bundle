@@ -16,6 +16,24 @@ describe('Bundle Manifest Validation', () => {
     expect(content.provides.workflows[0].id).toBe('viteplus-stitch');
   });
 
+  it('should not require the Stitch MCP server so the bundle installs anywhere', () => {
+    const manifestPath = path.resolve(__dirname, '../bundle.yml');
+    const content = yaml.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const requiredMcp: string[] = content.requires?.mcp ?? [];
+
+    // Spec Kit's `requires.mcp` has no "optional" variant: listing Stitch there would
+    // block `specify bundle install` on any machine without the Stitch MCP server.
+    expect(requiredMcp).not.toContain('stitch');
+    expect(content.requires.speckit_version).toBeDefined();
+
+    // Stitch stays opt-in through the workflow input instead.
+    const workflowPath = path.resolve(__dirname, '../workflows/viteplus-stitch/workflow.yml');
+    const workflow = yaml.parse(fs.readFileSync(workflowPath, 'utf8'));
+    expect(workflow.inputs.enable_stitch).toBeDefined();
+    expect(workflow.inputs.enable_stitch.type).toBe('boolean');
+    expect(workflow.requires.mcp).toBeUndefined();
+  });
+
   it('should have a valid package.json with correct bundle metadata', () => {
     const pkgPath = path.resolve(__dirname, '../package.json');
     expect(fs.existsSync(pkgPath)).toBe(true);

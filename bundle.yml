@@ -8,10 +8,14 @@ bundle:
   description: "Spec Kit bundle with Vite+, Airbnb lint, Clean Architecture gates (vertical slices), typed env config guard, Stitch MCP, and Playwright"
   author: "victor-aunon"
 
+# NOTE: Google Stitch is OPTIONAL, not a hard requirement.
+# Declaring it under `requires.mcp` would make `specify bundle install` refuse to
+# install on any machine without the Stitch MCP server configured, contradicting
+# workflow.yml (`enable_stitch: false`) and the graceful-degradation fallbacks.
+# The workflow degrades to wireframe HTML + routes-manifest.json when Stitch is
+# unavailable, so the bundle always installs.
 requires:
   speckit_version: ">=0.8.5"
-  mcp:
-    - "stitch"
 
 provides:
   workflows:
