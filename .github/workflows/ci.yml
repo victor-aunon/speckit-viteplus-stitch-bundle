@@ -30,6 +30,14 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
+      - name: Install Spec Kit CLI
+        run: |
+          pipx install specify-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Spec Kit CLI
+        run: specify --version
+
       - name: Install dependencies
         run: npm ci
 
