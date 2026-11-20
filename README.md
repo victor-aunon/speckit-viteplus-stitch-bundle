@@ -143,14 +143,21 @@ The workflow generates the architectural plan (`plan.md`):
 ### Step 4: Stitch UI Screen & Token Generation (`generate-designs`)
 When `has_ui: true` and `enable_stitch: true`:
 - The agent explicitly invokes **Google Stitch MCP** (`create_project`, `create_design_system`, `generate_screen_from_text`).
-- Downloads reference screenshots to `specs/<feature>/designs/<screen-id>.png` and HTML code to `specs/<feature>/designs/<screen-id>.html`.
+- Downloads canonical HTML code to `specs/<feature>/designs/<screen-id>.html` as the visual design master (text-only assets protocol to prevent CLI agent binary codec errors).
 - Extracts and generates canonical design tokens in `specs/<feature>/designs/tokens.css` (defining `--color-*`, `--radius-*`, `--font-*`, and `--space-*`).
 - Generates `specs/<feature>/designs/routes-manifest.json` and fixture mock data in `specs/<feature>/designs/fixtures/`.
 - If Stitch MCP is disabled or offline, generates clean fallback wireframes and token definitions to keep visual gates passing.
 
+> **💡 Operating without Google Stitch (`enable_stitch=false` or offline fallback):**
+> - **Explicitly disabling Stitch**: Pass `-i enable_stitch=false` (e.g. `specify workflow run viteplus-stitch -i enable_stitch=false`). The workflow skips the Stitch step entirely and bases the design critique and implementation directly on the component contracts and wireframes established in `plan.md`.
+> - **Automatic Gate Bypass**: When Stitch designs are omitted (`enable_stitch=false` or `has_ui=false`), both `verify-stitch-design.sh` and `check-contracts.sh` detect the absence of the `designs/` directory and automatically **pass with exit code 0 (`SKIPPED`)**, keeping the test suite green.
+> - **Offline / Fallback Resilience**: If `enable_stitch=true` but the Stitch MCP server is unconfigured, unreachable, or rate-limited, the agent activates fallback resilience: it autonomously generates standard wireframe HTML files (`<screen-id>.html`), `tokens.css`, and `routes-manifest.json` without failing or stalling the workflow.
+
 ### Step 5: Impeccable Design Critique (`critique-design`)
 When `has_ui: true`:
-- The agent activates the **`impeccable`** skill to evaluate the generated UI proposal.
+- The agent activates the **`impeccable`** skill to evaluate the generated UI proposal:
+  - If Stitch was enabled: inspects screens in `specs/<feature>/designs/*.html` and `tokens.css`.
+  - If Stitch was NOT enabled: inspects UI wireframes, component contracts, and design tokens specified in `plan.md`.
 - Audits visual hierarchy (Operate vs Persuade), contrast ratios (WCAG AA), typography, and spacing rhythm.
 - Generates `specs/<feature>/designs/DESIGN_CRITIQUE.md` with heuristic findings and actionable recommendations.
 - Outputs a concise 5-line summary in the terminal.
@@ -177,9 +184,10 @@ The agent executes tasks phase by phase. After each phase completes, determinist
    - Enforces cyclomatic complexity 10 and 50 lines max per function for business logic (`domain`, `application`, `infrastructure`). UI presentation components (`src/**/ui/**`) are exempted (`max-lines-per-function: 'off'`) to prevent artificial component fragmentation ("ravioli code") in accessible JSX components with ARIA attributes and variants.
    - Enforces Clean Architecture: Domain cannot import Application, Infrastructure, or UI.
    - Centralized typed env config: fails if application code reads `process.env` or `import.meta.env` directly outside `src/config/env.ts`.
-2. **Visual Playwright Gate**:
+2. **Visual Playwright Gate (`verify-stitch-design.sh`)**:
    - Compares DOM `:root` computed tokens against `tokens.css`.
-   - Runs snapshot comparison against the Stitch golden master with tolerance `0.05`.
+   - Runs WCAG 2.1 AA accessibility checks on all declared routes.
+   - When golden screenshot masters exist, runs snapshot comparison with tolerance `0.05`. If no golden screenshot is present, screenshot diffing is skipped gracefully while token and A11y checks pass. If no `designs/` directory exists (`enable_stitch=false` or `has_ui=false`), the gate self-skips cleanly with exit code 0.
 
 ### Step 9: Verification & Delta-Spec Sync (`verify`)
 Once implementation completes, the workflow executes the final certification:
@@ -315,7 +323,9 @@ bash .specify/scripts/bash/check-ghost-classes.sh --dry-run
 ```
 
 ### 4. `verify-stitch-design.sh` (Stitch Token & Visual Gate)
-Compares design tokens in `tokens.css` against DOM `:root` computed styles, followed by Playwright visual snapshot regression testing and contract validation.
+Compares design tokens in `tokens.css` against DOM `:root` computed styles, followed by Playwright visual snapshot regression testing and route contract validation.
+
+> **💡 Graceful Degradation / Auto-Bypass:** If `specs/<feature>/designs` does not exist (e.g. backend features run with `has_ui=false` or UI features run with `enable_stitch=false`), this script automatically **skips execution and exits with code 0**, keeping CI/CD pipelines green. If `tokens.css` is present but golden `.png` screenshots are omitted (text-only HTML assets), token verification and WCAG AA accessibility tests run while screenshot diffing is gracefully bypassed.
 
 ```bash
 # Fast token validation only (runs in <1s without starting Playwright)
