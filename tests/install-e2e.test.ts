@@ -10,6 +10,7 @@ import { removeDir } from './helpers/fs';
 
 describe('Bundle Installer Script E2E', () => {
   const installScript = path.resolve(__dirname, '../scripts/install.sh');
+  const releaseScript = path.resolve(__dirname, '../scripts/build-release.sh');
 
   it('script should exist and be executable', () => {
     expect(fs.existsSync(installScript)).toBe(true);
@@ -90,6 +91,19 @@ describe('Bundle Installer Script E2E', () => {
     removeDir(tempDir);
   });
 
+  it('should ship only the files the installer consumes', () => {
+    expect(fs.existsSync(releaseScript)).toBe(true);
+    const stats = fs.statSync(releaseScript);
+    expect(process.platform === 'win32' || (stats.mode & 0o111) > 0).toBe(true);
+
+    const content = fs.readFileSync(releaseScript, 'utf8');
+    // Staging must be an explicit allow-list, never the whole working copy.
+    for (const entry of ['bundle.yml', 'README.md', 'workflows', 'scripts', 'templates', 'extensions']) {
+      expect(content).toContain(`"${entry}"`);
+    }
+    expect(content).not.toContain('cp -R "$BUNDLE_ROOT/."');
+  });
+
   it('should preserve an existing constitution and AGENTS.md, appending sections once', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-constitution-test-'));
     const memoryDir = path.join(tempDir, '.specify/memory');
@@ -149,11 +163,21 @@ describe('Bundle Installer Script E2E', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-zip-install-test-'));
     fs.mkdirSync(path.join(tempDir, '.specify'), { recursive: true });
 
-    // Build the bundle zip first
+    // Build the release artifact the way releases are published.
     const bundleDir = path.resolve(__dirname, '..');
-    execFileSync('specify', ['bundle', 'build'], { cwd: bundleDir, encoding: 'utf8' });
+    runBash(releaseScript, [], { cwd: bundleDir });
     const zipPath = path.join(bundleDir, getBundleArtifactName());
     expect(fs.existsSync(zipPath)).toBe(true);
+
+    // The artifact must ship the bundle, not the development workspace.
+    const entries = execFileSync('unzip', ['-Z1', zipPath], { encoding: 'utf8' })
+      .split('\n')
+      .filter(Boolean);
+    expect(entries.some((entry) => entry.startsWith('node_modules/'))).toBe(false);
+    expect(entries.some((entry) => entry.startsWith('tests/'))).toBe(false);
+    expect(entries).toContain('bundle.yml');
+    expect(entries).toContain('scripts/check-quality-gate.sh');
+    expect(fs.statSync(zipPath).size).toBeLessThan(1024 * 1024);
 
     const output = runBash(installScript, [`--target-dir=${tempDir}`, `--zip=${zipPath}`]);
     expect(output).toContain('Unpacking release archive from');

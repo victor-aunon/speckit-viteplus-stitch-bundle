@@ -461,11 +461,14 @@ When a gate fails, the model must fix the application code. If a gate is genuine
 The repository ships its own regression suite (Vitest, 90+ specs covering every gate script, the installer, the manifest schema, and the workflow schema).
 
 ```bash
-npm ci          # Install dev dependencies
-npm test        # Run the full suite (vitest run)
+npm ci                # Install dev dependencies
+npm test              # Run the full suite (vitest run)
 npm run test:watch
+npm run build-release # Build the distributable ZIP (shipped files only)
 ```
 
-GitHub Actions runs `npm ci` + bash syntax validation + manifest validation + `npm test` on **every push**, every pull request and manually via **workflow_dispatch**, on Node 20 and 22 (`.github/workflows/ci.yml`).
+`scripts/build-release.sh` stages only what the installer consumes (`bundle.yml`, `README.md`, `package.json`, `workflows/`, `scripts/`, `templates/`, `extensions/`) and then packs it. Do **not** call `specify bundle build` in a working copy: the packager only skips `.git`, `__pycache__` and `.DS_Store`, so a bare build ships `node_modules/` and `tests/` (17 MB instead of ~55 KB).
+
+GitHub Actions runs `npm ci` + bash syntax validation + manifest validation + `npm test` + a release artifact build with an artifact-hygiene guard on **every push**, every pull request and manually via **workflow_dispatch**, on Node 20 and 22 (`.github/workflows/ci.yml`).
 
 > Tests that need external tooling degrade gracefully: the ZIP installer E2E self-skips unless both `unzip` and the Spec Kit CLI (`specify`) are available.

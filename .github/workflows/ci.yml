@@ -55,3 +55,22 @@ jobs:
 
       - name: Run test suite
         run: npm test
+
+      - name: Build release artifact
+        run: bash scripts/build-release.sh
+
+      - name: Guard release artifact hygiene
+        run: |
+          zip_file="$(ls viteplus-stitch-*.zip | head -n 1)"
+          test -n "$zip_file"
+          entries="$(unzip -Z1 "$zip_file")"
+          if printf '%s\n' "$entries" | grep -qE '^(node_modules|tests)/'; then
+            echo "::error::Release artifact must not ship development files"
+            exit 1
+          fi
+          size_kb=$(( $(wc -c < "$zip_file") / 1024 ))
+          if [ "$size_kb" -ge 1024 ]; then
+            echo "::error::Release artifact is ${size_kb}KB, budget is 1024KB"
+            exit 1
+          fi
+          printf 'Release artifact OK: %s (%sKB)\n' "$zip_file" "$size_kb"

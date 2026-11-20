@@ -51,6 +51,10 @@ one-file change plus this changelog.
 - `--css-dir` was documented in `check-ghost-classes.sh` but never parsed.
 - `requires.mcp` no longer demands the Stitch MCP server, so `specify bundle
   install` succeeds on any machine; Stitch stays opt-in via `enable_stitch`.
+- The release artifact no longer ships the development workspace. `specify bundle
+  build` only excludes `.git`, `__pycache__` and `.DS_Store`, so building in place
+  produced a 17 MB ZIP with 1261 `node_modules` files; `scripts/build-release.sh`
+  now stages the shipped allow-list first (22 files, ~55 KB) and CI guards it.
 - `@shadcn/lint` is wired as an oxlint `jsPlugins` string specifier, and test files
   are exempt from `max-lines-per-function`.
 

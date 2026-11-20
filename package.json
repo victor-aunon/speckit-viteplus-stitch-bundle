@@ -21,7 +21,8 @@
     "check-quality": "bash scripts/check-quality-gate.sh",
     "check-env": "bash scripts/check-env-config.sh",
     "verify-design": "bash scripts/verify-stitch-design.sh",
-    "install-bundle": "bash scripts/install.sh"
+    "install-bundle": "bash scripts/install.sh",
+    "build-release": "bash scripts/build-release.sh"
   },
   "devDependencies": {
     "@types/node": "^22.13.5",
