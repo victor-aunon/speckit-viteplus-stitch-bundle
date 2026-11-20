@@ -192,8 +192,8 @@ else
       optional: false
   after_implement:
     - name: "final-quality-gate"
-      description: "Comprehensive final verification of quality, architecture, production build, and full test suite"
-      command: ".specify/scripts/bash/check-quality-gate.sh"
+      description: "Comprehensive final verification of quality, architecture, production build, and full test suite (scoped inside a feature slice when one is set)"
+      command: ".specify/scripts/bash/check-quality-gate.sh ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
       optional: false
     - name: "bundle-budget-gate"
       description: "Validates production build performance and bundle size limits"
@@ -219,8 +219,8 @@ hooks:
       optional: false
   after_implement:
     - name: "final-quality-gate"
-      description: "Comprehensive final verification of quality, architecture, production build, and full test suite"
-      command: ".specify/scripts/bash/check-quality-gate.sh"
+      description: "Comprehensive final verification of quality, architecture, production build, and full test suite (scoped inside a feature slice when one is set)"
+      command: ".specify/scripts/bash/check-quality-gate.sh ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
       optional: false
     - name: "bundle-budget-gate"
       description: "Validates production build performance and bundle size limits"
