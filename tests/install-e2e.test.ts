@@ -5,6 +5,7 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import yaml from 'yaml';
 import { bashHasCommand, runBash } from './helpers/bash';
+import { getBundleArtifactName } from './helpers/bundle';
 import { removeDir } from './helpers/fs';
 
 describe('Bundle Installer Script E2E', () => {
@@ -151,7 +152,7 @@ describe('Bundle Installer Script E2E', () => {
     // Build the bundle zip first
     const bundleDir = path.resolve(__dirname, '..');
     execFileSync('specify', ['bundle', 'build'], { cwd: bundleDir, encoding: 'utf8' });
-    const zipPath = path.join(bundleDir, 'viteplus-stitch-1.1.0.zip');
+    const zipPath = path.join(bundleDir, getBundleArtifactName());
     expect(fs.existsSync(zipPath)).toBe(true);
 
     const output = runBash(installScript, [`--target-dir=${tempDir}`, `--zip=${zipPath}`]);

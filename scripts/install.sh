@@ -12,6 +12,15 @@ BUNDLE_ROOT="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || pwd)"
 
 GITHUB_REPO="victor-aunon/speckit-viteplus-stitch-bundle"
 REMOTE_BRANCH="main"
+
+# Single source of truth for the release version: bundle.yml -> bundle.version
+# (only the top-level `bundle:` key matches the two-space anchor).
+resolve_bundle_version() {
+  local manifest="$BUNDLE_ROOT/bundle.yml"
+  [ -f "$manifest" ] || return 0
+  sed -n -E 's/^  version:[[:space:]]*"([^"]+)".*/\1/p' "$manifest" | head -n 1
+}
+BUNDLE_VERSION="$(resolve_bundle_version)"
 RELEASE_TAG=""
 ZIP_FILE=""
 TARGET_DIR="."
@@ -78,7 +87,12 @@ elif [ ! -f "$BUNDLE_ROOT/workflows/viteplus-stitch/workflow.yml" ]; then
   fi
 fi
 
-echo "Installing viteplus-stitch bundle into: $TARGET_DIR..."
+if [ -n "$BUNDLE_VERSION" ]; then
+  echo "Installing viteplus-stitch bundle v$BUNDLE_VERSION into: $TARGET_DIR..."
+else
+  echo "Installing viteplus-stitch bundle into: $TARGET_DIR..."
+  echo "⚠️  Could not resolve bundle.version from $BUNDLE_ROOT/bundle.yml"
+fi
 
 mkdir -p "$SPECIFY_DIR/workflows/viteplus-stitch"
 mkdir -p "$SPECIFY_DIR/scripts/bash"
@@ -282,7 +296,7 @@ if [ -f "$REGISTRY_FILE" ]; then
       reg.workflows = reg.workflows || {};
       reg.workflows['viteplus-stitch'] = {
         name: 'Vite+ Stitch SDD Lifecycle',
-        version: '1.1.0',
+        version: '$BUNDLE_VERSION',
         description: 'Deterministic SDD workflow featuring Vite+, Google Stitch MCP, phase checkpoints, and architectural, env-config & visual quality gates',
         source: 'local-bundle',
         installed_at: '$TIMESTAMP',
