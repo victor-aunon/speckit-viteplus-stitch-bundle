@@ -34,11 +34,20 @@ inputs:
     type: boolean
     default: false
     prompt: "Automatically continue through all implementation phases without pausing after each phase? (default: pause and ask after each phase)"
+  model:
+    type: string
+    default: ""
+    prompt: "Primary AI model for architecture, specification, design critique, and verification (leave empty for integration default)"
+  implement_model:
+    type: string
+    default: ""
+    prompt: "AI model for task implementation (defaults to 'model' when empty)"
 
 steps:
   - id: guardrails
     type: prompt
     integration: "{{ inputs.integration }}"
+    model: "{{ inputs.model }}"
     prompt: |
       You are running the viteplus-stitch Spec-Driven Development workflow.
       Before any work starts, read `.specify/workflows/viteplus-stitch/GUARDRAILS.md`
@@ -69,12 +78,14 @@ steps:
   - id: specify
     command: speckit.specify
     integration: "{{ inputs.integration }}"
+    model: "{{ inputs.model }}"
     input:
       args: "{{ inputs.spec }}"
 
   - id: audit-spec
     type: prompt
     integration: "{{ inputs.integration }}"
+    model: "{{ inputs.model }}"
     timeout: 600
     prompt: |
       Perform an automated Spec Quality & Completeness Audit on the generated specification:
@@ -104,6 +115,7 @@ steps:
   - id: plan
     command: speckit.plan
     integration: "{{ inputs.integration }}"
+    model: "{{ inputs.model }}"
     input:
       args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --with-viteplus {% if inputs.has_ui and inputs.enable_stitch %}--with-stitch{% endif %}"
 
@@ -114,6 +126,7 @@ steps:
       - id: stitch-design-generation
         type: prompt
         integration: "{{ inputs.integration }}"
+        model: "{{ inputs.model }}"
         timeout: 900
         prompt: |
           Generate high-fidelity UI screens and canonical design tokens using Google Stitch MCP:
@@ -149,6 +162,7 @@ steps:
       - id: impeccable-critique
         type: prompt
         integration: "{{ inputs.integration }}"
+        model: "{{ inputs.model }}"
         timeout: 600
         prompt: |
           This feature includes UI components.
@@ -177,6 +191,7 @@ steps:
   - id: tasks
     command: speckit.tasks
     integration: "{{ inputs.integration }}"
+    model: "{{ inputs.model }}"
     input:
       args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased {% if inputs.has_ui %}--with-impeccable-lifecycle{% endif %}"
 
@@ -187,12 +202,14 @@ steps:
       - id: implement-auto
         command: speckit.implement
         integration: "{{ inputs.integration }}"
+        model: "{{ inputs.implement_model | default(inputs.model) }}"
         input:
           args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --auto-continue"
     else:
       - id: implement-paused
         command: speckit.implement
         integration: "{{ inputs.integration }}"
+        model: "{{ inputs.implement_model | default(inputs.model) }}"
         input:
           args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --pause-after-phase"
 
@@ -222,6 +239,7 @@ steps:
   - id: verify
     type: prompt
     integration: "{{ inputs.integration }}"
+    model: "{{ inputs.model }}"
     timeout: 600
     prompt: |
       Perform empirical verification of the completed implementation:

@@ -114,6 +114,15 @@ describe('Workflow YAML Schema Validation', () => {
     expect(wf.inputs.has_ui).toBeDefined();
     expect(wf.inputs.has_ui.default).toBe(true);
     expect(wf.inputs.enable_stitch).toBeDefined();
+
+    // Hierarchical model tiering inputs
+    expect(wf.inputs.model).toBeDefined();
+    expect(wf.inputs.model.default).toBe('');
+    expect(wf.inputs.implement_model).toBeDefined();
+    expect(wf.inputs.implement_model.default).toBe('');
+
+    const planStep = wf.steps.find((s: any) => s.id === 'plan');
+    expect(planStep.model).toContain('inputs.model');
   });
 
   it('should ship a guardrails policy that forbids weakening quality gates and enforces Impeccable lifecycle', () => {
@@ -159,11 +168,13 @@ describe('Workflow YAML Schema Validation', () => {
     expect(autoContinueStep.input.args).toContain('--phased');
     expect(autoContinueStep.input.args).toContain('--verify-gates');
     expect(autoContinueStep.input.args).toContain('--auto-continue');
+    expect(autoContinueStep.model).toContain('inputs.implement_model | default(inputs.model)');
 
     const pausedStep = implement.else.find((s: any) => s.id === 'implement-paused');
     expect(pausedStep.command).toBe('speckit.implement');
     expect(pausedStep.input.args).toContain('--phased');
     expect(pausedStep.input.args).toContain('--verify-gates');
     expect(pausedStep.input.args).toContain('--pause-after-phase');
+    expect(pausedStep.model).toContain('inputs.implement_model | default(inputs.model)');
   });
 });

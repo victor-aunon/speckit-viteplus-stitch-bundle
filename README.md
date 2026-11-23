@@ -214,6 +214,8 @@ When running `specify workflow run viteplus-stitch`, you can configure the behav
 | **`enable_stitch`** | `boolean` | `true` | No | When `has_ui: true`, toggles whether to use Google Stitch MCP for automated design generation (`true`) or use component wireframes defined directly in `plan.md` (`false`). |
 | **`auto_continue`** | `boolean` | `false` | No | Enables **Unattended Mode**. When `true`, automatically bypasses human approval gates (`review-spec`, `review-design`, and phase-by-phase pauses) once automated quality gates pass. When `false` (default), pauses for human confirmation. |
 | **`integration`** | `string` | `auto` | No | Selects the AI runner integration (e.g. `claude`, `gemini`, `copilot`, `auto`). |
+| **`model`** | `string` | `""` | No | Primary AI model for high-reasoning phases: architecture, specification, design critique, and verification (e.g. `claude-3-7-sonnet`, `gemini-2.5-pro`). When empty, uses integration default. |
+| **`implement_model`** | `string` | `""` | No | Fast/cost-effective AI model for task implementation (e.g. `claude-3-5-haiku`, `gemini-2.5-flash`). Defaults to `model` when empty. |
 
 ### Common CLI Invocation Examples
 
@@ -246,6 +248,12 @@ specify workflow run viteplus-stitch \
 specify workflow run viteplus-stitch \
   -i spec="Implement user settings profile" \
   -i integration=gemini
+
+# 7. Hierarchical Model Tiering: High-reasoning model for architecture/specs, fast model for coding
+specify workflow run viteplus-stitch \
+  -i spec="Implement Stripe usage-based billing dashboard" \
+  -i model="claude-3-7-sonnet" \
+  -i implement_model="claude-3-5-haiku"
 ```
 
 ---
