@@ -24,10 +24,11 @@ describe('Workflow YAML Schema Validation', () => {
       'review-design',
       'tasks',
       'implement',
-      'bootstrap-deps',
-      'gate-quality',
-      'gate-bundle',
-      'gate-contracts',
+      'bootstrap_deps',
+      'gate_quality',
+      'gate_bundle',
+      'gate_contracts',
+      'auto_repair',
       'verify'
     ]);
 
@@ -41,26 +42,38 @@ describe('Workflow YAML Schema Validation', () => {
     expect(guardrails.prompt).toContain('check-quality-gate.sh');
     expect(guardrails.prompt).toContain('GUARDRAILS.md');
 
-    // Imperative shell quality gates executed by the workflow engine
-    const bootstrapStep = wf.steps.find((s: any) => s.id === 'bootstrap-deps');
+    // Imperative shell quality gates executed by the workflow engine with continue_on_error
+    const bootstrapStep = wf.steps.find((s: any) => s.id === 'bootstrap_deps');
     expect(bootstrapStep.type).toBe('shell');
+    expect(bootstrapStep.continue_on_error).toBe(true);
     expect(bootstrapStep.run).toContain('package.json');
     expect(bootstrapStep.run).toContain('node_modules');
 
-    const qualityGateStep = wf.steps.find((s: any) => s.id === 'gate-quality');
+    const qualityGateStep = wf.steps.find((s: any) => s.id === 'gate_quality');
     expect(qualityGateStep.type).toBe('shell');
+    expect(qualityGateStep.continue_on_error).toBe(true);
     expect(qualityGateStep.run).toContain('check-quality-gate.sh');
 
-    const bundleGateStep = wf.steps.find((s: any) => s.id === 'gate-bundle');
+    const bundleGateStep = wf.steps.find((s: any) => s.id === 'gate_bundle');
     expect(bundleGateStep.type).toBe('shell');
+    expect(bundleGateStep.continue_on_error).toBe(true);
     expect(bundleGateStep.run).toContain('check-bundle-budget.sh');
 
-    const contractsGateStep = wf.steps.find((s: any) => s.id === 'gate-contracts');
+    const contractsGateStep = wf.steps.find((s: any) => s.id === 'gate_contracts');
     expect(contractsGateStep.type).toBe('if');
     expect(contractsGateStep.condition).toContain('inputs.has_ui');
     const contractChecks = contractsGateStep.then.map((s: any) => s.id);
-    expect(contractChecks).toContain('gate-contracts-check');
-    expect(contractChecks).toContain('gate-visual-check');
+    expect(contractChecks).toContain('gate_contracts_check');
+    expect(contractChecks).toContain('gate_visual_check');
+
+    // Automated self-healing repair loop
+    const autoRepairStep = wf.steps.find((s: any) => s.id === 'auto_repair');
+    expect(autoRepairStep.type).toBe('if');
+    expect(autoRepairStep.condition).toContain('steps.gate_quality.output.exit_code != 0');
+    const repairAgent = autoRepairStep.then.find((s: any) => s.id === 'repair_agent');
+    expect(repairAgent.type).toBe('prompt');
+    expect(repairAgent.prompt).toContain('AUTOMATED REPAIR LOOP');
+    expect(repairAgent.prompt).toContain('REMEDIATE IN APPLICATION CODE');
 
     const auditSpecStep = wf.steps.find((s: any) => s.id === 'audit-spec');
     expect(auditSpecStep.type).toBe('prompt');

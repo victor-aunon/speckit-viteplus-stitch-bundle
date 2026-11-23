@@ -116,11 +116,15 @@ The workflow uses `integration: auto` by default, which reads the integration se
                                                                   │
                                                           (review-design gate)
                                                                   │
-[ Step 10: verify ]  ◄── [ Imperative Shell Gates ] ◄──  [ Step 7: tasks ]
-  - Scenario Matrix        - bootstrap-deps (shell)        │
-  - Evidence Log           - gate-quality (shell)          ▼
-  - Delta-Spec Sync        - gate-bundle (shell)       [ Step 8: implement ]
-                           - gate-contracts (shell)        (auto or paused)
+[ Step 10: verify ]  ◄── [ Step 9: auto_repair ]  ◄──   [ Step 7: tasks ]
+  - Scenario Matrix        (Self-Healing Loop)             │
+  - Evidence Log                   ▲                       ▼
+  - Delta-Spec Sync                │              [ Step 8: implement ]
+                           [ Shell Gates ]                 │
+                           - bootstrap_deps                ▼
+                           - gate_quality      ──► [ Quality Feedback ]
+                           - gate_bundle           (continue_on_error)
+                           - gate_contracts
 ```
 
 ### Step 1: Start a New Feature

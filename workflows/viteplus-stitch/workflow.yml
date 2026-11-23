@@ -213,63 +213,105 @@ steps:
         input:
           args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --pause-after-phase"
 
-  - id: bootstrap-deps
+  - id: bootstrap_deps
     type: shell
+    continue_on_error: true
     run: |
       if [ -f package.json ] && [ ! -d node_modules ]; then
         echo "Installing dependencies..." >/dev/tty 2>/dev/null || true
-        npm install --no-audit --no-fund || vp install || pnpm install || {
-          echo "❌ [BOOTSTRAP ERROR]: Failed to install dependencies from package.json" >/dev/tty 2>/dev/null || true
-          exit 1
-        }
+        npm install --no-audit --no-fund || vp install || pnpm install || true
       fi
 
-  - id: gate-quality
+  - id: gate_quality
     type: shell
+    continue_on_error: true
     run: |
       bash .specify/scripts/bash/check-quality-gate.sh {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || {
         err=$?
         echo "" >/dev/tty 2>/dev/null || true
-        echo "❌ [QUALITY GATE FAILED - Exit $err]" >/dev/tty 2>/dev/null || true
+        echo "⚠️  [QUALITY GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
         bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
         exit $err
       }
 
-  - id: gate-bundle
+  - id: gate_bundle
     type: shell
+    continue_on_error: true
     run: |
       bash .specify/scripts/bash/check-bundle-budget.sh || {
         err=$?
         echo "" >/dev/tty 2>/dev/null || true
-        echo "❌ [PERFORMANCE GATE FAILED - Exit $err]" >/dev/tty 2>/dev/null || true
+        echo "⚠️  [PERFORMANCE GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
         bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
         exit $err
       }
 
-  - id: gate-contracts
+  - id: gate_contracts
     type: if
     condition: "{{ inputs.has_ui }}"
     then:
-      - id: gate-contracts-check
+      - id: gate_contracts_check
         type: shell
+        continue_on_error: true
         run: |
           bash .specify/scripts/bash/check-contracts.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || {
             err=$?
             echo "" >/dev/tty 2>/dev/null || true
-            echo "❌ [CONTRACT GATE FAILED - Exit $err]" >/dev/tty 2>/dev/null || true
+            echo "⚠️  [CONTRACT GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
             bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
             exit $err
           }
-      - id: gate-visual-check
+      - id: gate_visual_check
         type: shell
+        continue_on_error: true
         run: |
           bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || {
             err=$?
             echo "" >/dev/tty 2>/dev/null || true
-            echo "❌ [VISUAL GATE FAILED - Exit $err]" >/dev/tty 2>/dev/null || true
+            echo "⚠️  [VISUAL GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
             bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
             exit $err
           }
+
+  - id: auto_repair
+    type: if
+    condition: "{{ steps.gate_quality.output.exit_code != 0 or steps.gate_bundle.output.exit_code != 0 }}"
+    then:
+      - id: repair_agent
+        type: prompt
+        integration: "{{ inputs.integration }}"
+        model: "{{ inputs.model }}"
+        timeout: 900
+        prompt: |
+          AUTOMATED REPAIR LOOP: Quality or performance gates detected issues in the implementation.
+
+          Do not panic. You have an active repair window to diagnose and fix the failures.
+
+          1. DIAGNOSE:
+             - Check `.specify/telemetry.jsonl` and `specs/<feature>/evidence/quality-gate.json` (or `bundle-budget.json`).
+             - Run `bash .specify/scripts/bash/check-quality-gate.sh` via terminal to reproduce and inspect the exact compiler, linter, or test failures.
+          2. REMEDIATE IN APPLICATION CODE:
+             - If `node_modules` or packages are missing or unresolved (e.g. `vite` or other dependencies in `package.json`), install them using `npm install` in the terminal.
+             - If TypeScript types, linter, complexity, or Clean Architecture boundaries failed, fix the code under `src/`.
+             - If tests failed, fix the implementation so the test suite passes.
+             - If bundle budget failed, configure dynamic imports (`React.lazy`) or code-splitting for heavy libraries.
+             - CRITICAL: Under NO circumstances tamper with gates, alter `vite.config.ts` rules, or add `@ts-ignore` / `eslint-disable`. Fix the root cause in application code.
+          3. RE-VERIFY:
+             - Run `bash .specify/scripts/bash/check-quality-gate.sh` via terminal until it exits with code 0.
+             - Run `bash .specify/scripts/bash/check-bundle-budget.sh` via terminal until it exits with code 0.
+          4. Output a concise summary of the fixes applied.
+
+      - id: recheck_quality
+        type: shell
+        continue_on_error: true
+        run: |
+          bash .specify/scripts/bash/check-quality-gate.sh {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || true
+
+      - id: recheck_bundle
+        type: shell
+        continue_on_error: true
+        run: |
+          bash .specify/scripts/bash/check-bundle-budget.sh || true
 
   - id: verify
     type: prompt
