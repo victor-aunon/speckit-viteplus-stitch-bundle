@@ -24,6 +24,10 @@ describe('Workflow YAML Schema Validation', () => {
       'review-design',
       'tasks',
       'implement',
+      'bootstrap-deps',
+      'gate-quality',
+      'gate-bundle',
+      'gate-contracts',
       'verify'
     ]);
 
@@ -36,6 +40,27 @@ describe('Workflow YAML Schema Validation', () => {
     expect(guardrails.prompt).toContain('vite.config.ts');
     expect(guardrails.prompt).toContain('check-quality-gate.sh');
     expect(guardrails.prompt).toContain('GUARDRAILS.md');
+
+    // Imperative shell quality gates executed by the workflow engine
+    const bootstrapStep = wf.steps.find((s: any) => s.id === 'bootstrap-deps');
+    expect(bootstrapStep.type).toBe('shell');
+    expect(bootstrapStep.run).toContain('package.json');
+    expect(bootstrapStep.run).toContain('node_modules');
+
+    const qualityGateStep = wf.steps.find((s: any) => s.id === 'gate-quality');
+    expect(qualityGateStep.type).toBe('shell');
+    expect(qualityGateStep.run).toContain('check-quality-gate.sh');
+
+    const bundleGateStep = wf.steps.find((s: any) => s.id === 'gate-bundle');
+    expect(bundleGateStep.type).toBe('shell');
+    expect(bundleGateStep.run).toContain('check-bundle-budget.sh');
+
+    const contractsGateStep = wf.steps.find((s: any) => s.id === 'gate-contracts');
+    expect(contractsGateStep.type).toBe('if');
+    expect(contractsGateStep.condition).toContain('inputs.has_ui');
+    const contractChecks = contractsGateStep.then.map((s: any) => s.id);
+    expect(contractChecks).toContain('gate-contracts-check');
+    expect(contractChecks).toContain('gate-visual-check');
 
     const auditSpecStep = wf.steps.find((s: any) => s.id === 'audit-spec');
     expect(auditSpecStep.type).toBe('prompt');

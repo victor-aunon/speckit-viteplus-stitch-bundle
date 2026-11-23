@@ -44,10 +44,13 @@ src/features/<slice>/
 
 ---
 
-## 4. Quality Gate Integrity (NON-NEGOTIABLE)
+## 4. Quality Gate Integrity & Real Execution (NON-NEGOTIABLE)
 
 - **Gate configuration is human-owned.** You MUST NOT modify `vite.config.ts`, `package.json` scripts, `.specify/scripts/bash/*`, or `.specify/extensions.yml` to make a failing check pass.
 - **Never suppress violations**: Prohibited from adding `eslint-disable`, `oxlint-disable`, `@ts-ignore`, or skipping tests.
+- **Mandatory Dependencies (`node_modules`)**: You MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
+- **Terminal Execution Required**: You MUST execute `.specify/scripts/bash/check-quality-gate.sh` via the terminal after completing each task in `tasks.md`. Marking a task checkbox `- [x]` without executing the gate in the terminal is a fatal violation of Quality Gate Integrity.
+- **Imperative Pipeline Enforcement**: Spec Kit runs automated quality gates (`gate-quality`, `gate-bundle`, `gate-contracts`) as non-agent shell steps. If `node_modules` is missing or any gate fails, the workflow engine halts execution immediately.
 - Resolve every violation by fixing the **application code**.
 
 ---

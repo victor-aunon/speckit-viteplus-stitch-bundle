@@ -137,7 +137,7 @@ write_evidence() {
       node -e '
         const fs = require("fs");
         const [outPath, status, failedStep, scopeDir, featDir, vpCmd, skipTests, skipBuild] = process.argv.slice(1);
-        const stepsOrder = ["circuit_breaker", "blast_radius", "env_config", "code_quality", "regression_tests", "build"];
+        const stepsOrder = ["circuit_breaker", "dependencies", "blast_radius", "env_config", "code_quality", "regression_tests", "build"];
         const failedIndex = failedStep !== "none" ? stepsOrder.indexOf(failedStep) : -1;
         const getStatus = (stepName, index) => {
           if (failedIndex !== -1) {
@@ -158,11 +158,12 @@ write_evidence() {
           engine: vpCmd || undefined,
           checks: {
             circuit_breaker: getStatus("circuit_breaker", 0),
-            blast_radius: getStatus("blast_radius", 1),
-            env_config: getStatus("env_config", 2),
-            code_quality: getStatus("code_quality", 3),
-            regression_tests: getStatus("regression_tests", 4),
-            build: getStatus("build", 5)
+            dependencies: getStatus("dependencies", 1),
+            blast_radius: getStatus("blast_radius", 2),
+            env_config: getStatus("env_config", 3),
+            code_quality: getStatus("code_quality", 4),
+            regression_tests: getStatus("regression_tests", 5),
+            build: getStatus("build", 6)
           },
           evidence_type: "deterministic_quality_gate"
         };
@@ -223,7 +224,19 @@ if [ "$DRY_RUN" = false ] && [ -f "$BLAST_CHECK" ]; then
   fi
 fi
 
-# 2. Enforce centralized, typed environment variable access
+# 2. Verify dependencies exist if package.json is present
+if [ "$DRY_RUN" = false ] && [ -f "package.json" ] && [ ! -d "node_modules" ]; then
+  echo ""
+  echo "❌ [QUALITY GATE FAILED]: 'package.json' exists but 'node_modules/' directory is missing."
+  echo "   Dependencies must be installed before running quality checks."
+  echo "   Run 'npm install' or 'vp install' in the terminal."
+  record_failure
+  write_evidence "failed" "dependencies"
+  emit_gate_telemetry "failed" 1
+  exit 1
+fi
+
+# 3. Enforce centralized, typed environment variable access
 if [ "$DRY_RUN" = false ]; then
   ENV_CHECK="$SCRIPT_DIR/check-env-config.sh"
   if [ -f "$ENV_CHECK" ]; then

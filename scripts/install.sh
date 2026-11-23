@@ -161,6 +161,11 @@ When a feature contains frontend UI components (has_ui is true), the agent must 
 1. Conception (impeccable critique): critique visual hierarchy, tokens, and contrast before approving designs.
 2. Robustness (impeccable harden): UI tasks must include loading skeletons, empty states, and error boundaries.
 3. Polish (impeccable animate + audit): final phase must include micro-interactions (with prefers-reduced-motion) and accessibility audit.
+
+### Real Execution & Mandatory Dependencies
+<!-- viteplus-stitch:real-execution-mandate -->
+The agent MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
+The agent MUST execute `.specify/scripts/bash/check-quality-gate.sh` via terminal after completing each task in `tasks.md`. Spec Kit executes automated quality gates as non-agent shell steps (`gate-quality`, `gate-bundle`, `gate-contracts`); if dependencies are missing or checks fail, the workflow engine halts execution immediately.
 EOF
 elif ! grep -q "viteplus-stitch:quality-gate-integrity" "$CONSTITUTION_FILE"; then
   cat >> "$CONSTITUTION_FILE" << 'EOF'
@@ -184,6 +189,11 @@ When a feature contains frontend UI components (has_ui is true), the agent must 
 1. Conception (impeccable critique): critique visual hierarchy, tokens, and contrast before approving designs.
 2. Robustness (impeccable harden): UI tasks must include loading skeletons, empty states, and error boundaries.
 3. Polish (impeccable animate + audit): final phase must include micro-interactions (with prefers-reduced-motion) and accessibility audit.
+
+### Real Execution & Mandatory Dependencies
+<!-- viteplus-stitch:real-execution-mandate -->
+The agent MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
+The agent MUST execute `.specify/scripts/bash/check-quality-gate.sh` via terminal after completing each task in `tasks.md`. Spec Kit executes automated quality gates as non-agent shell steps (`gate-quality`, `gate-bundle`, `gate-contracts`); if dependencies are missing or checks fail, the workflow engine halts execution immediately.
 EOF
 fi
 

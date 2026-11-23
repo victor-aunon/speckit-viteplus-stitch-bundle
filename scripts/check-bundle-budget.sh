@@ -248,6 +248,15 @@ echo "======================================================================"
 
 # 1. Execute production build if not skipped
 if [ "$SKIP_BUILD" = false ]; then
+  if [ -f "package.json" ] && [ ! -d "node_modules" ]; then
+    echo ""
+    echo "❌ [PERFORMANCE GATE FAILED]: 'package.json' exists but 'node_modules/' is missing."
+    echo "   Dependencies must be installed before running production build."
+    write_evidence "failed"
+    emit_gate_telemetry "failed" 1
+    exit 1
+  fi
+
   BUILD_CMD=""
   if command -v vp >/dev/null 2>&1; then
     BUILD_CMD="vp build"

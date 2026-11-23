@@ -159,4 +159,21 @@ describe('check-quality-gate.sh', () => {
       removeDir(tempDir);
     }
   });
+
+  it('should fail with exit 1 and record dependencies failure when package.json exists but node_modules is missing', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-gate-deps-test-'));
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name": "test-pkg"}', 'utf8');
+
+    try {
+      runBash(scriptPath, [], { cwd: tempDir, stdio: 'pipe' });
+      expect.fail('quality gate should fail when node_modules is missing');
+    } catch (error: any) {
+      expect(error.status).toBe(1);
+      const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+      expect(combined).toContain('QUALITY GATE FAILED');
+      expect(combined).toContain("'node_modules/' directory is missing");
+    } finally {
+      removeDir(tempDir);
+    }
+  });
 });

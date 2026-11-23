@@ -58,6 +58,12 @@ steps:
       If you believe a gate is genuinely wrong, stop and ask the human for explicit
       approval before changing it.
 
+      REAL EXECUTION & DEPENDENCY MANDATE:
+      - You MUST install real dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified.
+      - After completing each task in `tasks.md`, you MUST run `bash .specify/scripts/bash/check-quality-gate.sh` via the terminal and verify it passes (exit code 0).
+      - Marking a task `- [x]` without executing the quality gate in the terminal is strictly forbidden.
+      - Spec Kit runs automated quality gates (`gate-quality`, `gate-bundle`, `gate-contracts`) as non-agent shell steps. If dependencies are missing or checks fail, the workflow engine aborts immediately.
+
       Acknowledge this rule and stop. Do not modify any files in this step.
 
   - id: specify
@@ -189,6 +195,29 @@ steps:
         integration: "{{ inputs.integration }}"
         input:
           args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --pause-after-phase"
+
+  - id: bootstrap-deps
+    type: shell
+    run: "if [ -f package.json ] && [ ! -d node_modules ]; then if command -v vp >/dev/null 2>&1; then vp install; else npm install; fi; fi"
+
+  - id: gate-quality
+    type: shell
+    run: "bash .specify/scripts/bash/check-quality-gate.sh {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}"
+
+  - id: gate-bundle
+    type: shell
+    run: "bash .specify/scripts/bash/check-bundle-budget.sh"
+
+  - id: gate-contracts
+    type: if
+    condition: "{{ inputs.has_ui }}"
+    then:
+      - id: gate-contracts-check
+        type: shell
+        run: "bash .specify/scripts/bash/check-contracts.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}"
+      - id: gate-visual-check
+        type: shell
+        run: "bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}"
 
   - id: verify
     type: prompt

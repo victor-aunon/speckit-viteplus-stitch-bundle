@@ -92,3 +92,10 @@ A task or feature cannot be declared complete without deterministic machine-gene
 - **Machine Proofs in `specs/<feature>/evidence/`**: Verification requires machine-generated proof files (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, and `stitch-design.json`). Self-reported success without machine proof is rejected.
 - **No Silent Skips**: When UI is declared (`has_ui: true`), visual verification and route contracts are mandatory. Missing design folders or manifests fail the gate instead of skipping.
 - **Auditability via Telemetry**: All gate executions log structured events to `.specify/telemetry.jsonl` to ensure complete observability of execution duration, gate statuses, and circuit breaker health.
+
+## Real Execution & Mandatory Dependency Installation
+
+A green task cannot be simulated:
+- **Mandatory Dependencies (`node_modules`)**: The agent MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
+- **Terminal Execution Required**: The agent MUST execute `.specify/scripts/bash/check-quality-gate.sh` via terminal after completing each task in `tasks.md`. Marking a task checkbox `- [x]` without executing the gate in the terminal is a fatal violation of Quality Gate Integrity.
+- **Imperative Pipeline Enforcement**: The Spec Kit workflow runs automated quality gates (`gate-quality`, `gate-bundle`, `gate-contracts`) as non-agent shell steps. If `node_modules` is missing or any gate fails, the workflow engine halts execution immediately.

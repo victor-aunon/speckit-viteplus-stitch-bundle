@@ -116,10 +116,11 @@ The workflow uses `integration: auto` by default, which reads the integration se
                                                                   │
                                                           (review-design gate)
                                                                   │
-[ Step 9: verify ]   ◄──  [ Step 8: implement ]   ◄──  [ Step 7: tasks ]
-  - Scenario Matrix         - after_task: quality + tokens
-  - Evidence Log            - after_implement: contracts + budget + visual
-  - Delta-Spec Sync         - Impeccable A11y & Motion Audit
+[ Step 10: verify ]  ◄── [ Imperative Shell Gates ] ◄──  [ Step 7: tasks ]
+  - Scenario Matrix        - bootstrap-deps (shell)        │
+  - Evidence Log           - gate-quality (shell)          ▼
+  - Delta-Spec Sync        - gate-bundle (shell)       [ Step 8: implement ]
+                           - gate-contracts (shell)        (auto or paused)
 ```
 
 ### Step 1: Start a New Feature
