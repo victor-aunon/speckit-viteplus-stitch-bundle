@@ -215,15 +215,36 @@ steps:
 
   - id: bootstrap-deps
     type: shell
-    run: "if [ -f package.json ] && [ ! -d node_modules ]; then if command -v vp >/dev/null 2>&1; then vp install; else npm install; fi; fi"
+    run: |
+      if [ -f package.json ] && [ ! -d node_modules ]; then
+        echo "Installing dependencies..." >/dev/tty 2>/dev/null || true
+        npm install --no-audit --no-fund || vp install || pnpm install || {
+          echo "❌ [BOOTSTRAP ERROR]: Failed to install dependencies from package.json" >/dev/tty 2>/dev/null || true
+          exit 1
+        }
+      fi
 
   - id: gate-quality
     type: shell
-    run: "bash .specify/scripts/bash/check-quality-gate.sh {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}"
+    run: |
+      bash .specify/scripts/bash/check-quality-gate.sh {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || {
+        err=$?
+        echo "" >/dev/tty 2>/dev/null || true
+        echo "❌ [QUALITY GATE FAILED - Exit $err]" >/dev/tty 2>/dev/null || true
+        bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
+        exit $err
+      }
 
   - id: gate-bundle
     type: shell
-    run: "bash .specify/scripts/bash/check-bundle-budget.sh"
+    run: |
+      bash .specify/scripts/bash/check-bundle-budget.sh || {
+        err=$?
+        echo "" >/dev/tty 2>/dev/null || true
+        echo "❌ [PERFORMANCE GATE FAILED - Exit $err]" >/dev/tty 2>/dev/null || true
+        bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
+        exit $err
+      }
 
   - id: gate-contracts
     type: if
@@ -231,10 +252,24 @@ steps:
     then:
       - id: gate-contracts-check
         type: shell
-        run: "bash .specify/scripts/bash/check-contracts.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}"
+        run: |
+          bash .specify/scripts/bash/check-contracts.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || {
+            err=$?
+            echo "" >/dev/tty 2>/dev/null || true
+            echo "❌ [CONTRACT GATE FAILED - Exit $err]" >/dev/tty 2>/dev/null || true
+            bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
+            exit $err
+          }
       - id: gate-visual-check
         type: shell
-        run: "bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}"
+        run: |
+          bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || {
+            err=$?
+            echo "" >/dev/tty 2>/dev/null || true
+            echo "❌ [VISUAL GATE FAILED - Exit $err]" >/dev/tty 2>/dev/null || true
+            bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
+            exit $err
+          }
 
   - id: verify
     type: prompt
