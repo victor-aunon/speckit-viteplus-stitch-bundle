@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { runBash } from './helpers/bash';
 import { removeDir } from './helpers/fs';
 
@@ -174,6 +175,133 @@ describe('check-quality-gate.sh', () => {
       expect(combined).toContain("'node_modules/' directory is missing");
     } finally {
       removeDir(tempDir);
+    }
+  });
+
+  it('should detect newly added @ts-ignore or eslint-disable comments in git delta', () => {
+    const gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-tamper-suppress-'));
+    try {
+      execFileSync('git', ['init'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: gitDir });
+      fs.mkdirSync(path.join(gitDir, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(gitDir, 'src/main.ts'), 'export const a = 1;\n', 'utf8');
+      execFileSync('git', ['add', '.'], { cwd: gitDir });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: gitDir });
+
+      // Add a suppression comment
+      fs.writeFileSync(path.join(gitDir, 'src/main.ts'), '// @ts-ignore\nexport const a = 1;\n', 'utf8');
+
+      try {
+        runBash(scriptPath, [], { cwd: gitDir, stdio: 'pipe' });
+        expect.fail('should fail when @ts-ignore is added in delta');
+      } catch (error: any) {
+        expect(error.status).toBe(1);
+        const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+        expect(combined).toContain('ANTI-TAMPERING VIOLATION');
+        expect(combined).toContain('@ts-ignore');
+      }
+    } finally {
+      removeDir(gitDir);
+    }
+  });
+
+  it('should grandfather legacy suppression comments in untouched code', () => {
+    const gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-grandfather-'));
+    try {
+      execFileSync('git', ['init'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: gitDir });
+      fs.mkdirSync(path.join(gitDir, 'src'), { recursive: true });
+      // Legacy file with pre-existing suppression from 2022
+      fs.writeFileSync(path.join(gitDir, 'src/legacy.ts'), '// @ts-ignore\nexport const legacy = true;\n', 'utf8');
+      execFileSync('git', ['add', '.'], { cwd: gitDir });
+      execFileSync('git', ['commit', '-m', 'legacy init'], { cwd: gitDir });
+
+      // Agent adds clean new file without suppressions
+      fs.writeFileSync(path.join(gitDir, 'src/new-feature.ts'), 'export const clean = 42;\n', 'utf8');
+
+      try {
+        runBash(scriptPath, [], { cwd: gitDir, stdio: 'pipe' });
+        expect.fail('should stop at engine detection, not anti-tampering');
+      } catch (error: any) {
+        const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+        expect(combined).not.toContain('ANTI-TAMPERING VIOLATION');
+        expect(combined).toContain('Engine detected');
+      }
+    } finally {
+      removeDir(gitDir);
+    }
+  });
+
+  it('should detect tampering when quality rules are deleted from vite.config.ts', () => {
+    const gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-tamper-vite-'));
+    try {
+      execFileSync('git', ['init'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: gitDir });
+      fs.writeFileSync(
+        path.join(gitDir, 'vite.config.ts'),
+        "export default { test: { rules: { 'complexity': ['error', 10], 'no-restricted-imports': 'error' } } };\n",
+        'utf8'
+      );
+      execFileSync('git', ['add', '.'], { cwd: gitDir });
+      execFileSync('git', ['commit', '-m', 'init vite config'], { cwd: gitDir });
+
+      // Agent tampers with vite.config.ts by deleting complexity rule
+      fs.writeFileSync(
+        path.join(gitDir, 'vite.config.ts'),
+        "export default { test: { rules: { 'no-restricted-imports': 'error' } } };\n",
+        'utf8'
+      );
+
+      try {
+        runBash(scriptPath, [], { cwd: gitDir, stdio: 'pipe' });
+        expect.fail('should fail when quality rules are deleted from vite.config.ts');
+      } catch (error: any) {
+        expect(error.status).toBe(1);
+        const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+        expect(combined).toContain('ANTI-TAMPERING VIOLATION');
+        expect(combined).toContain('Deleting or weakening quality rules in bundler config is prohibited');
+      }
+    } finally {
+      removeDir(gitDir);
+    }
+  });
+
+  it('should detect tampering when test script in package.json is neutralized', () => {
+    const gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-tamper-pkg-'));
+    try {
+      execFileSync('git', ['init'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: gitDir });
+      fs.writeFileSync(
+        path.join(gitDir, 'package.json'),
+        JSON.stringify({ name: 'my-app', scripts: { test: 'vp test' } }, null, 2),
+        'utf8'
+      );
+      fs.mkdirSync(path.join(gitDir, 'node_modules'));
+      execFileSync('git', ['add', '.'], { cwd: gitDir });
+      execFileSync('git', ['commit', '-m', 'init package.json'], { cwd: gitDir });
+
+      // Agent neutralizes test script to echo
+      fs.writeFileSync(
+        path.join(gitDir, 'package.json'),
+        JSON.stringify({ name: 'my-app', scripts: { test: 'echo ok' } }, null, 2),
+        'utf8'
+      );
+
+      try {
+        runBash(scriptPath, [], { cwd: gitDir, stdio: 'pipe' });
+        expect.fail('should fail when test script is neutralized in package.json');
+      } catch (error: any) {
+        expect(error.status).toBe(1);
+        const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+        expect(combined).toContain('ANTI-TAMPERING VIOLATION');
+        expect(combined).toContain('Neutralizing quality scripts in package.json is prohibited');
+      }
+    } finally {
+      removeDir(gitDir);
     }
   });
 });

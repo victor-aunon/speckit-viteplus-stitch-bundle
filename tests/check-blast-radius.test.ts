@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { runBash } from './helpers/bash';
 import { removeDir } from './helpers/fs';
 
@@ -97,5 +98,34 @@ describe('check-blast-radius.sh', () => {
     expect(content).toContain('--record-failure');
     expect(content).toContain('--record-success');
     expect(content).toContain('--reset-breaker');
+  });
+
+  it('should detect violations when protected .specify/memory/ is modified', () => {
+    const gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blast-protect-test-'));
+    try {
+      execFileSync('git', ['init'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: gitDir });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: gitDir });
+      const memDir = path.join(gitDir, '.specify/memory');
+      fs.mkdirSync(memDir, { recursive: true });
+      fs.writeFileSync(path.join(memDir, 'constitution.md'), 'initial', 'utf8');
+      execFileSync('git', ['add', '.'], { cwd: gitDir });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: gitDir });
+
+      // Tamper with constitution.md
+      fs.writeFileSync(path.join(memDir, 'constitution.md'), 'tampered', 'utf8');
+
+      try {
+        runBash(scriptPath, ['--check-scope'], { cwd: gitDir, stdio: 'pipe' });
+        expect.fail('should fail on protected memory file tampering');
+      } catch (error: any) {
+        expect(error.status).toBe(1);
+        const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+        expect(combined).toContain('BLAST RADIUS VIOLATION');
+        expect(combined).toContain('.specify/memory/');
+      }
+    } finally {
+      removeDir(gitDir);
+    }
   });
 });

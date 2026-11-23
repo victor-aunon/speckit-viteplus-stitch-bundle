@@ -137,7 +137,7 @@ write_evidence() {
       node -e '
         const fs = require("fs");
         const [outPath, status, failedStep, scopeDir, featDir, vpCmd, skipTests, skipBuild] = process.argv.slice(1);
-        const stepsOrder = ["circuit_breaker", "dependencies", "blast_radius", "env_config", "code_quality", "regression_tests", "build"];
+        const stepsOrder = ["circuit_breaker", "dependencies", "anti_tampering", "blast_radius", "env_config", "code_quality", "regression_tests", "build"];
         const failedIndex = failedStep !== "none" ? stepsOrder.indexOf(failedStep) : -1;
         const getStatus = (stepName, index) => {
           if (failedIndex !== -1) {
@@ -159,11 +159,12 @@ write_evidence() {
           checks: {
             circuit_breaker: getStatus("circuit_breaker", 0),
             dependencies: getStatus("dependencies", 1),
-            blast_radius: getStatus("blast_radius", 2),
-            env_config: getStatus("env_config", 3),
-            code_quality: getStatus("code_quality", 4),
-            regression_tests: getStatus("regression_tests", 5),
-            build: getStatus("build", 6)
+            anti_tampering: getStatus("anti_tampering", 2),
+            blast_radius: getStatus("blast_radius", 3),
+            env_config: getStatus("env_config", 4),
+            code_quality: getStatus("code_quality", 5),
+            regression_tests: getStatus("regression_tests", 6),
+            build: getStatus("build", 7)
           },
           evidence_type: "deterministic_quality_gate"
         };
@@ -236,7 +237,73 @@ if [ "$DRY_RUN" = false ] && [ -f "package.json" ] && [ ! -d "node_modules" ]; t
   exit 1
 fi
 
-# 3. Enforce centralized, typed environment variable access
+# 3. Anti-Tampering & Code Integrity Gate (Delta-only, brownfield-safe)
+if [ "$DRY_RUN" = false ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  TAMPERING_VIOLATIONS=0
+
+  # A. Check for new compiler/linter suppression comments in git diff (delta inspection)
+  NEW_SUPPRESSIONS=()
+  while IFS= read -r line; do
+    if [ -n "$line" ]; then
+      NEW_SUPPRESSIONS+=("$line")
+    fi
+  done < <(git diff HEAD -U0 -- 'src/*' 2>/dev/null | grep -E '^\+[^+]' | grep -E '(@ts-ignore|@ts-nocheck|eslint-disable|oxlint-disable)' || true)
+
+  # Check untracked files under src/
+  UNTRACKED_FILES=()
+  while IFS= read -r ufile; do
+    if [ -n "$ufile" ]; then
+      UNTRACKED_FILES+=("$ufile")
+    fi
+  done < <(git ls-files --others --exclude-standard 'src/*' 2>/dev/null || true)
+
+  if [ ${#UNTRACKED_FILES[@]} -gt 0 ]; then
+    while IFS= read -r line; do
+      if [ -n "$line" ]; then
+        NEW_SUPPRESSIONS+=("$line")
+      fi
+    done < <(grep -rnE '(@ts-ignore|@ts-nocheck|eslint-disable|oxlint-disable)' "${UNTRACKED_FILES[@]}" 2>/dev/null || true)
+  fi
+
+  if [ ${#NEW_SUPPRESSIONS[@]} -gt 0 ]; then
+    echo ""
+    echo "❌ [ANTI-TAMPERING VIOLATION]: Prohibited compiler/linter suppression comments added in code:"
+    for sup in "${NEW_SUPPRESSIONS[@]}"; do
+      echo "   $sup"
+    done
+    echo "   Using @ts-ignore, @ts-nocheck, eslint-disable, or oxlint-disable to bypass quality gates is forbidden."
+    TAMPERING_VIOLATIONS=$((TAMPERING_VIOLATIONS + 1))
+  fi
+
+  # B. Check for weakening or deletion of quality rules in vite.config.ts / vitest.config.ts
+  VITE_DELETIONS=$(git diff HEAD -U0 -- 'vite.config.*' 'vitest.config.*' 2>/dev/null | grep -E '^\-[^-]' | grep -E "('complexity'|no-restricted-imports|max-lines-per-function|@shadcn/lint)" || true)
+  if [ -n "$VITE_DELETIONS" ]; then
+    echo ""
+    echo "❌ [ANTI-TAMPERING VIOLATION]: Deleting or weakening quality rules in bundler config is prohibited:"
+    echo "$VITE_DELETIONS"
+    TAMPERING_VIOLATIONS=$((TAMPERING_VIOLATIONS + 1))
+  fi
+
+  # C. Check for neutralization of test/check scripts in package.json
+  PKG_NEUTRALIZATIONS=$(git diff HEAD -U0 -- package.json 2>/dev/null | grep -E '^\+[^+]' | grep -E '"(test|check)"[[:space:]]*:[[:space:]]*"(echo\b|true\b|exit[[:space:]]+0\b|:|"")' || true)
+  if [ -n "$PKG_NEUTRALIZATIONS" ]; then
+    echo ""
+    echo "❌ [ANTI-TAMPERING VIOLATION]: Neutralizing quality scripts in package.json is prohibited:"
+    echo "$PKG_NEUTRALIZATIONS"
+    TAMPERING_VIOLATIONS=$((TAMPERING_VIOLATIONS + 1))
+  fi
+
+  if [ $TAMPERING_VIOLATIONS -gt 0 ]; then
+    echo ""
+    echo "❌ [QUALITY GATE FAILED]: Code or gate tampering detected. Fix the root issues in application code."
+    record_failure
+    write_evidence "failed" "anti_tampering"
+    emit_gate_telemetry "failed" 1
+    exit 1
+  fi
+fi
+
+# 4. Enforce centralized, typed environment variable access
 if [ "$DRY_RUN" = false ]; then
   ENV_CHECK="$SCRIPT_DIR/check-env-config.sh"
   if [ -f "$ENV_CHECK" ]; then

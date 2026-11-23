@@ -207,6 +207,8 @@ if [ "$CHECK_SCOPE" = true ] || [ "$CHECK_BREAKER" = false ]; then
     ".specify/scripts/"
     ".specify/extensions.yml"
     ".specify/workflows/"
+    ".specify/memory/"
+    ".specify/templates/"
     "templates/guardrails.md"
   )
 
