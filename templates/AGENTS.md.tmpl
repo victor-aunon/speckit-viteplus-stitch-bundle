@@ -52,9 +52,9 @@ src/features/<slice>/
 
 ---
 
-## 5. Verification Commands
+## 5. Verification Commands & Machine-Generated Evidence
 
-Run these deterministic gates before declaring any task complete:
+Run these deterministic gates before declaring any task complete. Each gate emits structured telemetry to `.specify/telemetry.jsonl` and records machine proof artifacts in `specs/<feature>/evidence/`:
 
 ```bash
 # Core gate: formatting (Oxfmt), linting (Oxlint), strict typing, architecture boundaries, and test suite
@@ -63,9 +63,12 @@ bash .specify/scripts/bash/check-quality-gate.sh
 # Performance & bundle budget (max 250KB per chunk, max 1000KB total)
 bash .specify/scripts/bash/check-bundle-budget.sh
 
-# Component & route contract integrity
-bash .specify/scripts/bash/check-contracts.sh
+# Component & route contract integrity (set SPECIFY_HAS_UI=true or pass --require-ui for UI features)
+SPECIFY_HAS_UI=true bash .specify/scripts/bash/check-contracts.sh
 
-# Stitch visual tokens & Playwright regression
-bash .specify/scripts/bash/verify-stitch-design.sh --tokens-only
+# Stitch visual tokens & Playwright regression (set SPECIFY_HAS_UI=true or pass --require-ui for UI features)
+SPECIFY_HAS_UI=true bash .specify/scripts/bash/verify-stitch-design.sh --tokens-only
+
+# Review recorded telemetry and gate execution history
+bash .specify/scripts/bash/emit-telemetry.sh --summary
 ```

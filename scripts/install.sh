@@ -109,6 +109,7 @@ cp "$BUNDLE_ROOT/scripts/check-blast-radius.sh" "$SPECIFY_DIR/scripts/bash/check
 cp "$BUNDLE_ROOT/scripts/check-contracts.sh" "$SPECIFY_DIR/scripts/bash/check-contracts.sh"
 cp "$BUNDLE_ROOT/scripts/check-ghost-classes.sh" "$SPECIFY_DIR/scripts/bash/check-ghost-classes.sh"
 cp "$BUNDLE_ROOT/scripts/check-bundle-budget.sh" "$SPECIFY_DIR/scripts/bash/check-bundle-budget.sh"
+cp "$BUNDLE_ROOT/scripts/emit-telemetry.sh" "$SPECIFY_DIR/scripts/bash/emit-telemetry.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-quality-gate.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-env-config.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/verify-stitch-design.sh"
@@ -116,6 +117,7 @@ chmod +x "$SPECIFY_DIR/scripts/bash/check-blast-radius.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-contracts.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-ghost-classes.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-bundle-budget.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/emit-telemetry.sh"
 
 # 3. Copy templates
 if [ -d "$BUNDLE_ROOT/templates" ]; then

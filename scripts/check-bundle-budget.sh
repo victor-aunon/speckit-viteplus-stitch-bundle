@@ -28,6 +28,8 @@
 
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
+
 show_help() {
   cat << 'EOF'
 Usage: check-bundle-budget.sh [options]
@@ -43,6 +45,8 @@ Options:
   --dist-dir=<path>       Target distribution directory (default: dist)
   --baseline-total-kb=<N> Known pre-existing total size in KB (grandfathered debt)
   --strict                Always enforce the total budget, even without a baseline
+  --feature-dir=<path>    Feature directory (e.g. specs/001-feature)
+  --evidence-dir=<path>   Directory to write machine evidence JSON (default: <feature-dir>/evidence)
 
 Environment variables (override defaults, below CLI flags):
   BUNDLE_MAX_CHUNK_KB     Per-chunk budget in KB
@@ -134,6 +138,9 @@ fi
 [ -n "${BUNDLE_DIST_DIR:-}" ] && DIST_DIR="$BUNDLE_DIST_DIR"
 [ "${BUNDLE_STRICT:-}" = "true" ] && STRICT=true
 
+FEATURE_DIR=""
+EVIDENCE_DIR=""
+
 # 3. CLI flags (highest precedence)
 for arg in "$@"; do
   case "$arg" in
@@ -162,10 +169,78 @@ for arg in "$@"; do
     --dist-dir=*)
       DIST_DIR="${arg#*=}"
       ;;
+    --feature-dir=*)
+      FEATURE_DIR="${arg#*=}"
+      ;;
+    --evidence-dir=*)
+      EVIDENCE_DIR="${arg#*=}"
+      ;;
     *)
       ;;
   esac
 done
+
+# Resolve feature directory from environment variable if not passed as CLI argument
+if [ -z "$FEATURE_DIR" ] && [ -n "${SPECIFY_FEATURE_DIR:-}" ]; then
+  FEATURE_DIR="$SPECIFY_FEATURE_DIR"
+fi
+
+# Autodetect feature directory if not provided
+if [ -z "$FEATURE_DIR" ] && [ -d "specs" ]; then
+  FEATURE_DIR=$(find specs -mindepth 1 -maxdepth 1 -type d | sort -r | head -n 1 || true)
+fi
+
+# Resolve evidence directory
+if [ -z "$EVIDENCE_DIR" ] && [ -n "$FEATURE_DIR" ] && [ -d "$FEATURE_DIR" ]; then
+  EVIDENCE_DIR="$FEATURE_DIR/evidence"
+fi
+
+START_TIME=$(date +%s 2>/dev/null || echo 0)
+
+emit_gate_telemetry() {
+  local status="$1"
+  local code="$2"
+  local end_time=$(date +%s 2>/dev/null || echo 0)
+  local dur=$(( (end_time - START_TIME) * 1000 ))
+  if [ -f "$SCRIPT_DIR/emit-telemetry.sh" ]; then
+    bash "$SCRIPT_DIR/emit-telemetry.sh" \
+      --gate="check-bundle-budget" \
+      --status="$status" \
+      --duration-ms="$dur" \
+      --exit-code="$code" \
+      ${FEATURE_DIR:+--feature-dir="$FEATURE_DIR"} \
+      ${EVIDENCE_DIR:+--evidence-file="$EVIDENCE_DIR/bundle-budget.json"} 2>/dev/null || true
+  fi
+}
+
+write_evidence() {
+  local status="$1"
+  if [ -n "$EVIDENCE_DIR" ]; then
+    mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
+    if command -v node >/dev/null 2>&1; then
+      node -e '
+        const fs = require("fs");
+        const [outPath, status, maxChunk, largestChunk, largestName, maxTotal, totalKb, violations, grandfathered] = process.argv.slice(1);
+        const data = {
+          timestamp: new Date().toISOString(),
+          gate: "check-bundle-budget",
+          status,
+          metrics: {
+            max_chunk_kb: Number(maxChunk) || 0,
+            largest_chunk_kb: Number(largestChunk) || 0,
+            largest_chunk_name: largestName || undefined,
+            max_total_kb: Number(maxTotal) || 0,
+            total_bundle_kb: Number(totalKb) || 0,
+            violations: Number(violations) || 0,
+            grandfathered: grandfathered === "true"
+          },
+          evidence_type: "production_bundle_budget"
+        };
+        fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
+      ' "$EVIDENCE_DIR/bundle-budget.json" "$status" "$MAX_CHUNK_KB" "$LARGEST_CHUNK_KB" "$LARGEST_CHUNK_NAME" "$MAX_TOTAL_KB" "$TOTAL_KB" "$VIOLATIONS" "$TOTAL_SKIPPED" 2>/dev/null || true
+    fi
+  fi
+}
 
 echo "======================================================================"
 echo "[PERFORMANCE GATE] Checking Production Bundle Budget"
@@ -190,6 +265,8 @@ if [ "$SKIP_BUILD" = false ]; then
     $BUILD_CMD || BUILD_STATUS=$?
     if [ $BUILD_STATUS -ne 0 ]; then
       echo "❌ [PERFORMANCE GATE FAILED]: Production build failed (exit code: $BUILD_STATUS)."
+      write_evidence "failed"
+      emit_gate_telemetry "failed" "$BUILD_STATUS"
       exit 2
     fi
   else
@@ -200,6 +277,7 @@ fi
 if [ ! -d "$DIST_DIR" ]; then
   echo "ℹ️  No distribution directory ($DIST_DIR) found."
   echo "ℹ️  Skipping bundle budget verification."
+  emit_gate_telemetry "skipped" 0
   exit 0
 fi
 
@@ -298,12 +376,16 @@ if [ "$VIOLATIONS" -gt 0 ]; then
   if [ "$DRY_RUN" = true ]; then
     echo ""
     echo "⚠️ [PERFORMANCE GATE DRY-RUN]: $VIOLATIONS budget violation(s) detected (dry-run mode)."
+    write_evidence "passed"
+    emit_gate_telemetry "passed" 0
     exit 0
   else
     echo ""
     echo "❌ [PERFORMANCE GATE FAILED]: $VIOLATIONS bundle budget violation(s) detected."
     echo "   Ensure code splitting, dynamic imports, and treeshaking are properly configured,"
     echo "   and remove heavyweight or unused dependencies."
+    write_evidence "failed"
+    emit_gate_telemetry "failed" 1
     exit 1
   fi
 fi
@@ -314,4 +396,6 @@ if [ "$TOTAL_SKIPPED" = true ]; then
 else
   echo "✅ [PERFORMANCE GATE PASSED]: Bundle size is strictly within budget."
 fi
+write_evidence "passed"
+emit_gate_telemetry "passed" 0
 exit 0

@@ -215,4 +215,62 @@ describe('check-contracts.sh', () => {
     expect(content).toContain('--check-orphans');
     expect(content).toContain('--check-atomic');
   });
+
+  it('should fail with exit 1 when UI is required (--require-ui or SPECIFY_HAS_UI=true) and routes-manifest.json is missing', () => {
+    try {
+      runBash(scriptPath, [`--feature-dir=${tempDir}`, '--require-ui'], { stdio: 'pipe' });
+      expect.fail('Should fail when UI is required but manifest is missing');
+    } catch (error: any) {
+      expect(error.status).toBe(1);
+      const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+      expect(combined).toContain('CONTRACT GATE FAILED');
+      expect(combined).toContain('UI contracts are required');
+    }
+
+    try {
+      runBash(scriptPath, [`--feature-dir=${tempDir}`], {
+        env: { ...process.env, SPECIFY_HAS_UI: 'true' },
+        stdio: 'pipe'
+      });
+      expect.fail('Should fail when SPECIFY_HAS_UI=true but manifest is missing');
+    } catch (error: any) {
+      expect(error.status).toBe(1);
+      const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+      expect(combined).toContain('CONTRACT GATE FAILED');
+      expect(combined).toContain('UI contracts are required');
+    }
+  });
+
+  it('should write machine evidence to evidence-dir when contracts pass', () => {
+    const manifestPath = path.join(tempDir, 'routes-manifest.json');
+    const evidenceDir = path.join(tempDir, 'evidence');
+    const fixturesDir = path.join(tempDir, 'fixtures');
+    fs.mkdirSync(fixturesDir, { recursive: true });
+    fs.writeFileSync(path.join(fixturesDir, 'data.json'), '{"ok": true}', 'utf8');
+
+    const manifestContent = {
+      screens: [
+        {
+          id: 'test-screen',
+          route: '/test',
+          selector: '#root',
+          fixtures: { '/api': './fixtures/data.json' }
+        }
+      ]
+    };
+    fs.writeFileSync(manifestPath, JSON.stringify(manifestContent, null, 2), 'utf8');
+
+    const output = runBash(scriptPath, [
+      `--manifest=${manifestPath}`,
+      `--evidence-dir=${evidenceDir}`
+    ]);
+    expect(output).toContain('CONTRACT GATE PASSED');
+
+    const evidencePath = path.join(evidenceDir, 'contracts.json');
+    expect(fs.existsSync(evidencePath)).toBe(true);
+    const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+    expect(evidence.gate).toBe('check-contracts');
+    expect(evidence.status).toBe('passed');
+    expect(evidence.screens_count).toBe(1);
+  });
 });

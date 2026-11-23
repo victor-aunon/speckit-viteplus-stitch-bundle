@@ -197,18 +197,21 @@ steps:
     prompt: |
       Perform empirical verification of the completed implementation:
 
-      1. Inspect `specs/<feature>/spec.md`, `tasks.md`, test outputs, and quality gate results.
+      1. Inspect `specs/<feature>/spec.md`, `tasks.md`, test outputs, and machine-generated evidence in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `stitch-design.json`).
       2. If this feature has UI (`has_ui: true`):
          - Activate the `impeccable` skill using the `activate_skill(name: 'impeccable')` tool (do NOT use `read_file` on external paths outside the workspace) and perform a comprehensive Accessibility & Design Audit (`impeccable audit` checklist: WCAG 2.1 AA contrast, keyboard navigation `:focus-visible`, minimum 44px touch targets, and responsive layout scaling).
          - Confirm micro-interactions and transitions respect `@media (prefers-reduced-motion: reduce)` (`impeccable animate`).
       3. Verify each acceptance scenario (Given/When/Then) against concrete empirical evidence:
          - Unit, integration, and regression tests passing with zero failures
          - Clean Architecture boundary validation passing (`vp check`)
-         - Route & component contracts and ghost classes passing (`check-contracts.sh`)
-         - Visual fidelity & Stitch token tests passing (`verify-stitch-design.sh`)
+         - Route & component contracts and ghost classes passing (`check-contracts.sh` with `SPECIFY_HAS_UI=true` when `has_ui: true`)
+         - Visual fidelity & Stitch token tests passing (`verify-stitch-design.sh` with `SPECIFY_HAS_UI=true` when `has_ui: true`)
          - Production bundle budget passing (`check-bundle-budget.sh`)
-      4. Generate `specs/<feature>/VERIFICATION_REPORT.md` with:
+         - Machine-generated evidence files present and valid in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, plus `contracts.json` and `stitch-design.json`)
+      4. IMMUTABLE EVIDENCE REQUIREMENT:
+         Every claim in `VERIFICATION_REPORT.md` must be corroborated by raw evidence artifacts in `specs/<feature>/evidence/` and structured gate logs in `.specify/telemetry.jsonl`. Self-reported claims without machine evidence are invalid.
+      5. Generate `specs/<feature>/VERIFICATION_REPORT.md` with:
          - Scenario Verification Matrix (Pass/Fail per acceptance criterion)
-         - Empirical Evidence Log (test names, gate outputs, screenshots, audit findings)
+         - Empirical Evidence Log (cites machine evidence from `specs/<feature>/evidence/`, test outputs, gate outputs, screenshots, audit findings)
          - Delta-Spec Sync: Document any architectural clarifications or domain adjustments made during implementation.
-      5. Output an Executive Closing Summary in the terminal for asynchronous human review.
+      6. Output an Executive Closing Summary in the terminal for asynchronous human review.

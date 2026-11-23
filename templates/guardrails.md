@@ -86,6 +86,9 @@ When a project utilizes Tailwind CSS or a dynamic utility framework:
   3. **Application Consumption**: Import the primary stylesheet in the application entrypoint (`src/main.tsx` or `index.html`).
 - The `check-ghost-classes.sh` gate validates that all three links are active. Unwired utility classes in JSX without a functioning bundler pipeline will fail the gate immediately.
 
+## Empirical Machine Evidence & Definition of Done (DoD)
 
-
-
+A task or feature cannot be declared complete without deterministic machine-generated evidence:
+- **Machine Proofs in `specs/<feature>/evidence/`**: Verification requires machine-generated proof files (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, and `stitch-design.json`). Self-reported success without machine proof is rejected.
+- **No Silent Skips**: When UI is declared (`has_ui: true`), visual verification and route contracts are mandatory. Missing design folders or manifests fail the gate instead of skipping.
+- **Auditability via Telemetry**: All gate executions log structured events to `.specify/telemetry.jsonl` to ensure complete observability of execution duration, gate statuses, and circuit breaker health.

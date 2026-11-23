@@ -27,13 +27,15 @@ Options:
   --manifest=<path>         Direct path to routes-manifest.json
   --check-orphans           Scan for unimported/orphan UI components in src/
   --check-atomic            Enforce Atomic Design (strictly max 1 component per file)
+  --require-ui              Fail if routes-manifest.json is missing (do not skip)
+  --evidence-dir=<path>     Directory to write machine evidence JSON (default: <feature-dir>/evidence)
   --scope=<path>            Feature slice to audit (default: src). Propagated to
                             check-ghost-classes.sh and orphan/atomic scans
   --dry-run                 Simulate validation without failing
 
 Exit Codes:
   0                         All route and component contracts are valid
-  1                         Contract violations, missing fixtures, or orphan components detected
+  1                         Contract violations, missing fixtures, orphan components, or missing manifest when required
   2                         Missing tools or invalid manifest JSON
 EOF
 }
@@ -42,6 +44,8 @@ FEATURE_DIR=""
 MANIFEST_FILE=""
 CHECK_ORPHANS=false
 CHECK_ATOMIC=false
+REQUIRE_UI=false
+EVIDENCE_DIR=""
 DRY_RUN=false
 SCOPE_DIR=""
 
@@ -63,6 +67,12 @@ for arg in "$@"; do
     --check-atomic)
       CHECK_ATOMIC=true
       ;;
+    --require-ui)
+      REQUIRE_UI=true
+      ;;
+    --evidence-dir=*)
+      EVIDENCE_DIR="${arg#*=}"
+      ;;
     --scope=*)
       SCOPE_DIR="${arg#*=}"
       ;;
@@ -73,6 +83,18 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# Resolve UI requirement from environment variable if not passed as CLI argument
+if [ "$REQUIRE_UI" = false ] && [ -n "${SPECIFY_HAS_UI:-}" ]; then
+  if [ "$SPECIFY_HAS_UI" = "true" ] || [ "$SPECIFY_HAS_UI" = "1" ]; then
+    REQUIRE_UI=true
+  fi
+fi
+
+# Resolve feature directory from environment variable if not passed as CLI argument
+if [ -z "$FEATURE_DIR" ] && [ -n "${SPECIFY_FEATURE_DIR:-}" ]; then
+  FEATURE_DIR="$SPECIFY_FEATURE_DIR"
+fi
 
 # Autodetect feature directory if not provided
 if [ -z "$FEATURE_DIR" ] && [ -z "$MANIFEST_FILE" ]; then
@@ -85,22 +107,89 @@ if [ -z "$MANIFEST_FILE" ] && [ -n "$FEATURE_DIR" ]; then
   MANIFEST_FILE="$FEATURE_DIR/designs/routes-manifest.json"
 fi
 
+# Resolve evidence directory
+if [ -z "$EVIDENCE_DIR" ] && [ -n "$FEATURE_DIR" ] && [ -d "$FEATURE_DIR" ]; then
+  EVIDENCE_DIR="$FEATURE_DIR/evidence"
+fi
+
+START_TIME=$(date +%s 2>/dev/null || echo 0)
+
+emit_gate_telemetry() {
+  local status="$1"
+  local code="$2"
+  local end_time=$(date +%s 2>/dev/null || echo 0)
+  local dur=$(( (end_time - START_TIME) * 1000 ))
+  if [ -f "$SCRIPT_DIR/emit-telemetry.sh" ]; then
+    bash "$SCRIPT_DIR/emit-telemetry.sh" \
+      --gate="check-contracts" \
+      --status="$status" \
+      --duration-ms="$dur" \
+      --exit-code="$code" \
+      ${SCOPE_DIR:+--scope="$SCOPE_DIR"} \
+      ${FEATURE_DIR:+--feature-dir="$FEATURE_DIR"} \
+      ${EVIDENCE_DIR:+--evidence-file="$EVIDENCE_DIR/contracts.json"} 2>/dev/null || true
+  fi
+}
+
+write_evidence() {
+  local status="$1"
+  if [ -n "$EVIDENCE_DIR" ]; then
+    mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
+    if command -v node >/dev/null 2>&1; then
+      node -e '
+        const fs = require("fs");
+        const [outPath, status, manifestPath, featDir, scopeDir] = process.argv.slice(1);
+        let screenCount = 0;
+        try {
+          if (manifestPath && fs.existsSync(manifestPath)) {
+            const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+            if (Array.isArray(m.screens)) screenCount = m.screens.length;
+          }
+        } catch {}
+        const data = {
+          timestamp: new Date().toISOString(),
+          gate: "check-contracts",
+          status,
+          reason: status === "skipped" ? "no_ui_declared" : undefined,
+          manifest_file: manifestPath || undefined,
+          screens_count: screenCount,
+          feature_dir: featDir || undefined,
+          scope: scopeDir || undefined,
+          evidence_type: "routes_and_component_contracts"
+        };
+        fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
+      ' "$EVIDENCE_DIR/contracts.json" "$status" "$MANIFEST_FILE" "$FEATURE_DIR" "$SCOPE_DIR" 2>/dev/null || true
+    fi
+  fi
+}
+
 echo "======================================================================"
 echo "[CONTRACT GATE] Starting Route & Component Contract Integrity Check"
 echo "======================================================================"
 
 if [ -z "$MANIFEST_FILE" ] || [ ! -f "$MANIFEST_FILE" ]; then
+  if [ "$REQUIRE_UI" = true ]; then
+    echo "❌ [CONTRACT GATE FAILED]: UI contracts are required (--require-ui or SPECIFY_HAS_UI=true),"
+    echo "   but routes-manifest.json does not exist: '${MANIFEST_FILE:-none}'."
+    echo "   Every feature with UI must declare a valid routes-manifest.json."
+    emit_gate_telemetry "failed" 1
+    write_evidence "failed"
+    exit 1
+  fi
   echo "ℹ️  No routes-manifest.json found (${MANIFEST_FILE:-none})."
   echo "ℹ️  Skipping contract verification (no UI routes declared)."
+  write_evidence "skipped"
+  emit_gate_telemetry "skipped" 0
   exit 0
 fi
 
 echo "✓ Manifest detected: $MANIFEST_FILE"
 
-# Execute contract validation using Node.js for robust AST & JSON parsing
-node - "$MANIFEST_FILE" "$CHECK_ORPHANS" "$CHECK_ATOMIC" "$DRY_RUN" "$SCOPE_DIR" << 'NODE_SCRIPT'
+NODE_STATUS=0
+node - "$MANIFEST_FILE" "$CHECK_ORPHANS" "$CHECK_ATOMIC" "$DRY_RUN" "$SCOPE_DIR" << 'NODE_SCRIPT' || NODE_STATUS=$?
 const fs = require('fs');
 const path = require('path');
+
 
 const [,, manifestPath, checkOrphansStr, checkAtomicStr, dryRunStr, scopeDirArg] = process.argv;
 const checkOrphans = checkOrphansStr === 'true';
@@ -285,6 +374,12 @@ if (violations > 0 && !dryRun) {
 console.log("\n✅ [CONTRACT GATE PASSED]: Route and component contracts are strictly satisfied.");
 NODE_SCRIPT
 
+if [ $NODE_STATUS -ne 0 ]; then
+  emit_gate_telemetry "failed" "$NODE_STATUS"
+  write_evidence "failed"
+  exit $NODE_STATUS
+fi
+
 # 4. Enforce Ghost Classes Gate (no undeclared CSS classes in JSX)
 GHOST_SCRIPT="$SCRIPT_DIR/check-ghost-classes.sh"
 if [ -f "$GHOST_SCRIPT" ]; then
@@ -299,8 +394,12 @@ if [ -f "$GHOST_SCRIPT" ]; then
     echo "ℹ️  Scoped ghost-classes check active: scanning '$SCOPE_DIR' only"
   fi
   if ! bash "$GHOST_SCRIPT" "${GHOST_ARGS[@]}"; then
+    emit_gate_telemetry "failed" 1
+    write_evidence "failed"
     exit 1
   fi
 fi
 
+write_evidence "passed"
+emit_gate_telemetry "passed" 0
 exit 0

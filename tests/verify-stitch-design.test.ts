@@ -28,6 +28,58 @@ describe('verify-stitch-design.sh and templates', () => {
     expect(output).toContain('Skipping visual verification');
   });
 
+  it('should fail with exit 1 when UI is required (--require-ui or SPECIFY_HAS_UI=true) and designs directory is missing', () => {
+    try {
+      runBash(scriptPath, ['--feature-dir=./__non_existent_feature_dir__', '--require-ui'], { stdio: 'pipe' });
+      expect.fail('Should have failed when UI is required and designs directory is missing');
+    } catch (error: any) {
+      expect(error.status).toBe(1);
+      const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+      expect(combined).toContain('VISUAL GATE FAILED');
+      expect(combined).toContain('UI verification is required');
+    }
+
+    try {
+      runBash(scriptPath, ['--feature-dir=./__non_existent_feature_dir__'], {
+        env: { ...process.env, SPECIFY_HAS_UI: 'true' },
+        stdio: 'pipe'
+      });
+      expect.fail('Should have failed when SPECIFY_HAS_UI=true and designs directory is missing');
+    } catch (error: any) {
+      expect(error.status).toBe(1);
+      const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+      expect(combined).toContain('VISUAL GATE FAILED');
+      expect(combined).toContain('UI verification is required');
+    }
+  });
+
+  it('should write machine evidence to evidence-dir when validating tokens', () => {
+    const tempDir = path.resolve(__dirname, '../.specify/tmp-test-stitch-evidence');
+    const designsDir = path.join(tempDir, 'designs');
+    const evidenceDir = path.join(tempDir, 'evidence');
+    fs.mkdirSync(designsDir, { recursive: true });
+    fs.writeFileSync(path.join(designsDir, 'tokens.css'), ':root { --color-primary: #0070f3; }', 'utf8');
+
+    try {
+      const output = runBash(scriptPath, [
+        `--feature-dir=${tempDir}`,
+        `--evidence-dir=${evidenceDir}`,
+        '--tokens-only'
+      ]);
+      expect(output).toContain('VISUAL GATE PASSED');
+      const evidencePath = path.join(evidenceDir, 'stitch-design.json');
+      expect(fs.existsSync(evidencePath)).toBe(true);
+      const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+      expect(evidence.gate).toBe('verify-stitch-design');
+      expect(evidence.status).toBe('passed');
+      expect(evidence.tokens_count).toBe(1);
+    } finally {
+      if (fs.existsSync(tempDir)) {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    }
+  });
+
   it('templates should exist and configure maxDiffPixelRatio 0.05 and tokens evaluation', () => {
     expect(fs.existsSync(configTmpl)).toBe(true);
     expect(fs.existsSync(specTmpl)).toBe(true);

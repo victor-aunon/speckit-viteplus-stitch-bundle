@@ -29,6 +29,8 @@ The workflow will autonomously execute specification audits, UI critiques, atomi
 - 👻 **Ghost Classes Quality Gate**: Static AST scanner that verifies that every CSS class referenced in JSX/TSX is declared in a project stylesheet, eliminating dead or missing styles.
 - 🛑 **Interactive Visual Review Gate**: Inspect and approve UI screens and design tokens before writing product code.
 - 🔬 **Strict Stitch Token Verification**: Every token declared in `tokens.css` must be present in the DOM with the exact Stitch value; drift fails the gate.
+- 📊 **Structured Telemetry & Observability**: Every quality gate logs structured JSONL events (`.specify/telemetry.jsonl`) recording timestamp, phase, gate duration in ms, scope, exit codes, and circuit breaker metrics. Inspect with `emit-telemetry.sh --summary`.
+- 🛡️ **Machine-Generated Evidence for Definition of Done**: Eliminates subjective agent self-reporting. Generates raw machine proof artifacts in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `stitch-design.json`) required for task completion.
 - 🔄 **Phased Implementation with Checkpoints**: Playwright and Vite+ validate every phase, then the workflow pauses for approval before the next phase. Use `--auto-continue` to run all phases without pausing.
 
 ---
@@ -93,6 +95,7 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/check-contracts.sh` | Route manifest & orphan component contract integrity gate |
 | `.specify/scripts/bash/check-ghost-classes.sh` | Ghost classes gate: scans JSX/TSX for undeclared CSS classes |
 | `.specify/scripts/bash/check-bundle-budget.sh` | Production performance & bundle size budget gate |
+| `.specify/scripts/bash/emit-telemetry.sh` | Structured telemetry & observability event logger |
 | `.specify/templates/` | `vite.config.ts`, Playwright, env config, and design-audit templates |
 | `.specify/workflows/viteplus-stitch/GUARDRAILS.md` | Non-negotiable policy: never weaken gates to pass tests |
 | `.specify/memory/constitution.md` | Receives the "Quality Gate Integrity" section (read by every command) |
@@ -389,6 +392,21 @@ Prevents autonomous agents from modifying protected quality scripts, workflows, 
 
 ```bash
 bash .specify/scripts/bash/check-blast-radius.sh --scope=src/features/billing
+```
+
+### 8. `emit-telemetry.sh` (Structured Telemetry & Observability Emitter)
+Logs structured JSONL execution events across all quality gates to `.specify/telemetry.jsonl`. Tracks execution durations in milliseconds, exit codes, feature scopes, and circuit breaker trip events.
+
+```bash
+# Display formatted summary table of recent gate executions
+bash .specify/scripts/bash/emit-telemetry.sh --summary
+
+# Emit a custom telemetry event
+bash .specify/scripts/bash/emit-telemetry.sh \
+  --gate=check-quality-gate \
+  --status=passed \
+  --duration-ms=1450 \
+  --scope=src/features/billing
 ```
 
 ---

@@ -128,4 +128,35 @@ describe('check-quality-gate.sh', () => {
       removeDir(tempDir);
     }
   });
+
+  it('should write machine evidence to evidence-dir on gate failure', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-gate-evidence-test-'));
+    const evidenceDir = path.join(tempDir, 'evidence');
+    const featureDir = path.join(tempDir, 'src/features/billing');
+    fs.mkdirSync(featureDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(featureDir, 'charge.ts'),
+      'export const key = process.env.STRIPE_KEY;\n',
+      'utf8'
+    );
+
+    try {
+      runBash(scriptPath, [`--evidence-dir=${evidenceDir}`], { cwd: tempDir, stdio: 'pipe' });
+      expect.fail('quality gate should fail on direct process.env access');
+    } catch (error: any) {
+      expect(error.status).toBe(1);
+      const evidencePath = path.join(evidenceDir, 'quality-gate.json');
+      expect(fs.existsSync(evidencePath)).toBe(true);
+      const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+      expect(evidence.gate).toBe('check-quality-gate');
+      expect(evidence.status).toBe('failed');
+      expect(evidence.failed_step).toBe('env_config');
+      expect(evidence.checks.env_config).toBe('failed');
+      expect(evidence.checks.code_quality).toBe('unreached');
+      expect(evidence.checks.regression_tests).toBe('unreached');
+      expect(evidence.checks.build).toBe('unreached');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
 });

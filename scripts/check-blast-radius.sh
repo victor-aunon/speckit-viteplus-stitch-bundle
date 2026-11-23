@@ -14,6 +14,8 @@
 
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
+
 show_help() {
   cat << 'EOF'
 Usage: check-blast-radius.sh [options]
@@ -114,11 +116,26 @@ set_failure_count() {
   printf '%s' "$count" > "$STATE_FILE" 2>/dev/null || true
 }
 
+emit_cb_telemetry() {
+  local event="$1"
+  local status="$2"
+  local details="$3"
+  if [ -f "$SCRIPT_DIR/emit-telemetry.sh" ]; then
+    bash "$SCRIPT_DIR/emit-telemetry.sh" \
+      --event="$event" \
+      --gate="check-blast-radius" \
+      --status="$status" \
+      ${SCOPE_DIR:+--scope="$SCOPE_DIR"} \
+      ${details:+--details="$details"} 2>/dev/null || true
+  fi
+}
+
 # 1. Reset / Success handling
 if [ "$RESET_BREAKER" = true ] || [ "$RECORD_SUCCESS" = true ]; then
   if [ "$DRY_RUN" = false ]; then
     set_failure_count 0
   fi
+  emit_cb_telemetry "circuit_breaker" "reset" '{"failures":0}'
   echo "✓ Circuit breaker counter reset to 0."
   exit 0
 fi
@@ -133,9 +150,11 @@ if [ "$CHECK_BREAKER" = true ]; then
     echo "   Execution is halted to prevent degradation loops and uncontrolled token expenditure."
     echo "   Action required: Inspect failures, revert uncommitted regressions with 'git checkout/restore .',"
     echo "   and reset with 'check-blast-radius.sh --reset'."
+    emit_cb_telemetry "circuit_breaker" "tripped" "{\"failures\":$CURRENT_COUNT,\"max_failures\":$MAX_FAILURES}"
     exit 1
   fi
   echo "✓ Circuit breaker is healthy (failures: $CURRENT_COUNT / $MAX_FAILURES)."
+  emit_cb_telemetry "circuit_breaker" "healthy" "{\"failures\":$CURRENT_COUNT,\"max_failures\":$MAX_FAILURES}"
   if [ "$CHECK_SCOPE" = false ] && [ "$RECORD_FAILURE" = false ]; then
     exit 0
   fi
@@ -153,8 +172,10 @@ if [ "$RECORD_FAILURE" = true ]; then
   if [ "$NEW_COUNT" -ge "$MAX_FAILURES" ]; then
     echo "❌ [CIRCUIT BREAKER TRIPPED]: Consecutive failure threshold reached ($NEW_COUNT / $MAX_FAILURES)."
     echo "   Halting execution immediately to prevent damage to the repository."
+    emit_cb_telemetry "circuit_breaker" "tripped" "{\"failures\":$NEW_COUNT,\"max_failures\":$MAX_FAILURES}"
     exit 1
   fi
+  emit_cb_telemetry "circuit_breaker" "failure_recorded" "{\"failures\":$NEW_COUNT,\"max_failures\":$MAX_FAILURES}"
   exit 0
 fi
 
@@ -214,10 +235,12 @@ if [ "$CHECK_SCOPE" = true ] || [ "$CHECK_BREAKER" = false ]; then
     echo "❌ [BLAST RADIUS GATE FAILED]: $VIOLATIONS file boundary violation(s) detected."
     echo "   Autonomous agents may only modify files within their assigned feature scope,"
     echo "   and may never modify quality gates, constitution rules, or tooling scripts."
+    emit_cb_telemetry "blast_radius" "failed" "{\"violations\":$VIOLATIONS}"
     exit 1
   fi
 
   echo "✓ All ${#MODIFIED_FILES[@]} modified file(s) are within legitimate boundaries."
+  emit_cb_telemetry "blast_radius" "passed" "{\"modified_files\":${#MODIFIED_FILES[@]}}"
 fi
 
 exit 0

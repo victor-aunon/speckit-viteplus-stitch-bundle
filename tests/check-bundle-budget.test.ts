@@ -219,4 +219,26 @@ describe('check-bundle-budget.sh', () => {
     expect(output).toContain('PERFORMANCE GATE DRY-RUN');
     expect(output).toContain('1 budget violation(s) detected (dry-run mode)');
   });
+
+  it('should write machine evidence to evidence-dir on successful verification', () => {
+    const distDir = path.join(tempDir, 'dist');
+    const evidenceDir = path.join(tempDir, 'evidence');
+    fs.mkdirSync(distDir, { recursive: true });
+    fs.writeFileSync(path.join(distDir, 'index.js'), 'console.log("ok");', 'utf8');
+
+    const output = runBash(scriptPath, [
+      `--dist-dir=${distDir}`,
+      `--evidence-dir=${evidenceDir}`,
+      '--skip-build'
+    ]);
+    expect(output).toContain('PERFORMANCE GATE PASSED');
+
+    const evidencePath = path.join(evidenceDir, 'bundle-budget.json');
+    expect(fs.existsSync(evidencePath)).toBe(true);
+    const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+    expect(evidence.gate).toBe('check-bundle-budget');
+    expect(evidence.status).toBe('passed');
+    expect(evidence.metrics.max_chunk_kb).toBe(250);
+    expect(evidence.metrics.max_total_kb).toBe(1000);
+  });
 });

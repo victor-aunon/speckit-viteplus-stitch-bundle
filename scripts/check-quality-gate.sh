@@ -34,6 +34,8 @@ Options:
   --skip-build     Skip application compilation and build verification
   --scope=<path>   Restrict allowed modifications to a feature slice (e.g. src/features/billing).
                    Also narrows the env-config audit and regression tests to that slice.
+  --feature-dir=<path>  Target feature directory (e.g. specs/001-feature)
+  --evidence-dir=<path> Directory to write machine evidence JSON (default: <feature-dir>/evidence)
   --reset-breaker  Reset the consecutive failure circuit breaker counter
 
 Exit Codes:
@@ -49,6 +51,8 @@ SKIP_TESTS=false
 SKIP_BUILD=false
 SCOPE_DIR=""
 RESET_BREAKER=false
+FEATURE_DIR=""
+EVIDENCE_DIR=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -71,6 +75,12 @@ for arg in "$@"; do
     --scope=*)
       SCOPE_DIR="${arg#*=}"
       ;;
+    --feature-dir=*)
+      FEATURE_DIR="${arg#*=}"
+      ;;
+    --evidence-dir=*)
+      EVIDENCE_DIR="${arg#*=}"
+      ;;
     --reset-breaker)
       RESET_BREAKER=true
       ;;
@@ -83,6 +93,84 @@ done
 if [ -z "$SCOPE_DIR" ] && [ -n "${SPECIFY_SCOPE:-}" ]; then
   SCOPE_DIR="$SPECIFY_SCOPE"
 fi
+
+# Resolve feature directory from environment variable if not passed as CLI argument
+if [ -z "$FEATURE_DIR" ] && [ -n "${SPECIFY_FEATURE_DIR:-}" ]; then
+  FEATURE_DIR="$SPECIFY_FEATURE_DIR"
+fi
+
+# Autodetect feature directory if not provided
+if [ -z "$FEATURE_DIR" ] && [ -d "specs" ]; then
+  FEATURE_DIR=$(find specs -mindepth 1 -maxdepth 1 -type d | sort -r | head -n 1 || true)
+fi
+
+# Resolve evidence directory
+if [ -z "$EVIDENCE_DIR" ] && [ -n "$FEATURE_DIR" ] && [ -d "$FEATURE_DIR" ]; then
+  EVIDENCE_DIR="$FEATURE_DIR/evidence"
+fi
+
+START_TIME=$(date +%s 2>/dev/null || echo 0)
+
+emit_gate_telemetry() {
+  local status="$1"
+  local code="$2"
+  local end_time=$(date +%s 2>/dev/null || echo 0)
+  local dur=$(( (end_time - START_TIME) * 1000 ))
+  if [ -f "$SCRIPT_DIR/emit-telemetry.sh" ]; then
+    bash "$SCRIPT_DIR/emit-telemetry.sh" \
+      --gate="check-quality-gate" \
+      --status="$status" \
+      --duration-ms="$dur" \
+      --exit-code="$code" \
+      ${SCOPE_DIR:+--scope="$SCOPE_DIR"} \
+      ${FEATURE_DIR:+--feature-dir="$FEATURE_DIR"} \
+      ${EVIDENCE_DIR:+--evidence-file="$EVIDENCE_DIR/quality-gate.json"} 2>/dev/null || true
+  fi
+}
+
+write_evidence() {
+  local status="$1"
+  local failed_step="${2:-none}"
+  if [ -n "$EVIDENCE_DIR" ]; then
+    mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
+    if command -v node >/dev/null 2>&1; then
+      node -e '
+        const fs = require("fs");
+        const [outPath, status, failedStep, scopeDir, featDir, vpCmd, skipTests, skipBuild] = process.argv.slice(1);
+        const stepsOrder = ["circuit_breaker", "blast_radius", "env_config", "code_quality", "regression_tests", "build"];
+        const failedIndex = failedStep !== "none" ? stepsOrder.indexOf(failedStep) : -1;
+        const getStatus = (stepName, index) => {
+          if (failedIndex !== -1) {
+            if (index === failedIndex) return "failed";
+            if (index > failedIndex) return "unreached";
+          }
+          if (stepName === "regression_tests" && skipTests === "true") return "skipped";
+          if (stepName === "build" && skipBuild === "true") return "skipped";
+          return stepName === "circuit_breaker" ? "healthy" : "passed";
+        };
+        const data = {
+          timestamp: new Date().toISOString(),
+          gate: "check-quality-gate",
+          status,
+          failed_step: failedStep !== "none" ? failedStep : undefined,
+          scope: scopeDir || undefined,
+          feature_dir: featDir || undefined,
+          engine: vpCmd || undefined,
+          checks: {
+            circuit_breaker: getStatus("circuit_breaker", 0),
+            blast_radius: getStatus("blast_radius", 1),
+            env_config: getStatus("env_config", 2),
+            code_quality: getStatus("code_quality", 3),
+            regression_tests: getStatus("regression_tests", 4),
+            build: getStatus("build", 5)
+          },
+          evidence_type: "deterministic_quality_gate"
+        };
+        fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
+      ' "$EVIDENCE_DIR/quality-gate.json" "$status" "$failed_step" "$SCOPE_DIR" "$FEATURE_DIR" "$VP_CMD" "$SKIP_TESTS" "$SKIP_BUILD" 2>/dev/null || true
+    fi
+  fi
+}
 
 # Auto-detect scope if inside a git work tree and changes are isolated to a single feature slice
 if [ -z "$SCOPE_DIR" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -118,6 +206,8 @@ fi
 
 if [ "$DRY_RUN" = false ] && [ -f "$BLAST_CHECK" ]; then
   if ! bash "$BLAST_CHECK" --check-breaker; then
+    write_evidence "failed" "circuit_breaker"
+    emit_gate_telemetry "failed" 1
     exit 1
   fi
 
@@ -127,6 +217,8 @@ if [ "$DRY_RUN" = false ] && [ -f "$BLAST_CHECK" ]; then
   fi
   if ! bash "$BLAST_CHECK" --check-scope "${SCOPE_ARGS[@]}"; then
     record_failure
+    write_evidence "failed" "blast_radius"
+    emit_gate_telemetry "failed" 1
     exit 1
   fi
 fi
@@ -144,6 +236,8 @@ if [ "$DRY_RUN" = false ]; then
     fi
     if ! bash "$ENV_CHECK" "${ENV_ARGS[@]}"; then
       record_failure
+      write_evidence "failed" "env_config"
+      emit_gate_telemetry "failed" 1
       echo ""
       echo "❌ [QUALITY GATE FAILED]: Environment variable configuration violations detected."
       exit 1
@@ -166,6 +260,7 @@ fi
 if [ -z "$VP_CMD" ]; then
   echo "⚠️ [QUALITY GATE ERROR]: Neither Vite+ 'vp' command nor 'npx' was found."
   echo "To install Vite+, run: curl -fsSL https://vite.plus | bash"
+  emit_gate_telemetry "failed" 2
   exit 2
 fi
 
@@ -173,6 +268,7 @@ echo "✓ Engine detected: $VP_CMD"
 
 if [ "$DRY_RUN" = true ]; then
   echo "✓ [QUALITY GATE]: Dry run completed successfully. Tools are available."
+  emit_gate_telemetry "passed" 0
   exit 0
 fi
 
@@ -188,6 +284,8 @@ fi
 
 if [ $CHECK_STATUS -ne 0 ]; then
   record_failure
+  write_evidence "failed" "code_quality"
+  emit_gate_telemetry "failed" "$CHECK_STATUS"
   echo ""
   echo "❌ [QUALITY GATE FAILED]: Violations detected in code (exit code: $CHECK_STATUS)."
   echo "Please fix the issues flagged by Vite+ before proceeding to the next phase."
@@ -229,6 +327,8 @@ if [ "$SKIP_TESTS" = false ]; then
 
     if [ $TEST_STATUS -ne 0 ]; then
       record_failure
+      write_evidence "failed" "regression_tests"
+      emit_gate_telemetry "failed" "$TEST_STATUS"
       echo ""
       echo "❌ [QUALITY GATE FAILED]: Test suite failed with regressions (exit code: $TEST_STATUS)."
       echo "Please fix the failing tests before proceeding to the next phase."
@@ -271,6 +371,8 @@ if [ "$SKIP_BUILD" = false ]; then
 
     if [ $BUILD_STATUS -ne 0 ]; then
       record_failure
+      write_evidence "failed" "build"
+      emit_gate_telemetry "failed" "$BUILD_STATUS"
       echo ""
       echo "❌ [QUALITY GATE FAILED]: Application build / compilation failed with errors (exit code: $BUILD_STATUS)."
       echo "Please fix bundling, syntax, or module resolution errors before proceeding."
@@ -285,6 +387,8 @@ else
 fi
 
 record_success
+write_evidence "passed"
+emit_gate_telemetry "passed" 0
 
 echo ""
 echo "✅ [QUALITY GATE PASSED]: All deterministic quality checks passed."
