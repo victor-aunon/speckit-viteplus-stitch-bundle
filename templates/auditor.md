@@ -40,6 +40,9 @@ Inspect the raw artifacts in `specs/<feature>/evidence/`:
 - `contracts.json`: `status == "passed"` (when UI is declared).
 - `stitch-design.json`: `status == "passed"` with `full_visual_verification: true`
   (when UI is declared). `stitch-design-tokens.json` alone is **not** sufficient.
+- Tokens must be reachable in the running DOM (`getComputedStyle(document
+  .documentElement)`), not only declared in `designs/tokens.css`. If the app never
+  imports the token stylesheet, the DOM reports nothing and the audit must reject.
 - `tasks.json`: `tasks_pending == 0`.
 - `.specify/telemetry.jsonl`: gate executions actually happened.
 

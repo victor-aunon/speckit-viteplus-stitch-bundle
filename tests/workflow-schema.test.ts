@@ -192,6 +192,8 @@ describe('Workflow YAML Schema Validation', () => {
     const stitchPrompt = generateDesignsStep.then.find((s: any) => s.id === 'stitch-design-generation');
     expect(stitchPrompt.prompt).toContain('Stitch');
     expect(stitchPrompt.prompt).toContain('tokens.css');
+    // The DOM must expose the tokens, not just the design file.
+    expect(stitchPrompt.prompt).toContain('getComputedStyle(document.documentElement)');
     expect(stitchPrompt.prompt).toContain('routes-manifest.json');
     expect(stitchPrompt.prompt).toContain('stitch_project_id');
     expect(stitchPrompt.prompt).toContain('list_screens');

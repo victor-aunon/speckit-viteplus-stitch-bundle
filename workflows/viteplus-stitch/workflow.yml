@@ -172,6 +172,8 @@ steps:
              {% endif %}
           4. Extract and create the canonical design tokens stylesheet at `specs/<feature>/designs/tokens.css`:
              - Define CSS variables under `:root` for colors (`--color-background`, `--color-surface`, `--color-primary`, `--color-text`, etc.), radii (`--radius-sm`, `--radius-md`, `--radius-lg`), typography (`--font-family`, `--font-size-*`), and spacing (`--space-*`).
+             - WIRE IT INTO THE APP: the visual gate reads `getComputedStyle(document.documentElement)`, so every token must exist in the running DOM. Import the stylesheet from the application entry (`src/styles/app.css` -> `@import '../../../../specs/<feature>/designs/tokens.css';` is brittle; prefer copying the `:root` block into `src/styles/app.css` or `src/styles/tokens.css` and importing that). If the DOM does not expose a token, the gate fails even though the design file is perfect.
+             - Keep `var(--other-token)` references: the audit resolves them like the browser. Do NOT de-reference aliases just to satisfy the check.
           5. Create `specs/<feature>/designs/routes-manifest.json` following `.specify/templates/routes-manifest.json.tmpl`:
              - Map each screen to its local development route (e.g. `/`, `/analytics`), title, DOM test selector, and fixture mock data path.
              - Generate declared fixture JSON mock files in `specs/<feature>/designs/fixtures/`.
