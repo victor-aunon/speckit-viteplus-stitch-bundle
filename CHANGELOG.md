@@ -8,7 +8,48 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The installer resolves `bundle.version` from `bundle.yml`, so a release bump is a
 one-file change plus this changelog.
 
-## [Unreleased]
+## [2.0.0] - 2026-11-24
+
+### Changed — BREAKING
+
+- **Non-UI features must declare a runtime contract.** With `has_ui=false`,
+  `gate_runtime` runs `check-dev-entrypoint.sh --require-contract` and the run
+  fails when `specs/<feature>/runtime.json` is missing. Domain/CLI features keep
+  working by declaring `{"kind":"none","reason":"..."}`; they are not silently
+  skipped anymore, they are recorded as `skipped` with their reason.
+- **`templates/env.config.ts.tmpl` is now dual-runtime.** It used to read only
+  `import.meta.env` (Vite/browser), which is `undefined` under Node, so a non-UI
+  feature booting with `tsx src/main.ts` crashed on its first env read. It now
+  reads the Vite surface and the Node surface behind explicit guards and
+  normalises both into one typed object. Projects that copied the old template
+  into an API must merge the Node branch (`globalThis.process?.env`).
+
+### Added
+
+- `check-dev-entrypoint.sh` + `gate_runtime`: a non-UI feature must now prove its
+  runtime actually starts and serves HTTP. The gate reads the feature's
+  `specs/<feature>/runtime.json`, starts the declared command itself, probes the
+  declared port and readiness path, and fails unless it gets a 2xx. A manual
+  `tsx src/main.ts` that no contract declares is a red gate, not a workaround.
+  Template: `.specify/templates/runtime.json.tmpl`.
+- `gate_runtime` is wired into `repair_gates` (3 attempts) and `recheck_runtime`,
+  and re-executed by the independent auditor (`AUDITOR.md`).
+
+### Fixed
+
+- `has_ui=false` no longer silently inherits the frontend `dev` script. Before
+  this change a backend feature could pass every gate while `npm run dev` still
+  booted Vite on 5173 and the API only lived behind a manual `tsx src/main.ts`.
+  The workflow now instructs the agent to declare the API entrypoint as a NEW
+  script (`dev:api`, `start:api`) and to record the contract in `runtime.json`,
+  because `has_ui` describes the FEATURE, not the project: React, Vite and the
+  project's own `dev` script stay untouched.
+- The runtime gate requires an explicit `port` in `runtime.json` and never
+  regex-guesses it from the typed env module: parsing `PORT` lines out of source
+  code matched the `65535` of a validation message and probed the wrong port.
+  Drift between `runtime.json` and `src/config/env.ts` now surfaces as a failed
+  probe instead of a silent wrong-port success.
+
 
 ### Fixed
 
