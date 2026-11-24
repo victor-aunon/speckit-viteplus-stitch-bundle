@@ -12,6 +12,13 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- Telemetry provenance lied twice: `state.json` stores `step_config.model`
+  verbatim when the resolved value is empty, so `"{{ inputs.model }}"` was
+  recorded as a model name (now reported as `integration-default`, or `none` for
+  shell steps), and roles were invisible because the run snapshot is written by
+  `yaml.safe_dump` (`prompt: 'ROLE: ...'` / escaped newlines), which a
+  line-oriented parser cannot read. Roles are now matched by character offset.
+- `--summary` shows a `ROLE` column; `--state=<path>` implies `--import-state`.
 - Scoped runs rejected the canonical env module: `check-env-config.sh` mandates
   `src/config/env.ts`, while `check-blast-radius.sh --scope` only exempted
   `src/shared` and `src/common`. Shared app-shell paths (`src/config`, `src/styles`,
@@ -41,6 +48,11 @@ one-file change plus this changelog.
 
 ### Changed
 
+- Telemetry provenance schema: `agent` is the integration process (`pi`, `claude`,
+  `antigravity`), `model` is the AI model, and `subagent` is now the **assigned
+  role/persona** (previously it held the integration). The `role` field is gone,
+  `--agent` was added and `--role` is an alias of `--subagent`. Update any consumer
+  that read `subagent` as the integration.
 - **Gate integrity: a green signal is no longer accepted as proof.** A workflow
   previously completed with zero tests, a scaffold-only implementation and ghost
   UI selectors, because several gates were green by construction.

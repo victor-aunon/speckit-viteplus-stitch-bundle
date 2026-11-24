@@ -6,14 +6,17 @@
 # Appends structured JSONL events to .specify/telemetry.jsonl (or specified file).
 #
 # Events recorded:
-#   - gate_execution (gate, status, duration_ms, exit_code, scope, model, subagent)
-#   - step_execution (workflow step, role, model, subagent, status, duration_ms)
+#   - gate_execution (gate, agent, model, subagent, status, duration_ms, exit_code)
+#   - step_execution (workflow step, agent, model, subagent, status, duration_ms)
 #                     imported from the active workflow run's state.json
 #   - circuit_breaker (event, failures, max_failures, state)
 #   - evidence_generated (gate, artifact, feature_dir)
 #
-# Every event carries provenance: which step ran, which model was used, and
-# which subagent/integration process executed it ("none" when not applicable).
+# Every event carries provenance:
+#   agent    -> integration process that ran the step (pi, claude, antigravity, ...)
+#   model    -> AI model used (sonnet, gemini-2.8-flash, ...)
+#   subagent -> role/persona assigned to the step (e.g. LEAD ADVERSARIAL AUDITOR)
+# Fields that do not apply are recorded as "none", never omitted.
 # ==============================================================================
 
 set -eo pipefail
@@ -31,8 +34,10 @@ Options:
   --step=<name>           Workflow step id that produced the event (defaults to --gate)
   --role=<role>           Role/persona that executed the step (default: none)
   --model=<name>          AI model used for the step (default: none)
-  --subagent=<name>       Subagent / integration process that executed the step
-                          (default: none; e.g. pi, claude, gemini)
+  --agent=<name>          Integration process that executed the step
+                          (default: none; e.g. pi, claude, antigravity)
+  --subagent=<name>       Role/persona assigned to the step (default: none).
+                          Alias: --role=<name>
   --status=<status>       Status (passed, failed, skipped, tripped, reset, healthy)
   --duration-ms=<N>       Duration of gate execution in milliseconds
   --exit-code=<N>         Process exit code (default: 0)
@@ -54,7 +59,7 @@ EOF
 EVENT_NAME="gate_execution"
 GATE_NAME=""
 STEP_NAME=""
-ROLE_NAME=""
+AGENT_NAME=""
 MODEL_NAME=""
 SUBAGENT_NAME=""
 STATUS="passed"
@@ -86,7 +91,10 @@ for arg in "$@"; do
       STEP_NAME="${arg#*=}"
       ;;
     --role=*)
-      ROLE_NAME="${arg#*=}"
+      SUBAGENT_NAME="${arg#*=}"
+      ;;
+    --agent=*)
+      AGENT_NAME="${arg#*=}"
       ;;
     --model=*)
       MODEL_NAME="${arg#*=}"
@@ -150,6 +158,11 @@ if [ -z "$TARGET_FILE" ]; then
   fi
 fi
 
+# `--state` only exists to select the run for the import; it implies it.
+if [ -n "$STATE_FILE" ]; then
+  IMPORT_STATE=true
+fi
+
 # Attribute the event to a workflow step when one was not provided explicitly.
 if [ -z "$STEP_NAME" ] && [ -n "$GATE_NAME" ]; then
   STEP_NAME="$GATE_NAME"
@@ -162,8 +175,11 @@ fi
 if [ -z "$SUBAGENT_NAME" ] && [ -n "${SPECIFY_SUBAGENT:-}" ]; then
   SUBAGENT_NAME="$SPECIFY_SUBAGENT"
 fi
-if [ -z "$ROLE_NAME" ] && [ -n "${SPECIFY_ROLE:-}" ]; then
-  ROLE_NAME="$SPECIFY_ROLE"
+if [ -z "$AGENT_NAME" ] && [ -n "${SPECIFY_AGENT:-}" ]; then
+  AGENT_NAME="$SPECIFY_AGENT"
+fi
+if [ -z "$SUBAGENT_NAME" ] && [ -n "${SPECIFY_ROLE:-}" ]; then
+  SUBAGENT_NAME="$SPECIFY_ROLE"
 fi
 if [ -z "$RUN_ID" ] && [ -n "${SPECIFY_RUN_ID:-}" ]; then
   RUN_ID="$SPECIFY_RUN_ID"
@@ -174,7 +190,7 @@ fi
 
 # Normalize empty provenance fields to an explicit "none".
 if [ -z "$STEP_NAME" ]; then STEP_NAME="none"; fi
-if [ -z "$ROLE_NAME" ]; then ROLE_NAME="none"; fi
+if [ -z "$AGENT_NAME" ]; then AGENT_NAME="none"; fi
 if [ -z "$MODEL_NAME" ]; then MODEL_NAME="none"; fi
 if [ -z "$SUBAGENT_NAME" ]; then SUBAGENT_NAME="none"; fi
 
@@ -252,19 +268,22 @@ import_state_steps() {
 
     // Role/persona per step, extracted from the prompt "ROLE:" line of the
     // workflow definition snapshot stored inside the run directory.
+    //
+    // The snapshot is written by yaml.safe_dump, which does NOT keep block
+    // scalars: a prompt can start on the `prompt:` line itself, or be
+    // double-quoted with escaped \n and backslash line continuations. A
+    // line-oriented parser silently finds nothing, so match by character offset
+    // and attach each ROLE to the nearest preceding step id.
     const roles = {};
     try {
       const yamlText = fs.readFileSync(path.join(runDir, "workflow.yml"), "utf8");
-      let current = null;
-      for (const line of yamlText.split("\n")) {
-        const idMatch = /^\s*-\s+id:\s*(.+?)\s*$/.exec(line);
-        if (idMatch) {
-          current = idMatch[1].replace(/^["\x27]|["\x27]$/g, "");
-          continue;
-        }
-        if (!current || roles[current]) continue;
-        const roleMatch = /^\s*ROLE:\s*(.+?)\s*$/.exec(line);
-        if (roleMatch) roles[current] = roleMatch[1];
+      const stepIds = [...yamlText.matchAll(/^\s*-\s+id:\s*["\x27]?([A-Za-z0-9_.:-]+)["\x27]?/gm)]
+        .map((match) => ({ id: match[1], index: match.index }));
+      for (const match of yamlText.matchAll(/ROLE:\s*([^\\\n"\x27]+)/g)) {
+        const owner = [...stepIds].reverse().find((entry) => entry.index < match.index);
+        if (!owner || roles[owner.id]) continue;
+        const role = match[1].replace(/\s+/g, " ").trim();
+        if (role) roles[owner.id] = role;
       }
     } catch {}
 
@@ -294,10 +313,25 @@ import_state_steps() {
     } catch {}
 
     const fallbackTs = Date.parse(state.updated_at) || Date.now();
+
+    // The workflow engine stores `step_config.model` verbatim when the resolved
+    // value is empty, so state.json can contain the raw "{{ inputs.model }}"
+    // template. Recording that as a model name is worse than useless: it looks
+    // like a model and is not one. Unresolved templates are reported honestly.
+    const resolveProvenance = (value, fallback) => {
+      if (value === undefined || value === null) return fallback;
+      const text = String(value).trim();
+      if (text === "") return fallback;
+      if (text.includes("{{") || text.includes("{%")) return fallback;
+      return text;
+    };
+
     const records = [];
 
     for (const [stepId, step] of Object.entries(state.step_results)) {
       if (!step || typeof step !== "object") continue;
+      // Only AI steps have a model/integration; shell and control-flow steps do not.
+      const aiStep = step.type === "prompt" || step.type === "command";
       const record = {
         timestamp: iso(lastTimestamp[stepId] || fallbackTs),
         event: "step_execution",
@@ -305,9 +339,11 @@ import_state_steps() {
         workflow_id: state.workflow_id || undefined,
         step: stepId,
         step_type: step.type || "unknown",
-        role: roles[stepId] || "none",
-        model: step.model || "none",
-        subagent: step.integration || "none",
+        // agent = integration process, subagent = assigned role/persona.
+        agent: resolveProvenance(step.integration, aiStep ? "auto" : "none"),
+        // "integration-default" = no explicit model was requested for this step.
+        model: resolveProvenance(step.model, aiStep ? "integration-default" : "none"),
+        subagent: roles[stepId] || "none",
         status: step.status || "unknown",
         duration_ms: Math.round(durations[stepId] || 0),
       };
@@ -368,7 +404,7 @@ if [ "$SHOW_SUMMARY" = true ]; then
   echo "======================================================================================================================"
   echo "[TELEMETRY SUMMARY] Recorded Steps & Gate Executions ($TARGET_FILE)"
   echo "======================================================================================================================"
-  printf "%-21s | %-26s | %-20s | %-14s | %-10s | %-10s | %-5s\n" "TIMESTAMP" "STEP" "MODEL" "SUBAGENT" "STATUS" "DURATION" "EXIT"
+  printf "%-19s | %-22s | %-14s | %-20s | %-26s | %-9s | %-9s\n" "TIMESTAMP" "STEP" "AGENT" "MODEL" "SUBAGENT" "STATUS" "DURATION"
   echo "----------------------------------------------------------------------------------------------------------------------"
 
   if command -v node >/dev/null 2>&1; then
@@ -387,16 +423,15 @@ if [ "$SHOW_SUMMARY" = true ]; then
           const step = entry.step || entry.gate || entry.event || "unknown";
           const status = entry.status || "unknown";
           const duration = `${entry.duration_ms || 0}ms`;
-          const exitCode = String(entry.exit_code ?? "-");
           console.log(
             [
-              clip(time, 21),
-              clip(step, 26),
+              clip(time, 19),
+              clip(step, 22),
+              clip(entry.agent || "none", 14),
               clip(entry.model || "none", 20),
-              clip(entry.subagent || "none", 14),
-              clip(status, 10),
-              clip(duration, 10),
-              clip(exitCode, 5),
+              clip(entry.subagent || "none", 26),
+              clip(status, 9),
+              clip(duration, 9),
             ].join(" | ")
           );
         } catch {}
@@ -422,7 +457,7 @@ if command -v node >/dev/null 2>&1; then
       event,
       gate,
       step,
-      role,
+      agent,
       model,
       subagent,
       status,
@@ -444,7 +479,7 @@ if command -v node >/dev/null 2>&1; then
       event,
       gate: gate || undefined,
       step: step || undefined,
-      role: role && role !== "none" ? role : undefined,
+      agent,
       model,
       subagent,
       status,
@@ -457,13 +492,13 @@ if command -v node >/dev/null 2>&1; then
     };
 
     fs.appendFileSync(targetFile, JSON.stringify(record) + "\n", "utf8");
-  ' "$TARGET_FILE" "$TIMESTAMP" "$EVENT_NAME" "$GATE_NAME" "$STEP_NAME" "$ROLE_NAME" "$MODEL_NAME" "$SUBAGENT_NAME" "$STATUS" "$DURATION_MS" "$EXIT_CODE" "$SCOPE_DIR" "$FEATURE_DIR" "$EVIDENCE_FILE" "$DETAILS_JSON"
+  ' "$TARGET_FILE" "$TIMESTAMP" "$EVENT_NAME" "$GATE_NAME" "$STEP_NAME" "$AGENT_NAME" "$MODEL_NAME" "$SUBAGENT_NAME" "$STATUS" "$DURATION_MS" "$EXIT_CODE" "$SCOPE_DIR" "$FEATURE_DIR" "$EVIDENCE_FILE" "$DETAILS_JSON"
 else
   # Minimal shell fallback when Node is unavailable
   ESCAPED_SCOPE="$(printf '%s' "$SCOPE_DIR" | sed 's/"/\\"/g')"
   ESCAPED_FEATURE="$(printf '%s' "$FEATURE_DIR" | sed 's/"/\\"/g')"
-  printf '{"timestamp":"%s","event":"%s","gate":"%s","step":"%s","model":"%s","subagent":"%s","status":"%s","duration_ms":%d,"exit_code":%d,"scope":"%s","feature_dir":"%s"}\n' \
-    "$TIMESTAMP" "$EVENT_NAME" "$GATE_NAME" "$STEP_NAME" "$MODEL_NAME" "$SUBAGENT_NAME" "$STATUS" "$DURATION_MS" "$EXIT_CODE" "$ESCAPED_SCOPE" "$ESCAPED_FEATURE" >> "$TARGET_FILE"
+  printf '{"timestamp":"%s","event":"%s","gate":"%s","step":"%s","agent":"%s","model":"%s","subagent":"%s","status":"%s","duration_ms":%d,"exit_code":%d,"scope":"%s","feature_dir":"%s"}\n' \
+    "$TIMESTAMP" "$EVENT_NAME" "$GATE_NAME" "$STEP_NAME" "$AGENT_NAME" "$MODEL_NAME" "$SUBAGENT_NAME" "$STATUS" "$DURATION_MS" "$EXIT_CODE" "$ESCAPED_SCOPE" "$ESCAPED_FEATURE" >> "$TARGET_FILE"
 fi
 
 exit 0

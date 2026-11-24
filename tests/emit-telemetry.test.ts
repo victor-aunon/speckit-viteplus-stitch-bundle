@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import yaml from 'yaml';
 import { runBash } from './helpers/bash';
 import { removeDir } from './helpers/fs';
 
@@ -66,23 +67,34 @@ describe('emit-telemetry.sh', () => {
     expect(record.subagent).toBe('none');
   });
 
-  it('should record the step, model, role and subagent when provided', () => {
+  it('should record agent, model and subagent (role) when provided', () => {
     runBash(scriptPath, [
       `--file=${logFile}`,
       '--gate=check-quality-gate',
       '--step=gate_quality',
-      '--role=LEAD ADVERSARIAL QUALITY AUDITOR',
+      '--agent=pi',
       '--model=gemini-2.8-pro',
-      '--subagent=pi',
+      '--subagent=LEAD ADVERSARIAL QUALITY AUDITOR',
       '--status=passed',
       '--duration-ms=900'
     ]);
 
     const record = JSON.parse(fs.readFileSync(logFile, 'utf8').trim().split('\n')[0]);
     expect(record.step).toBe('gate_quality');
-    expect(record.role).toBe('LEAD ADVERSARIAL QUALITY AUDITOR');
+    // agent = integration process, subagent = assigned role/persona
+    expect(record.agent).toBe('pi');
     expect(record.model).toBe('gemini-2.8-pro');
-    expect(record.subagent).toBe('pi');
+    expect(record.subagent).toBe('LEAD ADVERSARIAL QUALITY AUDITOR');
+
+    // --role is an alias for --subagent
+    runBash(scriptPath, [
+      `--file=${logFile}`,
+      '--gate=check-contracts',
+      '--role=HEURISTIC UX AUDITOR',
+      '--status=passed'
+    ]);
+    const aliasRecord = JSON.parse(fs.readFileSync(logFile, 'utf8').trim().split('\n')[1]);
+    expect(aliasRecord.subagent).toBe('HEURISTIC UX AUDITOR');
   });
 
   describe('--import-state', () => {
@@ -169,17 +181,17 @@ describe('emit-telemetry.sh', () => {
       expect(plan.run_id).toBe('run42');
       expect(plan.workflow_id).toBe('demo');
       expect(plan.step_type).toBe('command');
-      expect(plan.role).toBe('LEAD TECHNICAL ARCHITECT.');
+      expect(plan.agent).toBe('claude');
       expect(plan.model).toBe('gemini-2.8-pro');
-      expect(plan.subagent).toBe('claude');
+      expect(plan.subagent).toBe('LEAD TECHNICAL ARCHITECT.');
       expect(plan.status).toBe('completed');
       expect(plan.duration_ms).toBe(1500);
       expect(plan.exit_code).toBe(0);
 
       const gate = events.find((e) => e.step === 'gate_quality');
+      expect(gate.agent).toBe('none');
       expect(gate.model).toBe('none');
       expect(gate.subagent).toBe('none');
-      expect(gate.role).toBe('none');
       expect(gate.status).toBe('failed');
       expect(gate.duration_ms).toBe(250);
       expect(gate.exit_code).toBe(1);
@@ -210,6 +222,114 @@ describe('emit-telemetry.sh', () => {
       expect(events.map((e) => e.step).sort()).toEqual(['gate_quality', 'plan']);
     });
 
+    it('should extract roles from the yaml.safe_dump snapshot shape', () => {
+      // The CLI persists the run snapshot with yaml.safe_dump, which keeps the
+      // ROLE on the `prompt:` line (or escapes the newlines), not in a block
+      // scalar. A line-oriented parser finds nothing there.
+      const runDir = path.join(tempDir, '.specify/workflows/runs/runDump');
+      fs.mkdirSync(runDir, { recursive: true });
+      const statePath = path.join(runDir, 'state.json');
+
+      const snapshot = yaml.stringify({
+        steps: [
+          {
+            id: 'guardrails',
+            type: 'prompt',
+            prompt: 'ROLE: ARCHITECTURAL GOVERNANCE & PROTOCOL ENFORCER.\n\nYou are running the workflow.'
+          },
+          {
+            id: 'audit-spec',
+            type: 'prompt',
+            prompt: 'ROLE: LEAD REQUIREMENTS & DOMAIN ARCHITECT.\nPerform the audit.'
+          }
+        ]
+      });
+      fs.writeFileSync(path.join(runDir, 'workflow.yml'), snapshot, 'utf8');
+      fs.writeFileSync(
+        statePath,
+        JSON.stringify({
+          run_id: 'runDump',
+          workflow_id: 'viteplus-stitch',
+          status: 'completed',
+          step_results: {
+            guardrails: { type: 'prompt', integration: 'pi', model: 'gemini-2.8-pro', status: 'completed' },
+            'audit-spec': { type: 'prompt', integration: 'pi', model: 'deepseek-v3', status: 'completed' }
+          },
+          updated_at: '2026-01-01T00:00:00.000000+00:00'
+        }),
+        'utf8'
+      );
+
+      runBash(scriptPath, [`--file=${logFile}`, `--import-state=${statePath}`]);
+
+      const events = fs
+        .readFileSync(logFile, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+
+      expect(events.find((event) => event.step === 'guardrails').subagent).toBe(
+        'ARCHITECTURAL GOVERNANCE & PROTOCOL ENFORCER.'
+      );
+      expect(events.find((event) => event.step === 'audit-spec').subagent).toBe(
+        'LEAD REQUIREMENTS & DOMAIN ARCHITECT.'
+      );
+    });
+
+    it('should never record unresolved template placeholders as provenance', () => {
+      // The Spec Kit engine stores step_config.model verbatim when the resolved
+      // value is empty, so state.json contains "{{ inputs.model }}".
+      const runDir = path.join(tempDir, '.specify/workflows/runs/runPlaceholder');
+      fs.mkdirSync(runDir, { recursive: true });
+      const statePath = path.join(runDir, 'state.json');
+      fs.writeFileSync(
+        path.join(runDir, 'workflow.yml'),
+        ['steps:', '  - id: guardrails', '    type: prompt', ''].join('\n'),
+        'utf8'
+      );
+      fs.writeFileSync(
+        statePath,
+        JSON.stringify({
+          run_id: 'runPlaceholder',
+          workflow_id: 'demo',
+          status: 'running',
+          step_results: {
+            guardrails: {
+              type: 'prompt',
+              integration: '{{ inputs.integration }}',
+              model: '{{ inputs.model }}',
+              status: 'completed'
+            },
+            specify: {
+              type: 'command',
+              integration: 'pi',
+              model: 'gemini-2.8-pro',
+              status: 'completed'
+            }
+          },
+          updated_at: '2026-01-01T00:00:00.000000+00:00'
+        }),
+        'utf8'
+      );
+
+      runBash(scriptPath, [`--file=${logFile}`, `--import-state=${statePath}`]);
+
+      const events = fs
+        .readFileSync(logFile, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+
+      const unresolved = events.find((event) => event.step === 'guardrails');
+      expect(unresolved.model).toBe('integration-default');
+      expect(unresolved.agent).toBe('auto');
+      expect(unresolved.subagent).toBe('none');
+
+      const resolved = events.find((event) => event.step === 'specify');
+      expect(resolved.model).toBe('gemini-2.8-pro');
+      expect(resolved.agent).toBe('pi');
+    });
+
     it('should show model and subagent columns in the summary', () => {
       runBash(scriptPath, [`--file=${logFile}`, `--import-state=${statePath}`]);
       // Combined import + summary in a single invocation must still print the table.
@@ -219,6 +339,9 @@ describe('emit-telemetry.sh', () => {
 
       expect(summaryOutput).toContain('MODEL');
       expect(summaryOutput).toContain('SUBAGENT');
+      expect(summaryOutput).toContain('AGENT');
+      expect(summaryOutput).toContain('SUBAGENT');
+      expect(summaryOutput).toContain('LEAD TECHNICAL ARCHITECT.');
       expect(summaryOutput).toContain('gemini-2.8-pro');
       expect(summaryOutput).toContain('claude');
       expect(summaryOutput).toContain('none');

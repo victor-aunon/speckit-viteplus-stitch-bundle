@@ -574,11 +574,18 @@ bash .specify/scripts/bash/check-verification-verdict.sh --allow-missing
 ### 11. `emit-telemetry.sh` (Structured Telemetry & Observability Emitter)
 Logs structured JSONL execution events across all quality gates to `.specify/telemetry.jsonl`. Tracks execution durations in milliseconds, exit codes, feature scopes, circuit breaker trip events, and **provenance**: which workflow step ran, which AI model executed it, and which subagent/integration process was launched (`none` when not applicable).
 
+The summary renders `TIMESTAMP | STEP | AGENT | MODEL | SUBAGENT | STATUS | DURATION`:
+
+- **`agent`** is the integration process that ran the step (`pi`, `claude`, `antigravity`, ...).
+- **`model`** is the AI model (`sonnet`, `gemini-2.8-flash`, ...). It shows `integration-default` when no `-i model=...` was passed: the integration picks the model, so claiming a name would be a lie. Unresolved engine placeholders (`{{ inputs.model }}`) are never recorded as model names.
+- **`subagent`** is the role/persona assigned to the step, taken from its `ROLE:` line in the run's `workflow.yml` snapshot (including `yaml.safe_dump`-style snapshots).
+- Shell gates (quality, bundle, contracts, visual, tasks) and the per-task hooks have **no agent, model or role** — bash executed them. `none` there is the accurate value, not a missing field.
+
 ```bash
 # Display formatted summary table of recent steps and gate executions
 bash .specify/scripts/bash/emit-telemetry.sh --summary
 
-# Merge every step of the active workflow run (model, subagent, role, duration)
+# Merge every step of the active workflow run (agent, model, role, duration)
 bash .specify/scripts/bash/emit-telemetry.sh --import-state
 
 # Import + summarize in one shot (used at the end of the workflow)
@@ -588,14 +595,15 @@ bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary
 bash .specify/scripts/bash/emit-telemetry.sh \
   --gate=check-quality-gate \
   --step=gate_quality \
+  --agent=pi \
   --model=gemini-2.8-pro \
-  --subagent=pi \
+  --subagent=LEAD ADVERSARIAL QUALITY AUDITOR \
   --status=passed \
   --duration-ms=1450 \
   --scope=src/features/billing
 ```
 
-`--import-state` resolves the run from `--state=<path>`, `SPECIFY_RUN_ID`/`SPECKIT_RUN_ID`, or the most recently updated run under `.specify/workflows/runs/`. It reads `state.json` (`model`, `integration`), `log.jsonl` (per-step durations) and the run's `workflow.yml` snapshot (the step's `ROLE:` line), and upserts one `step_execution` record per step without duplicating prior imports. The workflow calls it on every gate failure (via `--summary`) and once at the end in the `telemetry_sync` step, so `.specify/telemetry.jsonl` reflects the full pipeline, not only the gates that happened to emit an event.
+`--import-state` resolves the run from `--state=<path>`, `SPECIFY_RUN_ID`/`SPECKIT_RUN_ID`, or the most recently updated run under `.specify/workflows/runs/`. It reads `state.json` (`model`, `integration` -> agent), `log.jsonl` (per-step durations) and the run's `workflow.yml` snapshot (the step's `ROLE:` line), and upserts one `step_execution` record per step without duplicating prior imports. The workflow calls it on every gate failure (via `--summary`) and once at the end in the `telemetry_sync` step, so `.specify/telemetry.jsonl` reflects the full pipeline, not only the gates that happened to emit an event.
 
 ---
 
