@@ -82,6 +82,7 @@ describe('Workflow YAML Schema Validation', () => {
 
     const verifyStep = wf.steps.find((s: any) => s.id === 'verify');
     expect(verifyStep.type).toBe('prompt');
+    expect(verifyStep.prompt).toContain('LEAD ADVERSARIAL QUALITY AUDITOR');
     expect(verifyStep.prompt).toContain('VERIFICATION_REPORT.md');
     expect(verifyStep.prompt).toContain('Delta-Spec Sync');
     expect(verifyStep.prompt).toContain('Scenario Verification Matrix');
@@ -151,6 +152,8 @@ describe('Workflow YAML Schema Validation', () => {
     expect(content).toContain('package.json');
     expect(content).toContain('eslint-disable');
     expect(content).toContain('ask the human');
+    expect(content).toContain('Subagent-Driven Execution Architecture');
+    expect(content).toContain('Ephemeral Subagent Delegation');
 
     // Impeccable UI Craft Lifecycle
     expect(content).toContain('Impeccable UI Craft Lifecycle');

@@ -100,3 +100,12 @@ A green task cannot be simulated:
 - **Sandbox Boundary Safety (`node_modules/`)**: NEVER use `read_file`, `list_directory`, or file-reading tools on `node_modules/`. In modern package managers (pnpm, npm, vite-plus), `node_modules` contains symlinks pointing outside the workspace sandbox, which triggers fatal environment errors. Manage and inspect packages exclusively via terminal commands (`npm ls`, `npm install`, `vp check`).
 - **Terminal Execution Required**: The agent MUST execute `.specify/scripts/bash/check-quality-gate.sh` via terminal after completing each task in `tasks.md`. Marking a task checkbox `- [x]` without executing the gate in the terminal is a fatal violation of Quality Gate Integrity.
 - **Imperative Pipeline Enforcement**: The Spec Kit workflow runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`) as non-agent shell steps with an automated self-healing repair window.
+
+## Subagent-Driven Execution Architecture (Anti-Context Drift)
+
+To prevent cognitive degradation, context drift, sycophancy, and timeouts on large feature sets:
+- **Ephemeral Subagent Delegation**: When executing multi-task phases in `tasks.md`, the orchestrating agent MUST dispatch individual tasks to fresh, isolated worker subagents (e.g. `@generalist`).
+- **Context Isolation**: Each worker subagent receives ONLY the task description, the target file path, and relevant domain contracts. It does NOT inherit the entire conversation history.
+- **Mandatory Quality Gate per Task**: The worker subagent MUST execute `bash .specify/scripts/bash/check-quality-gate.sh` via terminal and verify exit code 0 before concluding.
+- **Single-Turn Lifecycle**: Upon task completion and gate verification, the subagent returns a concise 3-line status to the orchestrator and its context is disposed of immediately.
+

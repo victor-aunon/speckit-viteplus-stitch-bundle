@@ -167,6 +167,13 @@ When a feature contains frontend UI components (has_ui is true), the agent must 
 The agent MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
 NEVER use `read_file`, `list_directory`, or file tools on `node_modules/` (symlinks trigger fatal sandbox errors). Diagnose packages exclusively via terminal: `npm ls`, `npm install`, or `vp check`.
 The agent MUST execute `.specify/scripts/bash/check-quality-gate.sh` via terminal after completing each task in `tasks.md`. Spec Kit executes automated quality gates as non-agent shell steps with an automated self-healing repair window.
+
+### Subagent-Driven Execution Architecture
+<!-- viteplus-stitch:subagent-execution -->
+To prevent cognitive drift, memory saturation, and timeouts on large feature sets:
+1. Dispatch each task in `tasks.md` to an isolated, ephemeral worker subagent (e.g. `@generalist`).
+2. Provide only the task scope and target file paths; do not forward bloated session history.
+3. Require the worker subagent to run `check-quality-gate.sh` and return only a 3-line status before disposing of its context.
 EOF
 elif ! grep -q "viteplus-stitch:quality-gate-integrity" "$CONSTITUTION_FILE"; then
   cat >> "$CONSTITUTION_FILE" << 'EOF'
@@ -196,6 +203,13 @@ When a feature contains frontend UI components (has_ui is true), the agent must 
 The agent MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
 NEVER use `read_file`, `list_directory`, or file tools on `node_modules/` (symlinks trigger fatal sandbox errors). Diagnose packages exclusively via terminal: `npm ls`, `npm install`, or `vp check`.
 The agent MUST execute `.specify/scripts/bash/check-quality-gate.sh` via terminal after completing each task in `tasks.md`. Spec Kit executes automated quality gates as non-agent shell steps with an automated self-healing repair window.
+
+### Subagent-Driven Execution Architecture
+<!-- viteplus-stitch:subagent-execution -->
+To prevent cognitive drift, memory saturation, and timeouts on large feature sets:
+1. Dispatch each task in `tasks.md` to an isolated, ephemeral worker subagent (e.g. `@generalist`).
+2. Provide only the task scope and target file paths; do not forward bloated session history.
+3. Require the worker subagent to run `check-quality-gate.sh` and return only a 3-line status before disposing of its context.
 EOF
 fi
 

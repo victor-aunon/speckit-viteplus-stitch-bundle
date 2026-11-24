@@ -49,6 +49,7 @@ steps:
     integration: "{{ inputs.integration }}"
     model: "{{ inputs.model }}"
     prompt: |
+      ROLE: ARCHITECTURAL GOVERNANCE & PROTOCOL ENFORCER.
       You are running the viteplus-stitch Spec-Driven Development workflow.
       Before any work starts, read `.specify/workflows/viteplus-stitch/GUARDRAILS.md`
       and `.specify/memory/constitution.md` (sections "Quality Gate Integrity" and
@@ -89,6 +90,7 @@ steps:
     model: "{{ inputs.model }}"
     timeout: 600
     prompt: |
+      ROLE: LEAD REQUIREMENTS & DOMAIN ARCHITECT.
       Perform an automated Spec Quality & Completeness Audit on the generated specification:
 
       1. Inspect `specs/<feature>/spec.md` (or the active feature spec).
@@ -130,6 +132,7 @@ steps:
         model: "{{ inputs.model }}"
         timeout: 900
         prompt: |
+          ROLE: UI SYSTEMS DESIGN ENGINEER (GOOGLE STITCH MCP).
           Generate high-fidelity UI screens and canonical design tokens using Google Stitch MCP:
 
           EXECUTION PROTOCOL:
@@ -166,6 +169,7 @@ steps:
         model: "{{ inputs.model }}"
         timeout: 600
         prompt: |
+          ROLE: HEURISTIC UX & ACCESSIBILITY (A11Y) AUDITOR.
           This feature includes UI components.
           Before the human design review gate, perform an Impeccable Design Critique:
 
@@ -284,6 +288,7 @@ steps:
         model: "{{ inputs.model }}"
         timeout: 900
         prompt: |
+          ROLE: RELIABILITY & COMPILER SRE SPECIALIST.
           AUTOMATED REPAIR LOOP: Quality or performance gates detected issues in the implementation.
 
           Do not panic. You have an active repair window to diagnose and fix the failures.
@@ -325,9 +330,18 @@ steps:
     model: "{{ inputs.model }}"
     timeout: 600
     prompt: |
-      Perform empirical verification of the completed implementation:
+      ROLE: LEAD ADVERSARIAL QUALITY AUDITOR (INDEPENDENT QC INSPECTOR).
+      You are an independent quality auditor with strict separation of duties.
+      You were NOT involved in writing the implementation code, and you MUST NOT trust any prior self-reported claims in `tasks.md`.
+      Your sole responsibility is to verify hard, physical, machine-generated evidence on disk.
 
-      1. Inspect `specs/<feature>/spec.md`, `tasks.md`, test outputs, and machine-generated evidence in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `stitch-design.json`).
+      1. DISK-LEVEL EVIDENCE AUDIT:
+         Inspect raw proof files in `specs/<feature>/evidence/`:
+         - `quality-gate.json`: Ensure status is "passed" and no checks are "failed".
+         - `bundle-budget.json`: Ensure status is "passed" with zero unbudgeted chunk overages.
+         - When `has_ui: true`: Ensure `contracts.json` and `stitch-design.json` are present and "passed".
+         - Check `.specify/telemetry.jsonl`: Verify that automated gate executions actually occurred.
+         If any evidence file is missing or reports failure, REJECT the verification immediately.
       2. If this feature has UI (`has_ui: true`):
          - Activate the `impeccable` skill using the `activate_skill(name: 'impeccable')` tool (do NOT use `read_file` on external paths outside the workspace) and perform a comprehensive Accessibility & Design Audit (`impeccable audit` checklist: WCAG 2.1 AA contrast, keyboard navigation `:focus-visible`, minimum 44px touch targets, and responsive layout scaling).
          - Confirm micro-interactions and transitions respect `@media (prefers-reduced-motion: reduce)` (`impeccable animate`).
