@@ -118,10 +118,12 @@ class Ctx:
 
 payload = json.load(sys.stdin)
 failures = []
-for variant in ("with_stitch_id", "without_stitch_id", "no_ui"):
+for variant in ("with_stitch_id", "without_stitch_id", "stitch_disabled", "no_ui"):
     inputs = dict(payload["inputs"])
     if variant == "without_stitch_id":
         inputs["stitch_project_id"] = ""
+    if variant == "stitch_disabled":
+        inputs["enable_stitch"] = False
     if variant == "no_ui":
         inputs["has_ui"] = False
     for item in payload["templates"]:
