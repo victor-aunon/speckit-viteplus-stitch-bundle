@@ -1,0 +1,37 @@
+# FEATURE: JWT Token Verification & Claims Extractor Service
+
+## 1. Contexto y Propósito
+Proveer un servicio de backend robusto, desacoplado y de alto rendimiento para validar tokens JWT, extraer claims de identidad (userId, tenantId, roles, permissions) y verificar firmas criptográficas en microservicios autenticados sin depender de ningún framework web ni bibliotecas de UI.
+
+## 2. Entidades y Modelos de Dominio
+- TokenPayload: Entidad inmutable con userId (UUID), tenantId (string), roles (array de strings) y permissions (array de strings).
+- TokenExpiry: Value object que valida la ventana temporal del token (issuedAt, expiresAt) y comprueba si ha expirado.
+- VerificationResult: Resultado tipado discriminado (Success con UserClaims vs Failure con AuthErrorReason).
+
+## 3. Puertos y Servicios de Aplicación
+- TokenVerifierPort (Puerto de salida): Contrato de abstracción criptográfica para verificar firmas y decodificar payloads.
+- VerifyTokenUseCase (Caso de uso de aplicación): Orquesta la verificación del token, comprueba vigencia temporal y mapea a la entidad de dominio.
+- JwtService (Adaptador de infraestructura): Implementación del puerto utilizando crypto/jsonwebtoken con lectura centralizada de JWT_SECRET.
+
+## 4. Criterios de Aceptación Clave (Gherkin)
+- Escenario 1 (Token válido con claims completos):
+  Given un token JWT firmado correctamente con JWT_SECRET y con fecha de expiración futura
+  When VerifyTokenUseCase procesa el token
+  Then retorna VerificationResult con status 'success' y los claims tipados del usuario (userId, tenantId, roles).
+
+- Escenario 2 (Token expirado):
+  Given un token JWT con fecha 'exp' en el pasado
+  When VerifyTokenUseCase evalúa la expiración
+  Then rechaza la operación inmediatamente retornando status 'expired' sin consultar almacenamiento externo.
+
+- Escenario 3 (Firma inválida o token manipulado):
+  Given un token alterado o firmado con una clave secreta incorrecta
+  When VerifyTokenUseCase intenta validar la firma criptográfica
+  Then retorna status 'invalid_signature' y registra un evento de seguridad estructurado.
+
+## 5. Restricciones Técnicas y Calidad
+- Arquitectura Limpia estricta con Vertical Slices bajo src/features/auth/ (domain, application, infrastructure).
+- La capa de dominio NO puede importar infraestructura, adaptadores externos ni Node built-ins innecesarios.
+- Lectura de variables de entorno (JWT_SECRET, JWT_ISSUER) centralizada exclusivamente en src/config/env.ts.
+- has_ui=false: Cero dependencias de React, Vite visual gates, Playwright ni Tailwind.
+- 100% de cobertura en tests unitarios para VerifyTokenUseCase y TokenExpiry.

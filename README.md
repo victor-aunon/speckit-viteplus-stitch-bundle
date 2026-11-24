@@ -20,6 +20,9 @@ The workflow will autonomously execute specification audits, UI critiques, atomi
 
 ## Key Features
 
+- 🤖 **Multi-Agent Hybrid Orchestration**: Combine high-reasoning models (Gemini Pro, Claude Sonnet) for architecture, specifications, design critique, and adversarial verification with specialized high-speed agents (Pi, Claude Haiku) for task implementation via `implement_integration`.
+- ⚡ **Subagent-Driven Execution Architecture**: Prevents context drift, memory saturation, and timeouts by delegating individual tasks in `tasks.md` to isolated, ephemeral subagents (`@generalist`) with single-turn lifecycles.
+- 🎨 **Native Stitch Studio Integration**: Import authored designs, screens, and design tokens directly from your Google Stitch Studio projects via `stitch_project_id` without re-generating from scratch.
 - ⚡ **Vite+ (`vp`) as Quality Gate**: Blazing-fast, Rust-powered unified checks for formatting (Oxfmt), linting (Oxlint with Airbnb rules), strict typing (`typeCheck: true`), and cyclomatic complexity limits (max 10).
 - 🏛️ **Clean Architecture Boundaries (including vertical slices)**: Enforced import boundaries preventing cross-layer violations across Domain, Application, Infrastructure, and UI (`no-restricted-imports` with Oxlint overrides) in `src/core/**` *and* in every vertical slice such as `src/features/<slice>/{domain,application,infrastructure,ui}/**`.
 - 🔐 **Typed Environment Configuration Gate**: Blocks direct `process.env` / `import.meta.env` access in application code. Environment variables must be read, validated, typed, and exported from a single config module (`src/config/env.ts`).
@@ -352,6 +355,26 @@ specify workflow run viteplus-stitch \
   -i integration=gemini \
   -i implement_integration=pi
 ```
+
+---
+
+## 📂 Reference Architecture Examples & High-Leverage Specs
+
+The repository includes 4 self-contained reference archetypes in `examples/` demonstrating how to structure high-leverage `spec-input` prompts across different project types:
+
+| Archetype | Focus | UI Mode | Reference Folder | Quick Invocation |
+|---|---|:---:|---|---|
+| **1. API Service** | Backend / REST API | `has_ui=false` | [`examples/1-api-service/`](./examples/1-api-service/) | `specify workflow run viteplus-stitch -i spec="$(cat examples/1-api-service/spec.input.txt)" -i scope="src/features/auth" -i has_ui=false` |
+| **2. React + Vite+** | Client SPA | `has_ui=true` | [`examples/2-react-vite/`](./examples/2-react-vite/) | `specify workflow run viteplus-stitch -i spec="$(cat examples/2-react-vite/spec.input.txt)" -i scope="src/features/habits" -i has_ui=true` |
+| **3. Next.js App** | Fullstack App Router | `has_ui=true` | [`examples/3-nextjs-app/`](./examples/3-nextjs-app/) | `specify workflow run viteplus-stitch -i spec="$(cat examples/3-nextjs-app/spec.input.txt)" -i scope="src/app/pricing" -i has_ui=true` |
+| **4. Vanilla Web** | Raw HTML + CSS + JS | `has_ui=true` | [`examples/4-vanilla-web/`](./examples/4-vanilla-web/) | `specify workflow run viteplus-stitch -i spec="$(cat examples/4-vanilla-web/spec.input.txt)" -i scope="src/features/dialog" -i has_ui=true` |
+
+Each example contains a pre-engineered `spec.input.txt` following the 5-block SDD structure:
+1. **Context & Purpose**: Business problem and user persona.
+2. **Domain Entities & Value Objects**: Immutable models and core data contracts.
+3. **Endpoints / UI Components**: Routing manifest, views, and ports/adapters.
+4. **Key Acceptance Criteria**: Formal Given/When/Then Gherkin scenarios with edge cases.
+5. **Technical & Quality Constraints**: Layer boundaries, env config, and performance budgets.
 
 ---
 

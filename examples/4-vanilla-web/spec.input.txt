@@ -1,0 +1,38 @@
+# FEATURE: Accessible Vanilla Dialog & Notification System
+
+## 1. Contexto y Propósito
+Componente de interfaz web moderno, ultra-ligero y accesible sin dependencias de frameworks externos (Zero-Framework Vanilla JS/TS). Implementa un cuadro de diálogo modal nativo utilizando la API HTML5 `<dialog>` y un sistema de notificaciones toast flotantes con animaciones aceleradas por hardware y estricta conformidad contra clases CSS fantasma (Ghost Classes).
+
+## 2. Entidades y Modelos
+- DialogOptions: title (string), message (string), confirmText (string), cancelText (string), variant ('info' | 'warning' | 'danger').
+- ToastNotification: id (string), message (string), durationMs (number), type ('success' | 'error' | 'info').
+- DialogState: isOpen (boolean), activeElementBeforeOpen (HTMLElement).
+
+## 3. Elementos UI y Estilos CSS
+- ModalDialog: Módulo ES (ModalDialog.ts) que gestiona la apertura (`showModal()`), cierre (`close()`), y atrapado de foco accesible.
+- ToastContainer: Contenedor flotante en esquina superior derecha con apilamiento vertical y descarte automático por temporizador.
+- Estilos CSS (src/styles/dialog.css): Reglas semánticas puras (`.modal-backdrop`, `.modal-card`, `.modal-header`, `.modal-actions`, `.toast-item`, `.toast--success`).
+- Tokens de diseño: Variables CSS nativas bajo `:root` (`--dialog-bg`, `--dialog-radius`, `--dialog-shadow`, `--transition-smooth`).
+
+## 4. Criterios de Aceptación Clave (Gherkin)
+- Escenario 1 (Apertura de diálogo y atrapado de foco):
+  Given que el usuario pulsa el botón disparador de confirmación
+  When se invoca el método showModal()
+  Then el diálogo se muestra en la capa superior (top layer), el foco se sitúa en el primer botón interactivo y el scroll del documento se bloquea.
+
+- Escenario 2 (Cierre con tecla Escape o backdrop):
+  Given que el diálogo modal está abierto
+  When el usuario presiona la tecla 'Escape' o hace clic en el fondo oscuro exterior
+  Then el diálogo se cierra con una animación de desvanecimiento y el foco del teclado regresa exactamente al botón que lo abrió.
+
+- Escenario 3 (Verificación estricta contra Ghost Classes):
+  Given los elementos creados dinámicamente en el DOM por el componente
+  When el comprobador check-ghost-classes.sh audita los selectores
+  Then el 100% de las clases asignadas (ej. .modal-card, .toast-item) existen de forma comprobada en src/styles/dialog.css.
+
+## 5. Restricciones Técnicas y Calidad
+- Cero frameworks frontend: Sin React, Vue, Svelte ni bibliotecas de terceros en tiempo de ejecución.
+- Conformidad total con Ghost Classes: Prohibido usar selectores dinámicos en clases CSS no declaradas.
+- Accesibilidad WCAG 2.1 AA nativa: Soporte para aria-labelledby, aria-modal="true" y respeto a prefers-reduced-motion.
+- Variables de entorno leídas exclusivamente a través de src/config/env.ts.
+- Cobertura de tests unitarios del ciclo de vida del diálogo con Vitest y JSDOM.

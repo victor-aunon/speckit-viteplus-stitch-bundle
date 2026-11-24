@@ -1,0 +1,39 @@
+# FEATURE: Daily Habit & Streak Tracker SPA
+
+## 1. Contexto y Propósito
+Aplicación web cliente (Single Page Application) en React + Vite+ para registrar hábitos diarios, visualizar rachas activas (streaks), celebrar hitos de constancia y consultar estadísticas semanales de cumplimiento con retroalimentación visual inmediata.
+
+## 2. Entidades de Dominio
+- Habit: id (UUID), title (string), category (health, learning, productivity, mindfulness), targetDaysPerWeek (number), createdAt (Date).
+- HabitCompletion: habitId, date (ISO string YYYY-MM-DD), completed (boolean).
+- StreakMetric: currentStreak (días consecutivos), longestStreak (récord histórico), weeklyCompletionRate (porcentaje 0-100%).
+
+## 3. Pantallas, Rutas y Componentes UI
+- / (Ruta principal en routes-manifest.json): Dashboard interactivo con lista de hábitos del día y barra de progreso semanal.
+- HabitCard: Tarjeta atómica por hábito con selector circular de completado, indicador visual de racha y badge de categoría.
+- StreakRing: Componente visual SVG circular que representa el porcentaje semanal de cumplimiento.
+- EmptyStateHabits: Vista vacía con mensaje motivador y llamada a la acción (CTA) para crear el primer hábito.
+- Diseño y Tokens: Basado en Google Stitch (`specs/habits/designs/tokens.css`) consumiendo variables CSS semánticas (`--color-primary`, `--color-surface`, `--radius-md`, `--space-4`).
+
+## 4. Criterios de Aceptación Clave (Gherkin)
+- Escenario 1 (Marcar hábito como completado):
+  Given que el usuario visualiza su lista de hábitos pendientes para el día de hoy
+  When pulsa sobre el control de completado de un hábito
+  Then el estado cambia a completado, el contador de racha actual se incrementa en 1 y se anima el anillo de progreso StreakRing.
+
+- Escenario 2 (Persistencia y cálculo de racha rota):
+  Given un hábito cuya última fecha de completado fue hace más de 48 horas
+  When el usuario abre la aplicación
+  Then la racha actual se reinicia a 0 manteniendo el récord histórico intacto.
+
+- Escenario 3 (Accesibilidad y navegación por teclado):
+  Given un usuario navegando exclusivamente con teclado
+  When enfoca el botón de completado de HabitCard con 'Tab' y presiona 'Espacio' o 'Enter'
+  Then se muestra un anillo de foco visible (:focus-visible) de al menos 2px y el hábito conmuta su estado de forma accesible (aria-pressed actualizado).
+
+## 5. Restricciones Técnicas y Calidad
+- Arquitectura Limpia modular bajo src/features/habits/ (domain, application, ui).
+- Atomic Design estricto: Exactamente un componente React por archivo (HabitCard.tsx, StreakRing.tsx, etc.).
+- Sin clases CSS fantasma: Cada clase en JSX debe existir en tokens.css o en estilos declarados.
+- Presupuesto de producción: Bundle compilado por Rolldown menor a 250KB por chunk.
+- Pruebas unitarias de componentes con Vitest y Testing Library para interacciones y estados vacíos.

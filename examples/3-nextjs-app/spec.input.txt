@@ -1,0 +1,38 @@
+# FEATURE: SaaS Pricing & Subscription Tier Selector
+
+## 1. Contexto y Propósito
+Página pública de precios para una aplicación SaaS construida sobre Next.js App Router (`src/app/pricing/page.tsx`). Permite a clientes potenciales comparar planes (Starter, Pro, Enterprise), conmutar entre facturación mensual y anual con descuento automático, y avanzar al flujo de checkout con el plan seleccionado.
+
+## 2. Entidades y Tipos de Dominio
+- PricingPlan: id ('starter' | 'pro' | 'enterprise'), name (string), description (string), monthlyPrice (number), annualPricePerMonth (number), isPopular (boolean), features (array de FeatureItem), ctaLabel (string).
+- FeatureItem: title (string), included (boolean), tooltipText (string opcional).
+- BillingInterval: 'monthly' | 'annual' (con cálculo de ahorro porcentual visible).
+
+## 3. Rutas y Componentes de Interfaz
+- /pricing (Página App Router en src/app/pricing/page.tsx): Layout responsive con encabezado comercial, toggle de facturación y grid de 3 columnas (1 columna en móviles).
+- PricingCard: Componente atómico de tarjeta con resaltado visual para el plan 'Pro' (popular badge), lista de características con checks e icono accesible.
+- BillingIntervalToggle: Conmutador accesible (role='switch', aria-checked) entre mensual y anual con badge de '20% de ahorro'.
+- PlanCtaButton: Botón de llamada a la acción con enlace directo preconfigurado a `/checkout?plan=<id>&billing=<interval>`.
+
+## 4. Criterios de Aceptación Clave (Gherkin)
+- Escenario 1 (Conmutación a facturación anual):
+  Given que el usuario está visualizando los precios mensuales en /pricing
+  When activa el toggle de facturación anual
+  Then los precios de las tarjetas se actualizan para reflejar la cuota anual con un 20% de descuento y se muestra la etiqueta de facturación anual.
+
+- Escenario 2 (Selección de plan y redirección al checkout):
+  Given que el usuario selecciona el plan 'Pro' con facturación anual activada
+  When pulsa en el botón CTA 'Comenzar con Pro'
+  Then se genera un enlace de navegación a '/checkout?plan=pro&interval=annual' con los parámetros de consulta correctos.
+
+- Escenario 3 (Contraste y accesibilidad WCAG AA):
+  Given los elementos visuales de la tarjeta destacada (plan Pro)
+  When se auditan los ratios de contraste de color entre texto y fondo
+  Then todos los textos cumplen un ratio mínimo de 4.5:1 (WCAG 2.1 AA) y los elementos interactivos tienen un área de pulsación mínima de 44x44px.
+
+## 5. Restricciones Técnicas y Calidad
+- Estructura Next.js App Router bajo src/app/pricing/ (page.tsx, components, test).
+- Separación estricta entre Server Components (estructura base estática) y Client Components interactivos ('use client' únicamente en el toggle).
+- Validación de entorno centralizada en src/config/env.ts (NEXT_PUBLIC_STRIPE_KEY, APP_URL); sin lecturas directas de process.env en componentes.
+- Atomic Design: 1 componente por archivo.
+- Tests de componentes con Vitest y Testing Library que verifiquen el cambio de precios al conmutar el toggle.

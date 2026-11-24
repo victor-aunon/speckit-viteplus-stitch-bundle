@@ -1,0 +1,9 @@
+{
+  "name": "example-react-vite",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  }
+}
