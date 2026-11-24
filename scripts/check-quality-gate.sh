@@ -30,7 +30,13 @@ Options:
   --help           Show this help message
   --dry-run        Verify tooling availability without running full check
   --fix            Automatically fix formatting and auto-fixable lint issues
-  --skip-tests     Skip running the automated test suite
+  --skip-tests     Skip running the automated test suite (evidence: skipped)
+  --allow-no-tests Allow a test run that executes zero tests (evidence: skipped).
+                   Without this flag, zero executed tests FAIL the gate.
+  --require-git    Fail when the project root is not its own git repository
+  --allow-foreign-git  Allow running inside an ancestor git repository instead of
+                   the project root (dangerous: blast radius would audit the
+                   ancestor repo, not this project)
   --skip-build     Skip application compilation and build verification
   --scope=<path>   Restrict allowed modifications to a feature slice (e.g. src/features/billing).
                    Also narrows the env-config audit and regression tests to that slice.
@@ -49,6 +55,9 @@ DRY_RUN=false
 AUTO_FIX=false
 SKIP_TESTS=false
 SKIP_BUILD=false
+ALLOW_NO_TESTS=false
+REQUIRE_GIT=false
+ALLOW_FOREIGN_GIT=false
 SCOPE_DIR=""
 RESET_BREAKER=false
 FEATURE_DIR=""
@@ -71,6 +80,15 @@ for arg in "$@"; do
       ;;
     --skip-build)
       SKIP_BUILD=true
+      ;;
+    --allow-no-tests)
+      ALLOW_NO_TESTS=true
+      ;;
+    --require-git)
+      REQUIRE_GIT=true
+      ;;
+    --allow-foreign-git)
+      ALLOW_FOREIGN_GIT=true
       ;;
     --scope=*)
       SCOPE_DIR="${arg#*=}"
@@ -99,6 +117,17 @@ if [ -z "$FEATURE_DIR" ] && [ -n "${SPECIFY_FEATURE_DIR:-}" ]; then
   FEATURE_DIR="$SPECIFY_FEATURE_DIR"
 fi
 
+if [ "$ALLOW_NO_TESTS" = false ] && [ "${SPECIFY_ALLOW_NO_TESTS:-}" = "true" ]; then
+  ALLOW_NO_TESTS=true
+fi
+if [ "$REQUIRE_GIT" = false ] && [ "${SPECIFY_REQUIRE_GIT:-}" = "true" ]; then
+  REQUIRE_GIT=true
+fi
+if [ "$ALLOW_FOREIGN_GIT" = false ] && [ "${SPECIFY_ALLOW_FOREIGN_GIT:-}" = "true" ]; then
+  ALLOW_FOREIGN_GIT=true
+fi
+
+
 # Autodetect feature directory if not provided
 if [ -z "$FEATURE_DIR" ] && [ -d "specs" ]; then
   FEATURE_DIR=$(find specs -mindepth 1 -maxdepth 1 -type d | sort -r | head -n 1 || true)
@@ -111,17 +140,26 @@ fi
 
 START_TIME=$(date +%s 2>/dev/null || echo 0)
 
+# Test execution bookkeeping (filled in by the Regression Gate below)
+TESTS_EXECUTED=""
+REGRESSION_OVERRIDE=""
+
 emit_gate_telemetry() {
   local status="$1"
   local code="$2"
   local end_time=$(date +%s 2>/dev/null || echo 0)
   local dur=$(( (end_time - START_TIME) * 1000 ))
+  local details=""
+  if [ -n "${TESTS_EXECUTED:-}" ] && [ "$TESTS_EXECUTED" != "unknown" ]; then
+    details="{\"tests_executed\":$TESTS_EXECUTED}"
+  fi
   if [ -f "$SCRIPT_DIR/emit-telemetry.sh" ]; then
     bash "$SCRIPT_DIR/emit-telemetry.sh" \
       --gate="check-quality-gate" \
       --status="$status" \
       --duration-ms="$dur" \
       --exit-code="$code" \
+      ${details:+--details="$details"} \
       ${SCOPE_DIR:+--scope="$SCOPE_DIR"} \
       ${FEATURE_DIR:+--feature-dir="$FEATURE_DIR"} \
       ${EVIDENCE_DIR:+--evidence-file="$EVIDENCE_DIR/quality-gate.json"} 2>/dev/null || true
@@ -134,49 +172,133 @@ write_evidence() {
   if [ -n "$EVIDENCE_DIR" ]; then
     mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
     if command -v node >/dev/null 2>&1; then
+      EV_STATUS="$status" \
+      EV_FAILED_STEP="$failed_step" \
+      EV_SCOPE="$SCOPE_DIR" \
+      EV_FEATURE_DIR="$FEATURE_DIR" \
+      EV_ENGINE="$VP_CMD" \
+      EV_SKIP_TESTS="$SKIP_TESTS" \
+      EV_SKIP_BUILD="$SKIP_BUILD" \
+      EV_TESTS_EXECUTED="$TESTS_EXECUTED" \
+      EV_REGRESSION_OVERRIDE="$REGRESSION_OVERRIDE" \
+      EV_GIT_TOPLEVEL="$GIT_TOPLEVEL" \
+      EV_PROJECT_ROOT="$PROJECT_ROOT" \
       node -e '
         const fs = require("fs");
-        const [outPath, status, failedStep, scopeDir, featDir, vpCmd, skipTests, skipBuild] = process.argv.slice(1);
-        const stepsOrder = ["circuit_breaker", "dependencies", "anti_tampering", "blast_radius", "env_config", "code_quality", "regression_tests", "build"];
+        const outPath = process.argv[1];
+        const env = process.env;
+        const status = env.EV_STATUS || "unknown";
+        const failedStep = env.EV_FAILED_STEP || "none";
+        const stepsOrder = ["circuit_breaker", "git_root", "dependencies", "anti_tampering", "blast_radius", "env_config", "code_quality", "regression_tests", "build"];
         const failedIndex = failedStep !== "none" ? stepsOrder.indexOf(failedStep) : -1;
         const getStatus = (stepName, index) => {
           if (failedIndex !== -1) {
             if (index === failedIndex) return "failed";
             if (index > failedIndex) return "unreached";
           }
-          if (stepName === "regression_tests" && skipTests === "true") return "skipped";
-          if (stepName === "build" && skipBuild === "true") return "skipped";
+          if (stepName === "regression_tests") {
+            if (env.EV_REGRESSION_OVERRIDE === "skipped") return "skipped";
+            if (env.EV_SKIP_TESTS === "true") return "skipped";
+          }
+          if (stepName === "build" && env.EV_SKIP_BUILD === "true") return "skipped";
+          if (stepName === "git_root" && env.EV_GIT_TOPLEVEL) return "passed";
+          if (stepName === "git_root") return "skipped";
           return stepName === "circuit_breaker" ? "healthy" : "passed";
         };
+        const testsExecuted = Number(env.EV_TESTS_EXECUTED);
+        let previousStatus;
+        try {
+          const previous = JSON.parse(fs.readFileSync(outPath, "utf8"));
+          if (previous && previous.status) previousStatus = previous.status;
+        } catch {}
         const data = {
           timestamp: new Date().toISOString(),
           gate: "check-quality-gate",
           status,
           failed_step: failedStep !== "none" ? failedStep : undefined,
-          scope: scopeDir || undefined,
-          feature_dir: featDir || undefined,
-          engine: vpCmd || undefined,
+          previous_status: previousStatus,
+          scope: env.EV_SCOPE || undefined,
+          feature_dir: env.EV_FEATURE_DIR || undefined,
+          project_root: env.EV_PROJECT_ROOT || undefined,
+          git_toplevel: env.EV_GIT_TOPLEVEL || undefined,
+          engine: env.EV_ENGINE || undefined,
+          tests_executed: Number.isFinite(testsExecuted) ? testsExecuted : undefined,
           checks: {
             circuit_breaker: getStatus("circuit_breaker", 0),
-            dependencies: getStatus("dependencies", 1),
-            anti_tampering: getStatus("anti_tampering", 2),
-            blast_radius: getStatus("blast_radius", 3),
-            env_config: getStatus("env_config", 4),
-            code_quality: getStatus("code_quality", 5),
-            regression_tests: getStatus("regression_tests", 6),
-            build: getStatus("build", 7)
+            git_root: getStatus("git_root", 1),
+            dependencies: getStatus("dependencies", 2),
+            anti_tampering: getStatus("anti_tampering", 3),
+            blast_radius: getStatus("blast_radius", 4),
+            env_config: getStatus("env_config", 5),
+            code_quality: getStatus("code_quality", 6),
+            regression_tests: getStatus("regression_tests", 7),
+            build: getStatus("build", 8)
           },
           evidence_type: "deterministic_quality_gate"
         };
-        fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
-      ' "$EVIDENCE_DIR/quality-gate.json" "$status" "$failed_step" "$SCOPE_DIR" "$FEATURE_DIR" "$VP_CMD" "$SKIP_TESTS" "$SKIP_BUILD" 2>/dev/null || true
+        const serialized = JSON.stringify(data, null, 2);
+        fs.writeFileSync(outPath, serialized, "utf8");
+        // Append-only audit trail: every run leaves a line, nothing is overwritten.
+        fs.appendFileSync(outPath.replace(/\.json$/, ".history.jsonl"), JSON.stringify(data) + "\n", "utf8");
+      ' "$EVIDENCE_DIR/quality-gate.json" 2>/dev/null || true
     fi
   fi
 }
 
-# Auto-detect scope if inside a git work tree and changes are isolated to a single feature slice
-if [ -z "$SCOPE_DIR" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  MODIFIED_SLICES=($(git status --porcelain 2>/dev/null | awk '{print $2}' | grep -E '^src/features/[^/]+' | cut -d/ -f1-3 | sort -u || true))
+# ------------------------------------------------------------------------------
+# Git ownership: the project root must be its own repository.
+# Without this, a greenfield project nested inside an unrelated repo (e.g. $HOME)
+# would audit, diff and "protect" that ancestor repo instead of this project.
+# ------------------------------------------------------------------------------
+PROJECT_ROOT="$PWD"
+SCAN_DIR="$PWD"
+while [ "$SCAN_DIR" != "/" ] && [ -n "$SCAN_DIR" ]; do
+  if [ -d "$SCAN_DIR/.specify" ] || [ -f "$SCAN_DIR/package.json" ] || [ -e "$SCAN_DIR/.git" ]; then
+    PROJECT_ROOT="$SCAN_DIR"
+    break
+  fi
+  SCAN_DIR="$(dirname "$SCAN_DIR")"
+done
+
+GIT_TOPLEVEL=""
+if command -v git >/dev/null 2>&1; then
+  GIT_TOPLEVEL="$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
+
+GIT_OWNED=false
+if [ -n "$GIT_TOPLEVEL" ]; then
+  GIT_TOPLEVEL_REAL="$(cd "$GIT_TOPLEVEL" 2>/dev/null && pwd -P || printf '%s' "$GIT_TOPLEVEL")"
+  PROJECT_ROOT_REAL="$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P || printf '%s' "$PROJECT_ROOT")"
+  if [ "$GIT_TOPLEVEL_REAL" = "$PROJECT_ROOT_REAL" ]; then
+    GIT_OWNED=true
+  fi
+fi
+
+if [ "$GIT_OWNED" = false ] && [ "$ALLOW_FOREIGN_GIT" = false ] && [ "$DRY_RUN" = false ]; then
+  if [ -n "$GIT_TOPLEVEL" ]; then
+    echo "❌ [QUALITY GATE FAILED]: Project root is NOT its own git repository."
+    echo "   Project root : $PROJECT_ROOT"
+    echo "   Inherited git: $GIT_TOPLEVEL"
+    echo "   Anti-tampering and blast radius would audit the ancestor repository instead of this project."
+    echo "   Fix: run 'git init' in $PROJECT_ROOT (and commit a baseline), or pass --allow-foreign-git."
+    write_evidence "failed" "git_root"
+    emit_gate_telemetry "failed" 1
+    exit 1
+  fi
+  if [ "$REQUIRE_GIT" = true ]; then
+    echo "❌ [QUALITY GATE FAILED]: --require-git was passed but no git repository was found."
+    echo "   Run 'git init' in $PROJECT_ROOT and commit a baseline."
+    write_evidence "failed" "git_root"
+    emit_gate_telemetry "failed" 1
+    exit 1
+  fi
+  echo "⚠️  [QUALITY GATE WARNING]: no git repository at project root ($PROJECT_ROOT)."
+  echo "   Anti-tampering and blast radius checks are disabled until 'git init' is run."
+fi
+
+# Auto-detect scope from the project's own repository only (never an ancestor repo)
+if [ -z "$SCOPE_DIR" ] && [ "$GIT_OWNED" = true ]; then
+  MODIFIED_SLICES=($(git -C "$PROJECT_ROOT" status --porcelain -- . 2>/dev/null | sed 's/^...//' | sed 's/^"//; s/"$//' | grep -E '^src/features/[^/]+' | cut -d/ -f1-3 | sort -u || true))
   if [ ${#MODIFIED_SLICES[@]} -eq 1 ]; then
     SCOPE_DIR="${MODIFIED_SLICES[0]}"
     echo "ℹ️  Auto-detected feature scope from git status: $SCOPE_DIR"
@@ -238,7 +360,7 @@ if [ "$DRY_RUN" = false ] && [ -f "package.json" ] && [ ! -d "node_modules" ]; t
 fi
 
 # 3. Anti-Tampering & Code Integrity Gate (Delta-only, brownfield-safe)
-if [ "$DRY_RUN" = false ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if [ "$DRY_RUN" = false ] && [ "$GIT_OWNED" = true ]; then
   TAMPERING_VIOLATIONS=0
 
   # A. Check for new compiler/linter suppression comments in git diff (delta inspection)
@@ -247,7 +369,7 @@ if [ "$DRY_RUN" = false ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1
     if [ -n "$line" ]; then
       NEW_SUPPRESSIONS+=("$line")
     fi
-  done < <(git diff HEAD -U0 -- 'src/*' 2>/dev/null | grep -E '^\+[^+]' | grep -E '(@ts-ignore|@ts-nocheck|eslint-disable|oxlint-disable)' || true)
+  done < <(git -C "$PROJECT_ROOT" diff HEAD -U0 -- 'src/*' 2>/dev/null | grep -E '^\+[^+]' | grep -E '(@ts-ignore|@ts-nocheck|eslint-disable|oxlint-disable)' || true)
 
   # Check untracked files under src/
   UNTRACKED_FILES=()
@@ -255,7 +377,7 @@ if [ "$DRY_RUN" = false ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1
     if [ -n "$ufile" ]; then
       UNTRACKED_FILES+=("$ufile")
     fi
-  done < <(git ls-files --others --exclude-standard 'src/*' 2>/dev/null || true)
+  done < <(git -C "$PROJECT_ROOT" ls-files --others --exclude-standard 'src/*' 2>/dev/null | sed "s#^#$PROJECT_ROOT/#" || true)
 
   if [ ${#UNTRACKED_FILES[@]} -gt 0 ]; then
     while IFS= read -r line; do
@@ -276,7 +398,7 @@ if [ "$DRY_RUN" = false ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1
   fi
 
   # B. Check for weakening or deletion of quality rules in vite.config.ts / vitest.config.ts
-  VITE_DELETIONS=$(git diff HEAD -U0 -- 'vite.config.*' 'vitest.config.*' 2>/dev/null | grep -E '^\-[^-]' | grep -E "('complexity'|no-restricted-imports|max-lines-per-function|@shadcn/lint)" || true)
+  VITE_DELETIONS=$(git -C "$PROJECT_ROOT" diff HEAD -U0 -- 'vite.config.*' 'vitest.config.*' 2>/dev/null | grep -E '^\-[^-]' | grep -E "('complexity'|no-restricted-imports|max-lines-per-function|@shadcn/lint)" || true)
   if [ -n "$VITE_DELETIONS" ]; then
     echo ""
     echo "❌ [ANTI-TAMPERING VIOLATION]: Deleting or weakening quality rules in bundler config is prohibited:"
@@ -375,6 +497,47 @@ fi
 echo "✓ Code style, types, complexity, and architectural boundaries passed."
 
 # 4. Run automated test suite (Regression Gate)
+# A green suite only proves something when it actually executed tests. Zero tests
+# is a FAILURE unless a human explicitly opts in with --allow-no-tests.
+count_executed_tests() {
+  local log="$1"
+  if [ ! -f "$log" ]; then
+    echo "unknown"
+    return 0
+  fi
+  if grep -qiE 'No test files found|No tests found|no tests to run' "$log"; then
+    echo 0
+    return 0
+  fi
+
+  local summary total
+  summary="$(grep -E '^[[:space:]]*Tests:?[[:space:]]' "$log" | tail -n 1 || true)"
+  if [ -n "$summary" ]; then
+    # vitest: "Tests  12 passed (13)" -> the parenthesised value is the total.
+    total="$(printf '%s' "$summary" | sed -nE 's/.*\(([0-9]+)\).*/\1/p')"
+    if [ -z "$total" ]; then
+      # jest: "Tests: 3 passed, 3 total"
+      total="$(printf '%s' "$summary" | sed -nE 's/.*[,]?[[:space:]]([0-9]+)[[:space:]]+total.*/\1/p')"
+    fi
+    if [ -z "$total" ]; then
+      total="$(printf '%s' "$summary" | grep -Eo '[0-9]+' | head -n 1 || true)"
+    fi
+    if [ -n "$total" ]; then
+      echo "$total"
+      return 0
+    fi
+  fi
+
+  # mocha: "  7 passing"
+  total="$(grep -Eo '[0-9]+ passing' "$log" | tail -n 1 | grep -Eo '[0-9]+' || true)"
+  if [ -n "$total" ]; then
+    echo "$total"
+    return 0
+  fi
+
+  echo "unknown"
+}
+
 if [ "$SKIP_TESTS" = false ]; then
   echo ""
   echo "Executing automated test suite (Regression Gate)..."
@@ -382,17 +545,17 @@ if [ "$SKIP_TESTS" = false ]; then
   TEST_CMD=""
   if [ -f "vitest.config.ts" ] || [ -f "vitest.config.js" ] || [ -f "vite.config.ts" ]; then
     if command -v vp >/dev/null 2>&1; then
-      TEST_CMD="vp test --run --passWithNoTests"
+      TEST_CMD="vp test --run"
     elif [ -x "./node_modules/.bin/vp" ]; then
-      TEST_CMD="./node_modules/.bin/vp test --run --passWithNoTests"
+      TEST_CMD="./node_modules/.bin/vp test --run"
     elif [ -x "./node_modules/.bin/vitest" ]; then
-      TEST_CMD="./node_modules/.bin/vitest run --passWithNoTests"
+      TEST_CMD="./node_modules/.bin/vitest run"
     fi
   fi
 
   if [ -z "$TEST_CMD" ] && [ -f "package.json" ]; then
     if grep -q '"test":' package.json; then
-      TEST_CMD="npm test -- --passWithNoTests"
+      TEST_CMD="npm test"
     fi
   fi
 
@@ -402,24 +565,71 @@ if [ "$SKIP_TESTS" = false ]; then
       TEST_CMD="$TEST_CMD $SCOPE_DIR"
     fi
     echo "✓ Test runner detected: $TEST_CMD"
+
+    TEST_LOG="$(mktemp "${TMPDIR:-/tmp}/speckit-tests-XXXXXX" 2>/dev/null || printf '%s/speckit-tests-%s.log' "${TMPDIR:-/tmp}" "$$")"
     TEST_STATUS=0
-    $TEST_CMD || TEST_STATUS=$?
+    $TEST_CMD 2>&1 | tee "$TEST_LOG" || TEST_STATUS=${PIPESTATUS[0]}
+
+    TESTS_EXECUTED="$(count_executed_tests "$TEST_LOG")"
 
     if [ $TEST_STATUS -ne 0 ]; then
       record_failure
       write_evidence "failed" "regression_tests"
       emit_gate_telemetry "failed" "$TEST_STATUS"
+      rm -f "$TEST_LOG"
       echo ""
       echo "❌ [QUALITY GATE FAILED]: Test suite failed with regressions (exit code: $TEST_STATUS)."
       echo "Please fix the failing tests before proceeding to the next phase."
       exit 1
     fi
-    echo "✓ Test suite passed with zero regressions."
+
+    if [ "$TESTS_EXECUTED" = "0" ]; then
+      if [ "$ALLOW_NO_TESTS" = true ]; then
+        echo "⚠️  [REGRESSION GATE]: zero tests executed; allowed by --allow-no-tests (evidence: skipped)."
+        REGRESSION_OVERRIDE="skipped"
+      else
+        record_failure
+        write_evidence "failed" "regression_tests"
+        emit_gate_telemetry "failed" 1
+        rm -f "$TEST_LOG"
+        echo ""
+        echo "❌ [QUALITY GATE FAILED]: the test suite executed ZERO tests."
+        echo "   A green run with nothing to test proves nothing. Write the co-located tests"
+        echo "   for the feature before claiming completion."
+        echo "   If this project has no test suite by design, a human must opt in with --allow-no-tests."
+        exit 1
+      fi
+    elif [ "$TESTS_EXECUTED" = "unknown" ]; then
+      record_failure
+      write_evidence "failed" "regression_tests"
+      emit_gate_telemetry "failed" 1
+      rm -f "$TEST_LOG"
+      echo ""
+      echo "❌ [QUALITY GATE FAILED]: could not determine how many tests were executed."
+      echo "   The gate refuses to treat an unparseable test report as a pass."
+      echo "   Use a runner with a standard summary line, or pass --allow-no-tests to opt out explicitly."
+      exit 1
+    else
+      echo "✓ Test suite passed: $TESTS_EXECUTED test(s) executed with zero regressions."
+    fi
+    rm -f "$TEST_LOG"
   else
-    echo "ℹ️  No test runner or test suite configured; skipping regression tests."
+    echo "ℹ️  No test runner or test suite configured."
+    if [ "$ALLOW_NO_TESTS" = true ]; then
+      echo "⚠️  [REGRESSION GATE]: no test runner found; allowed by --allow-no-tests (evidence: skipped)."
+      REGRESSION_OVERRIDE="skipped"
+    else
+      record_failure
+      write_evidence "failed" "regression_tests"
+      emit_gate_telemetry "failed" 1
+      echo ""
+      echo "❌ [QUALITY GATE FAILED]: no test runner or test suite was found."
+      echo "   Install a runner and add tests, or pass --allow-no-tests for a human-approved exemption."
+      exit 1
+    fi
   fi
 else
-  echo "ℹ️  --skip-tests flag specified; skipping regression tests."
+  echo "ℹ️  --skip-tests flag specified; skipping regression tests (evidence: skipped)."
 fi
 
 # 5. Build and compile application (Build Gate)

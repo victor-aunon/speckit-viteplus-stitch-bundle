@@ -30,13 +30,24 @@ describe('check-quality-gate.sh', () => {
     expect(output).toContain('--skip-build');
   });
 
-  it('should integrate automated regression test execution', () => {
+  it('should integrate automated regression test execution with a real test count', () => {
     const content = fs.readFileSync(scriptPath, 'utf8');
     expect(content).toContain('Regression Gate');
-    expect(content).toContain('TEST_STATUS=$?');
-    expect(content).toContain('vp test --run --passWithNoTests');
+    expect(content).toContain('TEST_STATUS=${PIPESTATUS[0]}');
+    expect(content).toContain('count_executed_tests');
+    // Zero executed tests must never be reported as a pass.
+    expect(content).toContain('executed ZERO tests');
+    expect(content).toContain('--allow-no-tests');
+    expect(content).not.toContain('--passWithNoTests');
     expect(content).toContain('Test suite failed with regressions');
     expect(content).toContain('SKIP_TESTS');
+  });
+
+  it('should refuse to audit an inherited ancestor git repository', () => {
+    const content = fs.readFileSync(scriptPath, 'utf8');
+    expect(content).toContain('Project root is NOT its own git repository');
+    expect(content).toContain('--allow-foreign-git');
+    expect(content).toContain('GIT_OWNED');
   });
 
   it('should integrate application compilation and build gate', () => {

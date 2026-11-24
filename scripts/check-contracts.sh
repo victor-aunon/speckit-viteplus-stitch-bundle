@@ -26,6 +26,7 @@ Options:
   --feature-dir=<path>      Path to feature directory (e.g. specs/001-feature)
   --manifest=<path>         Direct path to routes-manifest.json
   --check-orphans           Scan for unimported/orphan UI components in src/
+                            (implied by --require-ui)
   --check-atomic            Enforce Atomic Design (strictly max 1 component per file)
   --require-ui              Fail if routes-manifest.json is missing (do not skip)
   --evidence-dir=<path>     Directory to write machine evidence JSON (default: <feature-dir>/evidence)
@@ -96,6 +97,11 @@ if [ -z "$FEATURE_DIR" ] && [ -n "${SPECIFY_FEATURE_DIR:-}" ]; then
   FEATURE_DIR="$SPECIFY_FEATURE_DIR"
 fi
 
+# Claiming UI (--require-ui) implies the UI is real: components must be consumed.
+if [ "$REQUIRE_UI" = true ]; then
+  CHECK_ORPHANS=true
+fi
+
 # Autodetect feature directory if not provided
 if [ -z "$FEATURE_DIR" ] && [ -z "$MANIFEST_FILE" ]; then
   if [ -d "specs" ]; then
@@ -146,9 +152,15 @@ write_evidence() {
             if (Array.isArray(m.screens)) screenCount = m.screens.length;
           }
         } catch {}
+        let previousStatus;
+        try {
+          const previous = JSON.parse(fs.readFileSync(outPath, "utf8"));
+          if (previous && previous.status) previousStatus = previous.status;
+        } catch {}
         const data = {
           timestamp: new Date().toISOString(),
           gate: "check-contracts",
+          previous_status: previousStatus,
           status,
           reason: status === "skipped" ? "no_ui_declared" : undefined,
           manifest_file: manifestPath || undefined,
@@ -158,6 +170,7 @@ write_evidence() {
           evidence_type: "routes_and_component_contracts"
         };
         fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
+        fs.appendFileSync(outPath.replace(/\.json$/, ".history.jsonl"), JSON.stringify(data) + "\n", "utf8");
       ' "$EVIDENCE_DIR/contracts.json" "$status" "$MANIFEST_FILE" "$FEATURE_DIR" "$SCOPE_DIR" 2>/dev/null || true
     fi
   fi
@@ -186,15 +199,16 @@ fi
 echo "✓ Manifest detected: $MANIFEST_FILE"
 
 NODE_STATUS=0
-node - "$MANIFEST_FILE" "$CHECK_ORPHANS" "$CHECK_ATOMIC" "$DRY_RUN" "$SCOPE_DIR" << 'NODE_SCRIPT' || NODE_STATUS=$?
+node - "$MANIFEST_FILE" "$CHECK_ORPHANS" "$CHECK_ATOMIC" "$DRY_RUN" "$SCOPE_DIR" "$REQUIRE_UI" << 'NODE_SCRIPT' || NODE_STATUS=$?
 const fs = require('fs');
 const path = require('path');
 
 
-const [,, manifestPath, checkOrphansStr, checkAtomicStr, dryRunStr, scopeDirArg] = process.argv;
+const [,, manifestPath, checkOrphansStr, checkAtomicStr, dryRunStr, scopeDirArg, requireUiStr] = process.argv;
 const checkOrphans = checkOrphansStr === 'true';
 const checkAtomic = checkAtomicStr === 'true';
 const dryRun = dryRunStr === 'true';
+const requireUi = requireUiStr === 'true';
 const scanScope = scopeDirArg && fs.existsSync(scopeDirArg) ? scopeDirArg : 'src';
 
 let violations = 0;
@@ -255,6 +269,67 @@ if (!manifest || !Array.isArray(manifest.screens)) {
   });
 
   console.log(`✓ Validated ${manifest.screens.length} screen definition(s) in manifest.`);
+
+  // 1b. When the feature claims UI, every declared selector must exist in the
+  // rendered source. A manifest that only validates against itself is a ghost
+  // contract: it can never fail, even if no component declares the selector.
+  if (requireUi) {
+    const escapeRe = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    function collectSources(root) {
+      const files = [];
+      if (!fs.existsSync(root)) return files;
+      const walk = (dir) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (!['node_modules', 'dist', 'build', '.git', '__tests__', 'tests', 'designs'].includes(entry.name)) walk(full);
+          } else if (entry.isFile() && /\.(tsx?|jsx?|html)$/.test(entry.name)) {
+            files.push(fs.readFileSync(full, 'utf8'));
+          }
+        }
+      };
+      walk(root);
+      return files;
+    }
+
+    const sourceText = collectSources(scanScope).join('\n');
+
+    if (sourceText.trim().length === 0) {
+      reportError(`UI contracts are required, but no renderable source files were found in '${scanScope}'. A manifest without components proves nothing.`);
+    } else {
+      const selectorExists = (selector) => {
+        const testId = /\[data-testid\s*=\s*["']?([^"'\]]+?)["']?\s*\]/.exec(selector);
+        if (testId) {
+          return new RegExp(`data-testid\\s*=\\s*["'\`]${escapeRe(testId[1])}["'\`]`).test(sourceText);
+        }
+        const id = /^#([A-Za-z0-9_-]+)$/.exec(selector.trim());
+        if (id) {
+          return new RegExp(`id\\s*=\\s*["'\`]${escapeRe(id[1])}["'\`]`).test(sourceText);
+        }
+        const cls = /^\.([A-Za-z0-9_-]+)$/.exec(selector.trim());
+        if (cls) {
+          return new RegExp(`(?:class(Name)?\\s*=\\s*["'\`][^"'\`]*\\b${escapeRe(cls[1])}\\b)`).test(sourceText);
+        }
+        const tag = /^([a-zA-Z][A-Za-z0-9]*)$/.exec(selector.trim());
+        if (tag) {
+          return new RegExp(`<${escapeRe(tag[1])}[\\s>/]`, 'i').test(sourceText);
+        }
+        return true; // compound selectors are verified by Playwright, not by grep
+      };
+
+      manifest.screens.forEach((screen) => {
+        if (!screen.selector || typeof screen.selector !== 'string') return;
+        if (!selectorExists(screen.selector)) {
+          reportError(`Ghost selector: screen '${screen.id || '?'}' declares '${screen.selector}', but it does not exist in '${scanScope}'.`);
+        }
+      });
+
+      if (violations === 0) {
+        console.log(`✓ All declared selectors exist in '${scanScope}'.`);
+      }
+    }
+  }
 }
 
 // 2. Scan for orphan UI components in src/ if requested

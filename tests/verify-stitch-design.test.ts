@@ -53,7 +53,7 @@ describe('verify-stitch-design.sh and templates', () => {
     }
   });
 
-  it('should write machine evidence to evidence-dir when validating tokens', () => {
+  it('should write structural token evidence to a dedicated artifact (never stitch-design.json)', () => {
     const tempDir = path.resolve(__dirname, '../.specify/tmp-test-stitch-evidence');
     const designsDir = path.join(tempDir, 'designs');
     const evidenceDir = path.join(tempDir, 'evidence');
@@ -66,17 +66,35 @@ describe('verify-stitch-design.sh and templates', () => {
         `--evidence-dir=${evidenceDir}`,
         '--tokens-only'
       ]);
-      expect(output).toContain('VISUAL GATE PASSED');
-      const evidencePath = path.join(evidenceDir, 'stitch-design.json');
+      expect(output).toContain('TOKENS GATE PASSED');
+      expect(output).toContain('No rendering, no snapshots');
+      expect(fs.existsSync(path.join(evidenceDir, 'stitch-design.json'))).toBe(false);
+
+      const evidencePath = path.join(evidenceDir, 'stitch-design-tokens.json');
       expect(fs.existsSync(evidencePath)).toBe(true);
       const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
       expect(evidence.gate).toBe('verify-stitch-design');
       expect(evidence.status).toBe('passed');
+      expect(evidence.tokens_only).toBe(true);
+      expect(evidence.full_visual_verification).toBe(false);
       expect(evidence.tokens_count).toBe(1);
+      expect(fs.existsSync(path.join(evidenceDir, 'stitch-design-tokens.history.jsonl'))).toBe(true);
     } finally {
       if (fs.existsSync(tempDir)) {
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
+    }
+  });
+
+  it('should reject --tokens-only when UI verification is required', () => {
+    try {
+      runBash(scriptPath, ['--feature-dir=./__non_existent_feature_dir__', '--tokens-only', '--require-ui'], {
+        stdio: 'pipe'
+      });
+      expect.fail('tokens-only must not satisfy a --require-ui claim');
+    } catch (error: any) {
+      expect(error.status).toBe(2);
+      expect(`${error.stdout ?? ''}${error.stderr ?? ''}`).toContain('--tokens-only is incompatible with --require-ui');
     }
   });
 

@@ -33,6 +33,9 @@ Options:
   --reset                 Manually reset the circuit breaker counter
   --max-failures=<N>      Maximum consecutive failures before tripping (default: 3)
   --state-dir=<path>      Directory for circuit breaker state (default: .specify or /tmp)
+  --require-git           Fail when the project root is not its own git repository
+  --allow-foreign-git     Allow an ancestor git repository (dangerous: audits the
+                          ancestor repo, not this project)
 
 Exit Codes:
   0                       All checks passed / Breaker is healthy
@@ -50,6 +53,8 @@ RESET_BREAKER=false
 SCOPE_DIR=""
 MAX_FAILURES=3
 STATE_DIR=""
+REQUIRE_GIT=false
+ALLOW_FOREIGN_GIT=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -84,10 +89,23 @@ for arg in "$@"; do
     --state-dir=*)
       STATE_DIR="${arg#*=}"
       ;;
+    --require-git)
+      REQUIRE_GIT=true
+      ;;
+    --allow-foreign-git)
+      ALLOW_FOREIGN_GIT=true
+      ;;
     *)
       ;;
   esac
 done
+
+if [ "$REQUIRE_GIT" = false ] && [ "${SPECIFY_REQUIRE_GIT:-}" = "true" ]; then
+  REQUIRE_GIT=true
+fi
+if [ "$ALLOW_FOREIGN_GIT" = false ] && [ "${SPECIFY_ALLOW_FOREIGN_GIT:-}" = "true" ]; then
+  ALLOW_FOREIGN_GIT=true
+fi
 
 # Resolve state directory
 if [ -z "$STATE_DIR" ]; then
@@ -186,17 +204,59 @@ if [ "$CHECK_SCOPE" = true ] || [ "$CHECK_BREAKER" = false ]; then
   echo "[BLAST RADIUS GATE] Verifying modified file boundaries"
   echo "======================================================================"
 
-  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  # The project root must own its git repository. Otherwise an unrelated ancestor
+  # repository (e.g. $HOME) is audited instead of this project, and its modified
+  # files are misreported as this project's blast radius.
+  PROJECT_ROOT="$PWD"
+  SCAN_DIR="$PWD"
+  while [ "$SCAN_DIR" != "/" ] && [ -n "$SCAN_DIR" ]; do
+    if [ -d "$SCAN_DIR/.specify" ] || [ -f "$SCAN_DIR/package.json" ] || [ -e "$SCAN_DIR/.git" ]; then
+      PROJECT_ROOT="$SCAN_DIR"
+      break
+    fi
+    SCAN_DIR="$(dirname "$SCAN_DIR")"
+  done
+
+  GIT_TOPLEVEL=""
+  if command -v git >/dev/null 2>&1; then
+    GIT_TOPLEVEL="$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
+  fi
+
+  if [ -z "$GIT_TOPLEVEL" ]; then
+    if [ "$REQUIRE_GIT" = true ]; then
+      echo "❌ [BLAST RADIUS GATE FAILED]: --require-git was passed but no git repository was found."
+      echo "   Run 'git init' in $PROJECT_ROOT and commit a baseline."
+      exit 1
+    fi
     echo "ℹ️  Not inside a git repository; skipping git blast radius scan."
     exit 0
   fi
 
+  GIT_TOPLEVEL_REAL="$(cd "$GIT_TOPLEVEL" 2>/dev/null && pwd -P || printf '%s' "$GIT_TOPLEVEL")"
+  PROJECT_ROOT_REAL="$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P || printf '%s' "$PROJECT_ROOT")"
+  if [ "$GIT_TOPLEVEL_REAL" != "$PROJECT_ROOT_REAL" ] && [ "$ALLOW_FOREIGN_GIT" = false ]; then
+    echo "❌ [BLAST RADIUS GATE FAILED]: project root is not its own git repository."
+    echo "   Project root : $PROJECT_ROOT"
+    echo "   Inherited git: $GIT_TOPLEVEL"
+    echo "   Auditing that repository would report unrelated files as this project's blast radius."
+    echo "   Fix: run 'git init' in $PROJECT_ROOT and commit a baseline, or pass --allow-foreign-git."
+    exit 1
+  fi
+
   MODIFIED_FILES=()
-  while IFS= read -r file; do
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    # Porcelain v1: first 3 chars are XY + space; renames read 'old -> new'.
+    file="${entry:3}"
+    case "$file" in
+      *' -> '*) file="${file##* -> }" ;;
+    esac
+    file="${file%\"}"
+    file="${file#\"}"
     if [ -n "$file" ]; then
       MODIFIED_FILES+=("$file")
     fi
-  done < <(git status --porcelain 2>/dev/null | awk '{print $2}' || true)
+  done < <(git -C "$PROJECT_ROOT" status --porcelain -- . 2>/dev/null || true)
 
   if [ ${#MODIFIED_FILES[@]} -eq 0 ]; then
     echo "✓ No modified files detected in working tree."

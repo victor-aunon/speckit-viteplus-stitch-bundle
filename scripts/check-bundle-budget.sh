@@ -221,10 +221,16 @@ write_evidence() {
       node -e '
         const fs = require("fs");
         const [outPath, status, maxChunk, largestChunk, largestName, maxTotal, totalKb, violations, grandfathered] = process.argv.slice(1);
+        let previousStatus;
+        try {
+          const previous = JSON.parse(fs.readFileSync(outPath, "utf8"));
+          if (previous && previous.status) previousStatus = previous.status;
+        } catch {}
         const data = {
           timestamp: new Date().toISOString(),
           gate: "check-bundle-budget",
           status,
+          previous_status: previousStatus,
           metrics: {
             max_chunk_kb: Number(maxChunk) || 0,
             largest_chunk_kb: Number(largestChunk) || 0,
@@ -237,6 +243,7 @@ write_evidence() {
           evidence_type: "production_bundle_budget"
         };
         fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
+        fs.appendFileSync(outPath.replace(/\.json$/, ".history.jsonl"), JSON.stringify(data) + "\n", "utf8");
       ' "$EVIDENCE_DIR/bundle-budget.json" "$status" "$MAX_CHUNK_KB" "$LARGEST_CHUNK_KB" "$LARGEST_CHUNK_NAME" "$MAX_TOTAL_KB" "$TOTAL_KB" "$VIOLATIONS" "$TOTAL_SKIPPED" 2>/dev/null || true
     fi
   fi

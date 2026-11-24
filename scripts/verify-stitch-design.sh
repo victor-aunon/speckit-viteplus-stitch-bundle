@@ -22,7 +22,9 @@ Playwright visual verification gate against Google Stitch screenshots.
 Options:
   --help                    Show this help message
   --feature-dir=<path>      Path to the feature directory (e.g. specs/001-feature)
-  --tokens-only             Validate tokens.css structure without launching Playwright
+  --tokens-only             Validate tokens.css structure without launching Playwright.
+                            Structural only: writes stitch-design-tokens.json, never
+                            stitch-design.json, and is rejected with --require-ui.
   --update-snapshots        Update canonical snapshots if design was intentionally modified
   --skip-orphans            Skip orphan UI component detection during contract check
   --require-ui              Fail if UI/Stitch designs are missing (do not skip)
@@ -124,22 +126,37 @@ write_evidence() {
   local tokens_count="$2"
   if [ -n "$EVIDENCE_DIR" ]; then
     mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
+    # Structural token validation and full visual verification are different
+    # claims, so they never share an evidence artifact.
+    local out_path="$EVIDENCE_DIR/stitch-design.json"
+    if [ "$TOKENS_ONLY" = true ]; then
+      out_path="$EVIDENCE_DIR/stitch-design-tokens.json"
+    fi
     if command -v node >/dev/null 2>&1; then
       node -e '
         const fs = require("fs");
         const [outPath, status, tokensCount, featDir, tokensOnly] = process.argv.slice(1);
+        let previousStatus;
+        try {
+          const previous = JSON.parse(fs.readFileSync(outPath, "utf8"));
+          if (previous && previous.status) previousStatus = previous.status;
+        } catch {}
+        const isTokensOnly = tokensOnly === "true";
         const data = {
           timestamp: new Date().toISOString(),
           gate: "verify-stitch-design",
           status,
+          previous_status: previousStatus,
           reason: status === "skipped" ? "no_ui_declared" : undefined,
           tokens_count: Number(tokensCount) || 0,
           feature_dir: featDir || undefined,
-          tokens_only: tokensOnly === "true",
-          evidence_type: "visual_design_tokens"
+          tokens_only: isTokensOnly,
+          full_visual_verification: !isTokensOnly && status === "passed",
+          evidence_type: isTokensOnly ? "visual_design_tokens_structure" : "visual_design"
         };
         fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
-      ' "$EVIDENCE_DIR/stitch-design.json" "$status" "$tokens_count" "$FEATURE_DIR" "$TOKENS_ONLY" 2>/dev/null || true
+        fs.appendFileSync(outPath.replace(/\.json$/, ".history.jsonl"), JSON.stringify(data) + "\n", "utf8");
+      ' "$out_path" "$status" "$tokens_count" "$FEATURE_DIR" "$TOKENS_ONLY" 2>/dev/null || true
     fi
   fi
 }
@@ -147,6 +164,13 @@ write_evidence() {
 echo "======================================================================"
 echo "[VISUAL GATE] Starting Playwright Stitch visual validation"
 echo "======================================================================"
+
+if [ "$TOKENS_ONLY" = true ] && [ "$REQUIRE_UI" = true ]; then
+  echo "❌ [VISUAL GATE FAILED]: --tokens-only is incompatible with --require-ui."
+  echo "   Structural token validation cannot prove that a UI renders or matches the design."
+  echo "   Run the full Playwright gate, or drop --require-ui if this feature has no UI."
+  exit 2
+fi
 
 if [ -z "$FEATURE_DIR" ] || [ ! -d "$FEATURE_DIR/designs" ]; then
   if [ "$REQUIRE_UI" = true ]; then
@@ -202,7 +226,8 @@ echo "✓ tokens.css declares $TOKEN_COUNT design token(s)"
 
 if [ "$TOKENS_ONLY" = true ]; then
   echo ""
-  echo "✅ [VISUAL GATE PASSED]: Stitch tokens.css structure is valid."
+  echo "✅ [TOKENS GATE PASSED]: Stitch tokens.css structure is valid."
+  echo "   Structural check only. No rendering, no snapshots, no visual fidelity claim."
   write_evidence "passed" "$TOKEN_COUNT"
   emit_gate_telemetry "passed" 0
   exit 0
@@ -217,6 +242,9 @@ if [ -f "$CONTRACT_SCRIPT" ]; then
   fi
   if [ -n "$SCOPE_DIR" ]; then
     CONTRACT_FLAGS+=("--scope=$SCOPE_DIR")
+  fi
+  if [ "$REQUIRE_UI" = true ]; then
+    CONTRACT_FLAGS+=("--require-ui")
   fi
   if ! bash "$CONTRACT_SCRIPT" "${CONTRACT_FLAGS[@]}"; then
     echo ""
@@ -236,12 +264,36 @@ if [ "$UPDATE_SNAPSHOTS" = true ]; then
   PW_FLAGS="--update-snapshots"
 fi
 
-CONFIG_FILE="playwright.design.config.ts"
-if [ ! -f "$CONFIG_FILE" ] && [ -f ".specify/templates/playwright.design.config.ts" ]; then
-  CONFIG_FILE=".specify/templates/playwright.design.config.ts"
+CONFIG_FILE=""
+for candidate in "playwright.design.config.ts" ".specify/templates/playwright.design.config.ts" ".specify/templates/playwright.design.config.ts.tmpl"; do
+  if [ -f "$candidate" ]; then
+    CONFIG_FILE="$candidate"
+    break
+  fi
+done
+
+if [ -z "$CONFIG_FILE" ]; then
+  echo "❌ [VISUAL GATE ERROR]: no Playwright design config found."
+  echo "   Expected 'playwright.design.config.ts' in the project root, or the bundle"
+  echo "   template at '.specify/templates/playwright.design.config.ts'."
+  emit_gate_telemetry "failed" 2
+  write_evidence "failed" "$TOKEN_COUNT"
+  exit 2
 fi
 
-echo "Executing visual fidelity tests..."
+# Playwright fails with a confusing 'no tests found' when the design audit spec was
+# never materialized. Fail loudly with the actionable path instead.
+DESIGN_SPEC="$(find tests/design "$FEATURE_DIR" -maxdepth 3 -type f -name '*.spec.ts' 2>/dev/null | head -n 1 || true)"
+if [ -z "$DESIGN_SPEC" ]; then
+  echo "❌ [VISUAL GATE ERROR]: no Playwright design spec found."
+  echo "   Copy '.specify/templates/design-audit.spec.ts' to 'tests/design/design-audit.spec.ts'"
+  echo "   (the bundle ships it under .specify/templates) before claiming visual verification."
+  emit_gate_telemetry "failed" 2
+  write_evidence "failed" "$TOKEN_COUNT"
+  exit 2
+fi
+
+echo "Executing visual fidelity tests with config '$CONFIG_FILE'..."
 PW_STATUS=0
 FEATURE_DIR="$FEATURE_DIR" npx playwright test --config="$CONFIG_FILE" $PW_FLAGS || PW_STATUS=$?
 
