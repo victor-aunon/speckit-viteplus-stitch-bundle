@@ -31,6 +31,9 @@ describe('emit-telemetry.sh', () => {
     expect(output).toContain('Usage: emit-telemetry.sh');
     expect(output).toContain('--gate=<name>');
     expect(output).toContain('--status=<status>');
+    expect(output).toContain('--model=<name>');
+    expect(output).toContain('--subagent=<name>');
+    expect(output).toContain('--import-state');
     expect(output).toContain('--summary');
   });
 
@@ -57,6 +60,169 @@ describe('emit-telemetry.sh', () => {
     expect(record.scope).toBe('src/features/billing');
     expect(record.details.oxlint).toBe('passed');
     expect(record.timestamp).toBeDefined();
+    // Provenance defaults: step falls back to the gate, model/subagent to "none"
+    expect(record.step).toBe('check-quality-gate');
+    expect(record.model).toBe('none');
+    expect(record.subagent).toBe('none');
+  });
+
+  it('should record the step, model, role and subagent when provided', () => {
+    runBash(scriptPath, [
+      `--file=${logFile}`,
+      '--gate=check-quality-gate',
+      '--step=gate_quality',
+      '--role=LEAD ADVERSARIAL QUALITY AUDITOR',
+      '--model=gemini-2.8-pro',
+      '--subagent=pi',
+      '--status=passed',
+      '--duration-ms=900'
+    ]);
+
+    const record = JSON.parse(fs.readFileSync(logFile, 'utf8').trim().split('\n')[0]);
+    expect(record.step).toBe('gate_quality');
+    expect(record.role).toBe('LEAD ADVERSARIAL QUALITY AUDITOR');
+    expect(record.model).toBe('gemini-2.8-pro');
+    expect(record.subagent).toBe('pi');
+  });
+
+  describe('--import-state', () => {
+    let runDir: string;
+    let statePath: string;
+
+    beforeEach(() => {
+      runDir = path.join(tempDir, '.specify/workflows/runs/run42');
+      fs.mkdirSync(runDir, { recursive: true });
+      statePath = path.join(runDir, 'state.json');
+
+      fs.writeFileSync(
+        path.join(runDir, 'workflow.yml'),
+        [
+          'schema_version: "1.0"',
+          'workflow:',
+          '  id: demo',
+          'steps:',
+          '  - id: plan',
+          '    type: command',
+          '    prompt: |',
+          '      ROLE: LEAD TECHNICAL ARCHITECT.',
+          '  - id: gate_quality',
+          '    type: shell',
+          '    run: bash check-quality-gate.sh',
+          ''
+        ].join('\n')
+      );
+
+      fs.writeFileSync(
+        path.join(runDir, 'log.jsonl'),
+        [
+          JSON.stringify({ event: 'step_started', step_id: 'plan', timestamp: '2026-01-01T10:00:00.000000+00:00' }),
+          JSON.stringify({ event: 'step_completed', step_id: 'plan', status: 'completed', timestamp: '2026-01-01T10:00:01.500000+00:00' }),
+          JSON.stringify({ event: 'step_started', step_id: 'gate_quality', timestamp: '2026-01-01T10:00:02.000000+00:00' }),
+          JSON.stringify({ event: 'step_completed', step_id: 'gate_quality', status: 'failed', timestamp: '2026-01-01T10:00:02.250000+00:00' })
+        ].join('\n') + '\n'
+      );
+
+      fs.writeFileSync(
+        statePath,
+        JSON.stringify({
+          run_id: 'run42',
+          workflow_id: 'demo',
+          status: 'failed',
+          step_results: {
+            plan: {
+              type: 'command',
+              integration: 'claude',
+              model: 'gemini-2.8-pro',
+              status: 'completed',
+              output: { exit_code: 0 }
+            },
+            gate_quality: {
+              type: 'shell',
+              integration: null,
+              model: null,
+              status: 'failed',
+              output: { exit_code: 1 },
+              error: 'Quality gate failed.'
+            }
+          },
+          updated_at: '2026-01-01T10:00:05.000000+00:00'
+        }),
+        'utf8'
+      );
+    });
+
+    const readEvents = (): any[] =>
+      fs
+        .readFileSync(logFile, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+
+    it('should import every workflow step with model, subagent and role', () => {
+      runBash(scriptPath, [`--file=${logFile}`, `--import-state=${statePath}`]);
+
+      const events = readEvents();
+      expect(events).toHaveLength(2);
+
+      const plan = events.find((e) => e.step === 'plan');
+      expect(plan.event).toBe('step_execution');
+      expect(plan.run_id).toBe('run42');
+      expect(plan.workflow_id).toBe('demo');
+      expect(plan.step_type).toBe('command');
+      expect(plan.role).toBe('LEAD TECHNICAL ARCHITECT.');
+      expect(plan.model).toBe('gemini-2.8-pro');
+      expect(plan.subagent).toBe('claude');
+      expect(plan.status).toBe('completed');
+      expect(plan.duration_ms).toBe(1500);
+      expect(plan.exit_code).toBe(0);
+
+      const gate = events.find((e) => e.step === 'gate_quality');
+      expect(gate.model).toBe('none');
+      expect(gate.subagent).toBe('none');
+      expect(gate.role).toBe('none');
+      expect(gate.status).toBe('failed');
+      expect(gate.duration_ms).toBe(250);
+      expect(gate.exit_code).toBe(1);
+      expect(gate.error).toBe('Quality gate failed.');
+    });
+
+    it('should be idempotent and preserve non-imported events', () => {
+      runBash(scriptPath, [
+        `--file=${logFile}`,
+        '--gate=check-quality-gate',
+        '--status=passed'
+      ]);
+
+      runBash(scriptPath, [`--file=${logFile}`, `--import-state=${statePath}`]);
+      runBash(scriptPath, [`--file=${logFile}`, `--import-state=${statePath}`]);
+
+      const events = readEvents();
+      expect(events.filter((e) => e.event === 'step_execution')).toHaveLength(2);
+      expect(events.filter((e) => e.event === 'gate_execution')).toHaveLength(1);
+    });
+
+    it('should discover the active run from .specify/workflows/runs', () => {
+      runBash(scriptPath, [`--file=${logFile}`, '--import-state'], {
+        cwd: tempDir
+      });
+
+      const events = readEvents();
+      expect(events.map((e) => e.step).sort()).toEqual(['gate_quality', 'plan']);
+    });
+
+    it('should show model and subagent columns in the summary', () => {
+      runBash(scriptPath, [`--file=${logFile}`, `--import-state=${statePath}`]);
+      // Combined import + summary in a single invocation must still print the table.
+      const summaryOutput = runBash(scriptPath, [`--file=${logFile}`, '--import-state', '--summary'], {
+        cwd: tempDir
+      });
+
+      expect(summaryOutput).toContain('MODEL');
+      expect(summaryOutput).toContain('SUBAGENT');
+      expect(summaryOutput).toContain('gemini-2.8-pro');
+      expect(summaryOutput).toContain('claude');
+      expect(summaryOutput).toContain('none');
+    });
   });
 
   it('should support --summary to display formatted telemetry table', () => {
@@ -80,5 +246,6 @@ describe('emit-telemetry.sh', () => {
     expect(summaryOutput).toContain('check-bundle-budget');
     expect(summaryOutput).toContain('passed');
     expect(summaryOutput).toContain('failed');
+    expect(summaryOutput).toContain('none');
   });
 });

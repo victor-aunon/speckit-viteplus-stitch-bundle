@@ -8,6 +8,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The installer resolves `bundle.version` from `bundle.yml`, so a release bump is a
 one-file change plus this changelog.
 
+## [Unreleased]
+
+### Added
+
+- Telemetry provenance: every `.specify/telemetry.jsonl` record now carries the
+  workflow `step`, the AI `model`, and the `subagent` (integration process) that
+  executed it, with an explicit `none` when a field does not apply.
+- `emit-telemetry.sh --import-state[=<path>]` folds every workflow step from the
+  active run's `state.json` into the telemetry log as `step_execution` events,
+  enriched with the step's `ROLE:` line (from the run's `workflow.yml` snapshot)
+  and per-step durations from `log.jsonl`. Imports are idempotent (upsert).
+- `telemetry_sync` workflow step imports the full run and prints the summary at
+  the end of the lifecycle; gate-failure summaries import as well.
+
+### Changed
+
+- `emit-telemetry.sh --summary` now prints `TIMESTAMP | STEP | MODEL | SUBAGENT |
+  STATUS | DURATION | EXIT` and lists every imported workflow step, not only the
+  gates that emitted an event. `--step`, `--role`, `--model` and `--subagent`
+  flags (plus `SPECIFY_*` env fallbacks) attribute ad-hoc events.
+
 ## [1.2.0] - 2026-11-20
 
 ### Added

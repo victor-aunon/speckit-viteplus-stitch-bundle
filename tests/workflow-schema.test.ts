@@ -29,7 +29,8 @@ describe('Workflow YAML Schema Validation', () => {
       'gate_bundle',
       'gate_contracts',
       'auto_repair',
-      'verify'
+      'verify',
+      'telemetry_sync'
     ]);
 
     // The first step must instruct the model that gate tampering is forbidden

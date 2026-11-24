@@ -83,6 +83,6 @@ SPECIFY_HAS_UI=true bash .specify/scripts/bash/check-contracts.sh
 # Stitch visual tokens & Playwright regression (set SPECIFY_HAS_UI=true or pass --require-ui for UI features)
 SPECIFY_HAS_UI=true bash .specify/scripts/bash/verify-stitch-design.sh --tokens-only
 
-# Review recorded telemetry and gate execution history
-bash .specify/scripts/bash/emit-telemetry.sh --summary
+# Review recorded telemetry: every workflow step, model, subagent and gate outcome
+bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary
 ```

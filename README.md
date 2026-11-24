@@ -29,7 +29,7 @@ The workflow will autonomously execute specification audits, UI critiques, atomi
 - 👻 **Ghost Classes Quality Gate**: Static AST scanner that verifies that every CSS class referenced in JSX/TSX is declared in a project stylesheet, eliminating dead or missing styles.
 - 🛑 **Interactive Visual Review Gate**: Inspect and approve UI screens and design tokens before writing product code.
 - 🔬 **Strict Stitch Token Verification**: Every token declared in `tokens.css` must be present in the DOM with the exact Stitch value; drift fails the gate.
-- 📊 **Structured Telemetry & Observability**: Every quality gate logs structured JSONL events (`.specify/telemetry.jsonl`) recording timestamp, phase, gate duration in ms, scope, exit codes, and circuit breaker metrics. Inspect with `emit-telemetry.sh --summary`.
+- 📊 **Structured Telemetry & Observability**: Every quality gate logs structured JSONL events (`.specify/telemetry.jsonl`) recording timestamp, step, model, subagent (integration process), role, gate duration in ms, scope, exit codes, and circuit breaker metrics. `--import-state` folds every workflow step from the active run's `state.json` into the log. Inspect with `emit-telemetry.sh --summary`.
 - 🛡️ **Machine-Generated Evidence for Definition of Done**: Eliminates subjective agent self-reporting. Generates raw machine proof artifacts in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `stitch-design.json`) required for task completion.
 - 🔄 **Phased Implementation with Checkpoints**: Playwright and Vite+ validate every phase, then the workflow pauses for approval before the next phase. Use `--auto-continue` to run all phases without pausing.
 
@@ -450,19 +450,30 @@ bash .specify/scripts/bash/check-blast-radius.sh --scope=src/features/billing
 ```
 
 ### 8. `emit-telemetry.sh` (Structured Telemetry & Observability Emitter)
-Logs structured JSONL execution events across all quality gates to `.specify/telemetry.jsonl`. Tracks execution durations in milliseconds, exit codes, feature scopes, and circuit breaker trip events.
+Logs structured JSONL execution events across all quality gates to `.specify/telemetry.jsonl`. Tracks execution durations in milliseconds, exit codes, feature scopes, circuit breaker trip events, and **provenance**: which workflow step ran, which AI model executed it, and which subagent/integration process was launched (`none` when not applicable).
 
 ```bash
-# Display formatted summary table of recent gate executions
+# Display formatted summary table of recent steps and gate executions
 bash .specify/scripts/bash/emit-telemetry.sh --summary
 
-# Emit a custom telemetry event
+# Merge every step of the active workflow run (model, subagent, role, duration)
+bash .specify/scripts/bash/emit-telemetry.sh --import-state
+
+# Import + summarize in one shot (used at the end of the workflow)
+bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary
+
+# Emit a custom telemetry event with provenance
 bash .specify/scripts/bash/emit-telemetry.sh \
   --gate=check-quality-gate \
+  --step=gate_quality \
+  --model=gemini-2.8-pro \
+  --subagent=pi \
   --status=passed \
   --duration-ms=1450 \
   --scope=src/features/billing
 ```
+
+`--import-state` resolves the run from `--state=<path>`, `SPECIFY_RUN_ID`/`SPECKIT_RUN_ID`, or the most recently updated run under `.specify/workflows/runs/`. It reads `state.json` (`model`, `integration`), `log.jsonl` (per-step durations) and the run's `workflow.yml` snapshot (the step's `ROLE:` line), and upserts one `step_execution` record per step without duplicating prior imports. The workflow calls it on every gate failure (via `--summary`) and once at the end in the `telemetry_sync` step, so `.specify/telemetry.jsonl` reflects the full pipeline, not only the gates that happened to emit an event.
 
 ---
 

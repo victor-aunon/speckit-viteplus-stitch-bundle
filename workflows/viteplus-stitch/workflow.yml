@@ -253,7 +253,7 @@ steps:
         err=$?
         echo "" >/dev/tty 2>/dev/null || true
         echo "⚠️  [QUALITY GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
-        bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
+        bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary >/dev/tty 2>/dev/null || true
         exit $err
       }
 
@@ -265,7 +265,7 @@ steps:
         err=$?
         echo "" >/dev/tty 2>/dev/null || true
         echo "⚠️  [PERFORMANCE GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
-        bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
+        bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary >/dev/tty 2>/dev/null || true
         exit $err
       }
 
@@ -281,7 +281,7 @@ steps:
             err=$?
             echo "" >/dev/tty 2>/dev/null || true
             echo "⚠️  [CONTRACT GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
-            bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
+            bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary >/dev/tty 2>/dev/null || true
             exit $err
           }
       - id: gate_visual_check
@@ -292,7 +292,7 @@ steps:
             err=$?
             echo "" >/dev/tty 2>/dev/null || true
             echo "⚠️  [VISUAL GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
-            bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
+            bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary >/dev/tty 2>/dev/null || true
             exit $err
           }
 
@@ -377,3 +377,10 @@ steps:
          - Empirical Evidence Log (cites machine evidence from `specs/<feature>/evidence/`, test outputs, gate outputs, screenshots, audit findings)
          - Delta-Spec Sync: Document any architectural clarifications or domain adjustments made during implementation.
       6. Output an Executive Closing Summary in the terminal for asynchronous human review.
+
+  - id: telemetry_sync
+    type: shell
+    continue_on_error: true
+    run: |
+      bash .specify/scripts/bash/emit-telemetry.sh --import-state || true
+      bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
