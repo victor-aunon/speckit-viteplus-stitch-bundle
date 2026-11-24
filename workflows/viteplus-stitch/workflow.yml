@@ -26,6 +26,10 @@ inputs:
     type: boolean
     default: true
     prompt: "Do you want to use Google Stitch for UI design and tokens? (Applies when has_ui is true)"
+  stitch_project_id:
+    type: string
+    default: ""
+    prompt: "Existing Google Stitch Project ID (e.g. 4044680601076201931). When provided, imports existing screens instead of generating new ones."
   integration:
     type: string
     default: "auto"
@@ -147,14 +151,24 @@ steps:
           0. Idempotency Check: Inspect `specs/<feature>/designs/`. If `.html` screens, `tokens.css`, and `routes-manifest.json` already exist, verify their completeness, ensure fixtures exist, and output the summary table immediately without re-generating from scratch.
           1. Inspect `specs/<feature>/spec.md` and `plan.md` to identify the core user journeys and all required screens/views.
           2. Locate or create the feature designs directory at `specs/<feature>/designs/` and subdirectory `specs/<feature>/designs/fixtures/`.
-          3. Invoke Google Stitch MCP tools directly:
-             - Call `create_project` (or target active project) with the feature title.
-             - Call `create_design_system` to establish color palette, typography (Inter/Roboto), corner roundness, and appearance theme aligned with the project.
-             - For each primary screen described in the specification, call `generate_screen_from_text` with rich layout, accessibility, and component details.
-             - Call `get_screen` for each generated screen to retrieve its `html_code` reference.
-             - Download ONLY the HTML code using `download_file` with `name: <screen.html_code.name>`:
-               * Save the HTML code to `specs/<feature>/designs/<screen-id>.html` using `write_file`.
-               * Do NOT call `download_file` on `screenshot.name`. The HTML file contains the full markup, CSS tokens, and layout.
+          3. SOURCING STITCH DESIGNS:
+             {% if inputs.stitch_project_id %}
+             - EXISTING STITCH STUDIO PROJECT (inputs.stitch_project_id: "{{ inputs.stitch_project_id }}"):
+               * Do NOT generate new screens from text. Import existing screens from project ID "{{ inputs.stitch_project_id }}".
+               * Call `list_screens(projectId: "{{ inputs.stitch_project_id | replace('projects/', '') }}")` to enumerate all project screens.
+               * Call `get_screen` for each screen to retrieve its `html_code` reference.
+               * Download each HTML file using `download_file` with `name: <screen.html_code.name>` and save to `specs/<feature>/designs/<screen-id>.html`.
+               * Inspect downloaded HTML files to extract and populate `tokens.css` with active CSS variables.
+             {% else %}
+             - NEW DESIGN GENERATION VIA STITCH MCP:
+               * Call `create_project` (or target active project) with the feature title.
+               * Call `create_design_system` to establish color palette, typography (Inter/Roboto), corner roundness, and appearance theme aligned with the project.
+               * For each primary screen described in the specification, call `generate_screen_from_text` with rich layout, accessibility, and component details.
+               * Call `get_screen` for each generated screen to retrieve its `html_code` reference.
+               * Download ONLY the HTML code using `download_file` with `name: <screen.html_code.name>`:
+                 Save the HTML code to `specs/<feature>/designs/<screen-id>.html` using `write_file`.
+                 Do NOT call `download_file` on `screenshot.name`. The HTML file contains the full markup, CSS tokens, and layout.
+             {% endif %}
           4. Extract and create the canonical design tokens stylesheet at `specs/<feature>/designs/tokens.css`:
              - Define CSS variables under `:root` for colors (`--color-background`, `--color-surface`, `--color-primary`, `--color-text`, etc.), radii (`--radius-sm`, `--radius-md`, `--radius-lg`), typography (`--font-family`, `--font-size-*`), and spacing (`--space-*`).
           5. Create `specs/<feature>/designs/routes-manifest.json` following `.specify/templates/routes-manifest.json.tmpl`:

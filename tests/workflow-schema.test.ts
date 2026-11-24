@@ -104,6 +104,8 @@ describe('Workflow YAML Schema Validation', () => {
     expect(stitchPrompt.prompt).toContain('Stitch');
     expect(stitchPrompt.prompt).toContain('tokens.css');
     expect(stitchPrompt.prompt).toContain('routes-manifest.json');
+    expect(stitchPrompt.prompt).toContain('stitch_project_id');
+    expect(stitchPrompt.prompt).toContain('list_screens');
 
     const critiqueStep = wf.steps.find((s: any) => s.id === 'critique-design');
     expect(critiqueStep.type).toBe('if');
@@ -128,6 +130,8 @@ describe('Workflow YAML Schema Validation', () => {
     expect(wf.inputs.has_ui).toBeDefined();
     expect(wf.inputs.has_ui.default).toBe(true);
     expect(wf.inputs.enable_stitch).toBeDefined();
+    expect(wf.inputs.stitch_project_id).toBeDefined();
+    expect(wf.inputs.stitch_project_id.default).toBe('');
 
     // Hierarchical model tiering inputs
     expect(wf.inputs.model).toBeDefined();

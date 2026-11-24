@@ -173,7 +173,8 @@ The workflow generates the architectural plan (`plan.md`):
 
 ### Step 4: Stitch UI Screen & Token Generation (`generate-designs`)
 When `has_ui: true` and `enable_stitch: true`:
-- The agent explicitly invokes **Google Stitch MCP** (`create_project`, `create_design_system`, `generate_screen_from_text`).
+- **Existing Stitch Studio Project (`stitch_project_id`)**: If you designed screens in Stitch Studio (`stitch.withgoogle.com`), pass `-i stitch_project_id="<project-id>"`. The workflow automatically calls `list_screens`, downloads your authored HTML screens to `specs/<feature>/designs/<screen-id>.html`, and extracts your design tokens to `tokens.css` without generating new screens from scratch.
+- **Automated Generation from Scratch**: If `stitch_project_id` is empty, the agent explicitly invokes **Google Stitch MCP** (`create_project`, `create_design_system`, `generate_screen_from_text`) based on the specification.
 - Downloads canonical HTML code to `specs/<feature>/designs/<screen-id>.html` as the visual design master (text-only assets protocol to prevent CLI agent binary codec errors).
 - Extracts and generates canonical design tokens in `specs/<feature>/designs/tokens.css` (defining `--color-*`, `--radius-*`, `--font-*`, and `--space-*`).
 - Generates `specs/<feature>/designs/routes-manifest.json` and fixture mock data in `specs/<feature>/designs/fixtures/`.
@@ -242,6 +243,7 @@ When running `specify workflow run viteplus-stitch`, you can configure the behav
 | **`scope`** | `string` | `""` | No | Restricts all code changes, test executions, and blast radius checks to a specific feature slice (e.g. `src/features/billing`). When empty, auto-detects from git status or targets the full project. |
 | **`has_ui`** | `boolean` | `true` | No | Controls UI-specific phases. When `false`, completely skips Google Stitch, Impeccable critique, Playwright visual gates, route contracts, and ghost classes check. Ideal for backend, domain, or CLI features. |
 | **`enable_stitch`** | `boolean` | `true` | No | When `has_ui: true`, toggles whether to use Google Stitch MCP for automated design generation (`true`) or use component wireframes defined directly in `plan.md` (`false`). |
+| **`stitch_project_id`** | `string` | `""` | No | ID of an existing Google Stitch Studio project (e.g. `4044680601076201931`). When provided, imports your authored screens directly via `list_screens` instead of generating new ones with AI. |
 | **`auto_continue`** | `boolean` | `false` | No | Enables **Unattended Mode**. When `true`, automatically bypasses human approval gates (`review-spec`, `review-design`, and phase-by-phase pauses) once automated quality gates pass. When `false` (default), pauses for human confirmation. |
 | **`integration`** | `string` | `auto` | No | Primary AI runner integration for architecture, specification, design critique, and adversarial verification (e.g. `gemini`, `claude`, `copilot`, `auto`). |
 | **`implement_integration`** | `string` | `""` | No | AI runner integration specifically for task implementation (e.g. `pi`, `claude`, `gemini`). Defaults to `integration` when empty, enabling hybrid multi-agent orchestration. |
@@ -289,6 +291,13 @@ specify workflow run viteplus-stitch \
 # 8. Multi-Agent Hybrid Orchestration: Gemini for Architecture/Verify + Pi for Implementation
 specify workflow run viteplus-stitch \
   -i spec="Add credit card management module" \
+  -i integration=gemini \
+  -i implement_integration=pi
+
+# 9. Import Existing Stitch Studio Project: Uses screens and tokens you crafted in Studio
+specify workflow run viteplus-stitch \
+  -i spec="Implement checkout and billing flow" \
+  -i stitch_project_id="4044680601076201931" \
   -i integration=gemini \
   -i implement_integration=pi
 ```
