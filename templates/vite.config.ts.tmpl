@@ -1,6 +1,12 @@
+import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // React Fast Refresh (HMR). @vitejs/plugin-react is a declared dependency;
+  // without this line every edit triggers a full page reload and JSX loses
+  // React's automatic runtime wiring under Vite+.
+  plugins: [react()],
+
   // Vite+ (vp) Code Quality Configuration
   lint: {
     options: {

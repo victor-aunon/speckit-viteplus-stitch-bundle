@@ -12,6 +12,21 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- Scoped runs rejected the canonical env module: `check-env-config.sh` mandates
+  `src/config/env.ts`, while `check-blast-radius.sh --scope` only exempted
+  `src/shared` and `src/common`. Shared app-shell paths (`src/config`, `src/styles`,
+  `src/main.*`, `src/App.*`, `src/index.*`) are now exempt, so the two gates no
+  longer contradict each other.
+- Untracked directories were reported by `git status` as a single collapsed entry
+  (`?? src/features/`) and flagged as out-of-slice; both gates now scan with
+  `--untracked-files=all`.
+- The `vite.config.ts` template shipped `@vitejs/plugin-react` as a dependency but
+  never registered it, so React Fast Refresh was dead. The plugin is now wired
+  (`plugins: [react()]`) and the installer provisions `vite.config.ts` when the
+  project has none (never overwriting an existing one).
+- `bootstrap_env` only ran after `implement`, so per-task hooks could audit an
+  ancestor repository during implementation. A new `bootstrap_env_early` step runs
+  it before `tasks`.
 - `install.sh` only injected hooks into an `extensions.yml` that had no gate
   hooks at all, so upgraded projects silently missed newly introduced hooks
   (`project-bootstrap`, `tasks-completion-gate`). Missing hooks are now inserted

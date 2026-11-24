@@ -159,6 +159,56 @@ exit 0
       }
     });
 
+    it('allows app-shell and canonical config paths in a scoped run', () => {
+      execFileSync('git', ['init'], { cwd: tempDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: tempDir });
+      fs.mkdirSync(path.join(tempDir, '.specify'), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, 'src/config'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'src/config/env.ts'), 'export const apiUrl = "x";\n', 'utf8');
+      execFileSync('git', ['add', '.'], { cwd: tempDir });
+      execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: tempDir });
+
+      // The canonical env module, the app entry and the global stylesheet are
+      // shared infrastructure: a scoped run must be allowed to touch them,
+      // otherwise check-env-config.sh and this gate contradict each other.
+      fs.writeFileSync(path.join(tempDir, 'src/config/env.ts'), 'export const apiUrl = "y";\n', 'utf8');
+      fs.mkdirSync(path.join(tempDir, 'src/features/billing'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'src/features/billing/view.tsx'), 'export const View = () => null;\n', 'utf8');
+      fs.writeFileSync(path.join(tempDir, 'src/main.tsx'), 'export const main = 1;\n', 'utf8');
+      fs.mkdirSync(path.join(tempDir, 'src/styles'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'src/styles/app.css'), 'body { margin: 0; }\n', 'utf8');
+
+      const output = runBash(blastRadius, ['--check-scope', '--scope=src/features/billing'], {
+        cwd: tempDir
+      });
+      expect(output).toContain('within legitimate boundaries');
+    });
+
+    it('still rejects unrelated source paths in a scoped run', () => {
+      execFileSync('git', ['init'], { cwd: tempDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: tempDir });
+      fs.mkdirSync(path.join(tempDir, '.specify'), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, 'src/legacy'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'src/legacy/old.ts'), 'export const old = 1;\n', 'utf8');
+      execFileSync('git', ['add', '.'], { cwd: tempDir });
+      execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: tempDir });
+
+      fs.writeFileSync(path.join(tempDir, 'src/legacy/old.ts'), 'export const old = 2;\n', 'utf8');
+
+      try {
+        runBash(blastRadius, ['--check-scope', '--scope=src/features/billing'], {
+          cwd: tempDir,
+          stdio: 'pipe'
+        });
+        expect.fail('out-of-slice source files must still be rejected');
+      } catch (error: any) {
+        expect(error.status).toBe(1);
+        expect(`${error.stdout ?? ''}${error.stderr ?? ''}`).toContain('outside target feature scope');
+      }
+    });
+
     it('accepts a project that owns its git repository', () => {
       execFileSync('git', ['init'], { cwd: tempDir });
       execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });

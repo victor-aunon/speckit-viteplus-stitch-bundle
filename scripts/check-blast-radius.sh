@@ -256,7 +256,7 @@ if [ "$CHECK_SCOPE" = true ] || [ "$CHECK_BREAKER" = false ]; then
     if [ -n "$file" ]; then
       MODIFIED_FILES+=("$file")
     fi
-  done < <(git -C "$PROJECT_ROOT" status --porcelain -- . 2>/dev/null || true)
+  done < <(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=all -- . 2>/dev/null || true)
 
   if [ ${#MODIFIED_FILES[@]} -eq 0 ]; then
     echo "✓ No modified files detected in working tree."
@@ -272,6 +272,33 @@ if [ "$CHECK_SCOPE" = true ] || [ "$CHECK_BREAKER" = false ]; then
     "templates/guardrails.md"
   )
 
+  # App-shell and shared infrastructure are intentionally outside any slice.
+  # The canonical env module (src/config/env.ts) is required by check-env-config.sh
+  # and the Vite entry/Tailwind stylesheet live at the app root, so a scoped run
+  # must allow them. Otherwise the two gates contradict each other: the agent can
+  # only pass one of them by moving the typed config out of its canonical path.
+  SHARED_SCOPE_PATTERNS=(
+    "src/shared/*"
+    "src/common/*"
+    "src/config/*"
+    "src/styles/*"
+    "src/main.*"
+    "src/App.*"
+    "src/index.*"
+  )
+
+  is_shared_scope_path() {
+    local candidate="$1"
+    local pattern
+    for pattern in "${SHARED_SCOPE_PATTERNS[@]}"; do
+      # shellcheck disable=SC2053 # glob match on purpose
+      if [[ "$candidate" == $pattern ]]; then
+        return 0
+      fi
+    done
+    return 1
+  }
+
   VIOLATIONS=0
   for file in "${MODIFIED_FILES[@]}"; do
     # Check protected files
@@ -285,7 +312,7 @@ if [ "$CHECK_SCOPE" = true ] || [ "$CHECK_BREAKER" = false ]; then
     # Check feature scope if specified
     if [ -n "$SCOPE_DIR" ]; then
       # Only restrict application source files under src/
-      if [[ "$file" == src/* ]] && [[ "$file" != "$SCOPE_DIR"* ]] && [[ "$file" != src/shared/* ]] && [[ "$file" != src/common/* ]]; then
+      if [[ "$file" == src/* ]] && [[ "$file" != "$SCOPE_DIR"* ]] && ! is_shared_scope_path "$file"; then
         echo "❌ [BLAST RADIUS VIOLATION]: File '$file' is outside target feature scope '$SCOPE_DIR'."
         VIOLATIONS=$((VIOLATIONS + 1))
       fi

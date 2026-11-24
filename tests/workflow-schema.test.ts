@@ -22,6 +22,7 @@ describe('Workflow YAML Schema Validation', () => {
       'generate-designs',
       'critique-design',
       'review-design',
+      'bootstrap_env_early',
       'tasks',
       'implement',
       'bootstrap_deps',

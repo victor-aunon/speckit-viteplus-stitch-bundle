@@ -212,6 +212,15 @@ steps:
         options: [approve, reject]
         on_reject: abort
 
+  # Git ownership and design assets must exist BEFORE the agent writes code:
+  # the per-task quality gate (hooks) and blast-radius audit would otherwise scan
+  # an ancestor repository.
+  - id: bootstrap_env_early
+    type: shell
+    continue_on_error: true
+    run: |
+      bash .specify/scripts/bash/bootstrap-project-env.sh || true
+
   - id: tasks
     command: speckit.tasks
     integration: "{{ inputs.integration }}"

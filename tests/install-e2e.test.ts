@@ -165,6 +165,36 @@ describe('Bundle Installer Script E2E', () => {
     removeDir(tempDir);
   });
 
+  it('should provision a Vite+ config that registers the React plugin', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-vite-config-test-'));
+    fs.mkdirSync(path.join(tempDir, '.specify'), { recursive: true });
+
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+
+    const configPath = path.join(tempDir, 'vite.config.ts');
+    expect(fs.existsSync(configPath)).toBe(true);
+    const config = fs.readFileSync(configPath, 'utf8');
+    expect(config).toContain("@vitejs/plugin-react");
+    expect(config).toContain('plugins: [react()]');
+    // The template ships the plugin as a dependency, so both must agree.
+    const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+    expect(pkg.devDependencies['@vitejs/plugin-react']).toBeDefined();
+
+    removeDir(tempDir);
+  });
+
+  it('should never overwrite an existing vite.config.ts', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-vite-config-preserve-test-'));
+    fs.mkdirSync(path.join(tempDir, '.specify'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'vite.config.ts'), '// custom config\n', 'utf8');
+
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+
+    expect(fs.readFileSync(path.join(tempDir, 'vite.config.ts'), 'utf8')).toBe('// custom config\n');
+
+    removeDir(tempDir);
+  });
+
   it('should add newly introduced hooks to an already-installed extensions.yml', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-hook-upgrade-test-'));
     const specifyDir = path.join(tempDir, '.specify');

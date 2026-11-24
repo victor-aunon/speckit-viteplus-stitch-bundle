@@ -298,7 +298,7 @@ fi
 
 # Auto-detect scope from the project's own repository only (never an ancestor repo)
 if [ -z "$SCOPE_DIR" ] && [ "$GIT_OWNED" = true ]; then
-  MODIFIED_SLICES=($(git -C "$PROJECT_ROOT" status --porcelain -- . 2>/dev/null | sed 's/^...//' | sed 's/^"//; s/"$//' | grep -E '^src/features/[^/]+' | cut -d/ -f1-3 | sort -u || true))
+  MODIFIED_SLICES=($(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=all -- . 2>/dev/null | sed 's/^...//' | sed 's/^"//; s/"$//' | grep -E '^src/features/[^/]+' | cut -d/ -f1-3 | sort -u || true))
   if [ ${#MODIFIED_SLICES[@]} -eq 1 ]; then
     SCOPE_DIR="${MODIFIED_SLICES[0]}"
     echo "ℹ️  Auto-detected feature scope from git status: $SCOPE_DIR"

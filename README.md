@@ -103,6 +103,7 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/check-verification-verdict.sh` | Machine verdict gate (fails unless `verification.json` says `pass`) |
 | `.specify/scripts/bash/emit-telemetry.sh` | Structured telemetry & observability event logger |
 | `.specify/templates/` | `vite.config.ts`, Playwright config, env config, and design-audit templates |
+| `vite.config.ts` (project root, only when absent) | Vite+ config with the React plugin registered (`plugins: [react()]`) so Fast Refresh works |
 | `.specify/templates/auditor.md` (installed as `.specify/workflows/viteplus-stitch/AUDITOR.md`) | Independent audit protocol: evidence rules, re-execution commands, machine verdict contract |
 | `.specify/workflows/viteplus-stitch/GUARDRAILS.md` | Non-negotiable policy: never weaken gates to pass tests |
 | `.specify/memory/constitution.md` | Receives the "Quality Gate Integrity" section (read by every command) |
@@ -253,7 +254,7 @@ The agent executes tasks phase by phase.
 ### Step 9: Imperative Shell Quality Gates & Self-Healing (`bootstrap_env`, `gate_*`, `repair_gates`)
 Once tasks are complete, the workflow engine executes deterministic shell gates in the host OS with `continue_on_error: true`:
 1. **`bootstrap_deps`**: Ensures `node_modules` exists via `vp install` or `npm install`.
-2. **`bootstrap_env`**: Runs `bootstrap-project-env.sh` — deterministic, idempotent `git init` + baseline commit (`node_modules/` and `dist/` ignored) and Playwright config/design-audit materialization. No LLM involved: these were never application bugs.
+2. **`bootstrap_env`**: Runs `bootstrap-project-env.sh` — deterministic, idempotent `git init` + baseline commit (`node_modules/` and `dist/` ignored) and Playwright config/design-audit materialization. No LLM involved: these were never application bugs. It also runs **earlier** (`bootstrap_env_early`, right before `tasks`) so the per-task hooks never audit an ancestor repository while the agent writes code.
 3. **`gate_quality`**: Runs `check-quality-gate.sh` (Vite+ / Oxfmt / Oxlint / Clean Architecture boundaries / executed-test count / compilation).
 4. **`gate_bundle`**: Runs `check-bundle-budget.sh` (production asset limits <250KB per chunk, <1000KB total).
 5. **`gate_contracts`** (when `has_ui: true`): Runs `check-contracts.sh --require-ui` (selectors must exist in `src/`) and `verify-stitch-design.sh --require-ui` (full Playwright).
@@ -606,6 +607,8 @@ Every quality gate works in two modes:
 |---|---|
 | **Unscoped** (no `--scope`) | Full rigor: the gate audits all of `src/`. Ideal for greenfield projects and final full-project verification. |
 | **Scoped** (`--scope=src/features/<slice>`) | The agent is accountable only for what it touches: env-config audit, ghost-class scanning, orphan/atomic scans, blast radius, and regression tests are narrowed to the slice. Inherited debt elsewhere never blocks the feature. |
+
+**Shared paths are always allowed in a scoped run**, because the gates themselves require them: `src/config/*` (the canonical typed env module), `src/shared/*`, `src/common/*`, `src/styles/*`, `src/main.*`, `src/App.*`, `src/index.*`. Without those exemptions `check-env-config.sh` and `check-blast-radius.sh` would contradict each other: the only way to pass both would be moving `env.ts` out of its canonical path.
 
 Scope flows end-to-end without manual wiring:
 

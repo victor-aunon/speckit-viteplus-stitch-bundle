@@ -422,6 +422,17 @@ if [ ! -f "$PACKAGE_FILE" ]; then
   fi
 fi
 
+# 7b. Provision the Vite+ config when absent. It registers the React plugin
+#     (Fast Refresh); without it the agent has to invent a config and the file
+#     is human-owned, so a missing plugin becomes an unfixable DX bug.
+VITE_CONFIG_FILE="$TARGET_DIR/vite.config.ts"
+if [ ! -f "$VITE_CONFIG_FILE" ]; then
+  if [ -f "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" ]; then
+    cp "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" "$VITE_CONFIG_FILE"
+    echo "✓ Initialized vite.config.ts (React plugin + Vite+ lint rules)"
+  fi
+fi
+
 # 8. Provision .npmrc with legacy-peer-deps=true for Vite+ peer dependency resolution
 NPMRC_FILE="$TARGET_DIR/.npmrc"
 if [ ! -f "$NPMRC_FILE" ]; then
