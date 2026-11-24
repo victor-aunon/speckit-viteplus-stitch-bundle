@@ -567,7 +567,20 @@ if [ "$SKIP_TESTS" = false ]; then
   echo "Executing automated test suite (Regression Gate)..."
 
   TEST_CMD=""
-  if [ -f "vitest.config.ts" ] || [ -f "vitest.config.js" ] || [ -f "vite.config.ts" ]; then
+  # Vite+ owns the config container (`vite.config.ts` holds lint/fmt/check/test),
+  # so its presence does NOT mean "this app is bundled by Vite": the installer
+  # provisions exactly that file for Next/Nuxt/Astro/Remix projects. The built-in
+  # `vp test` (Vitest) is only correct when the project really is a Vite app, so
+  # the framework config decides.
+  IS_VITE_APP=true
+  for FRAMEWORK_CONFIG in next.config nuxt.config astro.config remix.config svelte.config; do
+    if compgen -G "$FRAMEWORK_CONFIG.*" >/dev/null 2>&1; then
+      IS_VITE_APP=false
+      break
+    fi
+  done
+
+  if [ "$IS_VITE_APP" = true ] && { [ -f "vitest.config.ts" ] || [ -f "vitest.config.js" ] || [ -f "vite.config.ts" ]; }; then
     if command -v vp >/dev/null 2>&1; then
       TEST_CMD="vp test --run"
     elif [ -x "./node_modules/.bin/vp" ]; then
@@ -579,7 +592,14 @@ if [ "$SKIP_TESTS" = false ]; then
 
   if [ -z "$TEST_CMD" ] && [ -f "package.json" ]; then
     if grep -q '"test":' package.json; then
-      TEST_CMD="npm test"
+      # `vp test` is the BUILT-IN Vitest command and ignores the project's own
+      # runner (Jest, Mocha, ...). `vp run test` executes the declared script,
+      # which is what a non-Vite project needs (https://viteplus.dev/guide/run).
+      if [ -n "$VP_CMD" ]; then
+        TEST_CMD="$VP_CMD run test"
+      else
+        TEST_CMD="npm test"
+      fi
     fi
   fi
 
@@ -662,19 +682,24 @@ if [ "$SKIP_BUILD" = false ]; then
   echo "Executing application build and compilation (Build Gate)..."
 
   BUILD_CMD=""
-  if [ -f "vite.config.ts" ] || [ -f "vite.config.js" ]; then
+  # Built-in vs script (https://viteplus.dev/guide/run): `vp build` ALWAYS runs the
+  # built-in Vite production build and ignores the project's `build` script. In a
+  # project whose bundler is not Vite (Next, Nuxt, Astro, Remix), that is the wrong
+  # build, so the declared script wins. `vp build` stays as the fallback for a Vite
+  # project that has no build script of its own.
+  if [ -f "package.json" ] && grep -q '"build":' package.json; then
+    if [ -n "$VP_CMD" ]; then
+      BUILD_CMD="$VP_CMD run build"
+    else
+      BUILD_CMD="npm run build"
+    fi
+  elif [ -f "vite.config.ts" ] || [ -f "vite.config.js" ]; then
     if command -v vp >/dev/null 2>&1; then
       BUILD_CMD="vp build"
     elif [ -x "./node_modules/.bin/vp" ]; then
       BUILD_CMD="./node_modules/.bin/vp build"
     elif [ -x "./node_modules/.bin/vite" ]; then
       BUILD_CMD="./node_modules/.bin/vite build"
-    fi
-  fi
-
-  if [ -z "$BUILD_CMD" ] && [ -f "package.json" ]; then
-    if grep -q '"build":' package.json; then
-      BUILD_CMD="npm run build"
     fi
   fi
 

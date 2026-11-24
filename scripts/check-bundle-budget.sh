@@ -289,14 +289,23 @@ if [ "$SKIP_BUILD" = false ]; then
   fi
 
   BUILD_CMD=""
-  if command -v vp >/dev/null 2>&1; then
+  # Built-in vs script (https://viteplus.dev/guide/run): `vp build` always runs the
+  # built-in Vite build. In a project bundled by Next/Nuxt/Astro/Remix the declared
+  # script is the production build, so it wins when it exists.
+  if [ -f "package.json" ] && grep -q '"build":' package.json; then
+    if command -v vp >/dev/null 2>&1; then
+      BUILD_CMD="vp run build"
+    elif [ -x "./node_modules/.bin/vp" ]; then
+      BUILD_CMD="./node_modules/.bin/vp run build"
+    else
+      BUILD_CMD="npm run build"
+    fi
+  elif command -v vp >/dev/null 2>&1; then
     BUILD_CMD="vp build"
   elif [ -x "./node_modules/.bin/vp" ]; then
     BUILD_CMD="./node_modules/.bin/vp build"
   elif [ -x "./node_modules/.bin/vite" ]; then
     BUILD_CMD="./node_modules/.bin/vite build"
-  elif [ -f "package.json" ] && grep -q '"build":' package.json; then
-    BUILD_CMD="npm run build"
   fi
 
   if [ -n "$BUILD_CMD" ]; then

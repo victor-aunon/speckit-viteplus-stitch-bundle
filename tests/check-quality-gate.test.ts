@@ -315,4 +315,129 @@ describe('check-quality-gate.sh', () => {
       removeDir(gitDir);
     }
   });
+
+  /**
+   * Vite+ built-ins vs scripts (https://viteplus.dev/guide/run): `vp build` always
+   * runs the built-in Vite build and `vp test` always runs Vitest, ignoring the
+   * project's own scripts. In a project whose bundler/runner is not Vite (Next +
+   * Jest, Nuxt, Astro, Remix) the declared script must win, otherwise the gate
+   * fails or grades the wrong artifact.
+   */
+  function makeFakeVp(projectDir: string): { binDir: string; logFile: string } {
+    const binDir = path.join(projectDir, 'fakebin');
+    const logFile = path.join(projectDir, 'vp-calls.log');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(binDir, 'vp'),
+      ['#!/usr/bin/env bash', 'echo "vp $*" >> "${VP_LOG}"', 'case "$*" in', '  *test*) echo "      Tests  3 passed (3)" ;;', 'esac', 'exit 0', ''].join('\n'),
+      'utf8'
+    );
+    fs.chmodSync(path.join(binDir, 'vp'), 0o755);
+    return { binDir, logFile };
+  }
+
+  function makeGitProject(files: Record<string, string>): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-runner-'));
+    for (const [relativePath, content] of Object.entries(files)) {
+      const absolutePath = path.join(dir, relativePath);
+      fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+      fs.writeFileSync(absolutePath, content, 'utf8');
+    }
+    fs.mkdirSync(path.join(dir, 'node_modules'), { recursive: true });
+    execFileSync('git', ['init'], { cwd: dir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
+    execFileSync('git', ['add', '.'], { cwd: dir });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: dir });
+    return dir;
+  }
+
+  it('delegates to the declared scripts when the project is not bundled by Vite', () => {
+    const dir = makeGitProject({
+      'package.json': JSON.stringify(
+        { name: 'next-app', scripts: { dev: 'next dev', build: 'next build', test: 'jest' } },
+        null,
+        2
+      ),
+      'next.config.mjs': 'export default {};\n',
+    });
+    const { binDir, logFile } = makeFakeVp(dir);
+    const output = runBash(scriptPath, [], {
+      cwd: dir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        VP_LOG: logFile,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      },
+    });
+    const calls = fs.readFileSync(logFile, 'utf8');
+    try {
+      expect(output).toContain('Test runner detected');
+      expect(output).toContain('Build tool detected');
+      expect(calls).toContain('vp run test');
+      expect(calls).toContain('vp run build');
+      expect(calls).not.toContain('vp build');
+    } finally {
+      removeDir(dir);
+    }
+  });
+
+  it('still delegates to the declared test script when a non-Vite framework has vite.config.ts', () => {
+    // The installer provisions `vite.config.ts` as the Vite+ config container for
+    // Next/Nuxt/Astro projects, so the file alone must not flip the runner to
+    // Vitest: a Next + Jest project would then run the wrong suite.
+    const dir = makeGitProject({
+      'package.json': JSON.stringify(
+        { name: 'next-app', scripts: { dev: 'next dev', test: 'jest' } },
+        null,
+        2
+      ),
+      'next.config.mjs': 'export default {};\n',
+      'vite.config.ts': 'export default { lint: { options: { typeCheck: true } } };\n',
+    });
+    const { binDir, logFile } = makeFakeVp(dir);
+    const output = runBash(scriptPath, [], {
+      cwd: dir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        VP_LOG: logFile,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      },
+    });
+    const calls = fs.readFileSync(logFile, 'utf8');
+    try {
+      expect(output).toContain('vp run test');
+      expect(calls).not.toContain('vp test --run');
+      expect(calls).toContain('vp run test');
+    } finally {
+      removeDir(dir);
+    }
+  });
+
+  it('keeps the Vite built-ins when the project declares no build script', () => {
+    const dir = makeGitProject({
+      'package.json': JSON.stringify({ name: 'vite-app', scripts: { dev: 'vp dev' } }, null, 2),
+      'vite.config.ts': 'export default {};\n',
+    });
+    const { binDir, logFile } = makeFakeVp(dir);
+    const output = runBash(scriptPath, [], {
+      cwd: dir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        VP_LOG: logFile,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      },
+    });
+    const calls = fs.readFileSync(logFile, 'utf8');
+    try {
+      expect(output).toContain('vp build');
+      expect(calls).toContain('vp test --run');
+      expect(calls).not.toContain('vp run build');
+    } finally {
+      removeDir(dir);
+    }
+  });
 });
