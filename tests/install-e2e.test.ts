@@ -179,6 +179,8 @@ describe('Bundle Installer Script E2E', () => {
     // The template ships the plugin as a dependency, so both must agree.
     const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
     expect(pkg.devDependencies['@vitejs/plugin-react']).toBeDefined();
+    // The visual gate runs `npx playwright test`; the dependency must ship.
+    expect(pkg.devDependencies['@playwright/test']).toBeDefined();
 
     removeDir(tempDir);
   });

@@ -12,6 +12,10 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- The starter `package.json` did not declare `@playwright/test`, so the visual gate
+  could only run by letting `npx` fetch it. The dependency now ships with the
+  template (`^1.65.1`); existing projects need `npm i -D @playwright/test` plus
+  `npx playwright install --with-deps chromium`.
 - The visual audit compared raw `tokens.css` declarations against DOM computed
   values, so any token alias (`--layout-gutter: var(--space-6)` -> `2rem`) could
   never match and the only way to pass was de-referencing the design source.
