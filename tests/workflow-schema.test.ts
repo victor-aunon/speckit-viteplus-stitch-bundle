@@ -135,6 +135,10 @@ describe('Workflow YAML Schema Validation', () => {
     expect(wf.inputs.implement_model).toBeDefined();
     expect(wf.inputs.implement_model.default).toBe('');
 
+    // Multi-agent hybrid integration inputs
+    expect(wf.inputs.implement_integration).toBeDefined();
+    expect(wf.inputs.implement_integration.default).toBe('');
+
     const planStep = wf.steps.find((s: any) => s.id === 'plan');
     expect(planStep.model).toContain('inputs.model');
   });
@@ -185,6 +189,7 @@ describe('Workflow YAML Schema Validation', () => {
     expect(autoContinueStep.input.args).toContain('--verify-gates');
     expect(autoContinueStep.input.args).toContain('--auto-continue');
     expect(autoContinueStep.model).toContain('inputs.implement_model | default(inputs.model)');
+    expect(autoContinueStep.integration).toContain('inputs.implement_integration | default(inputs.integration)');
 
     const pausedStep = implement.else.find((s: any) => s.id === 'implement-paused');
     expect(pausedStep.command).toBe('speckit.implement');
@@ -192,5 +197,6 @@ describe('Workflow YAML Schema Validation', () => {
     expect(pausedStep.input.args).toContain('--verify-gates');
     expect(pausedStep.input.args).toContain('--pause-after-phase');
     expect(pausedStep.model).toContain('inputs.implement_model | default(inputs.model)');
+    expect(pausedStep.integration).toContain('inputs.implement_integration | default(inputs.integration)');
   });
 });

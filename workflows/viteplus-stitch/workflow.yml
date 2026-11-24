@@ -29,7 +29,11 @@ inputs:
   integration:
     type: string
     default: "auto"
-    prompt: "Agent integration to use (e.g. gemini, claude, copilot; 'auto' uses the project's integration)"
+    prompt: "Agent integration to use (e.g. gemini, claude, copilot, pi; 'auto' uses the project's integration)"
+  implement_integration:
+    type: string
+    default: ""
+    prompt: "Agent integration for task implementation (defaults to 'integration' when empty, e.g. 'pi', 'claude', 'gemini')"
   auto_continue:
     type: boolean
     default: false
@@ -206,14 +210,14 @@ steps:
     then:
       - id: implement-auto
         command: speckit.implement
-        integration: "{{ inputs.integration }}"
+        integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
         model: "{{ inputs.implement_model | default(inputs.model) }}"
         input:
           args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --auto-continue"
     else:
       - id: implement-paused
         command: speckit.implement
-        integration: "{{ inputs.integration }}"
+        integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
         model: "{{ inputs.implement_model | default(inputs.model) }}"
         input:
           args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --pause-after-phase"
