@@ -181,6 +181,8 @@ describe('Bundle Installer Script E2E', () => {
     expect(pkg.devDependencies['@vitejs/plugin-react']).toBeDefined();
     // The visual gate runs `npx playwright test`; the dependency must ship.
     expect(pkg.devDependencies['@playwright/test']).toBeDefined();
+    // WCAG AA must be checked by axe, not by the weaker DOM fallback.
+    expect(pkg.devDependencies['@axe-core/playwright']).toBeDefined();
 
     removeDir(tempDir);
   });

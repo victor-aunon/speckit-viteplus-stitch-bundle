@@ -130,55 +130,74 @@ steps:
     input:
       args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --with-viteplus {% if inputs.has_ui and inputs.enable_stitch %}--with-stitch{% endif %}"
 
+  # Design artifacts are REQUIRED for any UI feature. Stitch is one way to
+  # produce them, not the only one: with enable_stitch=false the step still runs
+  # and generates local wireframes + tokens + manifest. Previously this step was
+  # gated on `has_ui and enable_stitch`, so disabling Stitch skipped it entirely
+  # and the --require-ui gates failed later with no artifacts on disk.
   - id: generate-designs
     type: if
-    condition: "{{ inputs.has_ui and inputs.enable_stitch }}"
+    condition: "{{ inputs.has_ui }}"
     then:
-      - id: stitch-design-generation
+      - id: design-assets
         type: prompt
         integration: "{{ inputs.integration }}"
         model: "{{ inputs.model }}"
         timeout: 900
         prompt: |
-          ROLE: UI SYSTEMS DESIGN ENGINEER (GOOGLE STITCH MCP).
-          Generate high-fidelity UI screens and canonical design tokens using Google Stitch MCP:
+          ROLE: UI SYSTEMS DESIGN ENGINEER{% if inputs.enable_stitch %} (GOOGLE STITCH MCP){% else %} (LOCAL WIREFRAME FALLBACK){% endif %}.
+          Produce the canonical design artifacts every UI feature needs:
+          screens, `tokens.css`, and `routes-manifest.json`. The contracts gate and
+          the visual gate run with `--require-ui` and hard-fail without them.
 
           EXECUTION PROTOCOL:
+          {% if inputs.enable_stitch %}
           - Execute all Stitch MCP tools directly in this conversation. Do NOT delegate Stitch tool calls or verification to subagents (subagents lack access to MCP extensions).
-          - TEXT-ONLY ASSETS RULE: Never attempt to download binary screenshots, create fake .png files, or call `read_file` on any `.png` file. In Gemini CLI, reading ASCII text with a `.png` extension triggers fatal Google API 400 codec errors. The complete visual design master is the HTML code (`<screen-id>.html`).
+          - TEXT-ONLY ASSETS RULE: never download binary screenshots, create fake .png files, or read `.png` files with file tools. The design master is the HTML code (`<screen-id>.html`).
+          {% else %}
+          - Stitch is DISABLED for this run (`enable_stitch=false`). Do NOT call any Stitch MCP tool and do NOT ask the human to enable it.
+          - You are responsible for producing the same artifacts locally, as self-contained HTML wireframes. This is not a degraded mode you may skip: the gates below are identical.
+          {% endif %}
 
           STEPS:
-          0. Idempotency Check: Inspect `specs/<feature>/designs/`. If `.html` screens, `tokens.css`, and `routes-manifest.json` already exist, verify their completeness, ensure fixtures exist, and output the summary table immediately without re-generating from scratch.
+          0. Idempotency Check: inspect `specs/<feature>/designs/`. If the HTML screens, `tokens.css`, and `routes-manifest.json` already exist, verify their completeness, ensure fixtures exist, and output the summary table immediately without regenerating.
           1. Inspect `specs/<feature>/spec.md` and `plan.md` to identify the core user journeys and all required screens/views.
-          2. Locate or create the feature designs directory at `specs/<feature>/designs/` and subdirectory `specs/<feature>/designs/fixtures/`.
-          3. SOURCING STITCH DESIGNS:
+          2. Locate or create `specs/<feature>/designs/` and `specs/<feature>/designs/fixtures/`.
+          3. SOURCING SCREENS:
+             {% if inputs.enable_stitch %}
              {% if inputs.stitch_project_id %}
              - EXISTING STITCH STUDIO PROJECT (inputs.stitch_project_id: "{{ inputs.stitch_project_id }}"):
                * Do NOT generate new screens from text. Import existing screens from project ID "{{ inputs.stitch_project_id }}".
                * Normalize the ID first: if it was provided as `projects/<id>`, use only `<id>` (the Stitch API rejects the prefixed form). Do the normalization yourself; the workflow expression engine has no string-filter functions.
                * Call `list_screens(projectId: "{{ inputs.stitch_project_id }}")` to enumerate all project screens.
                * Call `get_screen` for each screen to retrieve its `html_code` reference.
-               * Download each HTML file using `download_file` with `name: <screen.html_code.name>` and save to `specs/<feature>/designs/<screen-id>.html`.
-               * Inspect downloaded HTML files to extract and populate `tokens.css` with active CSS variables.
+               * Download each HTML file using `download_file` with `name: <screen.html_code.name>` and save it to `specs/<feature>/designs/<screen-id>.html`.
+               * Inspect the downloaded HTML and populate `tokens.css` with the active CSS variables.
              {% else %}
              - NEW DESIGN GENERATION VIA STITCH MCP:
-               * Call `create_project` (or target active project) with the feature title.
-               * Call `create_design_system` to establish color palette, typography (Inter/Roboto), corner roundness, and appearance theme aligned with the project.
-               * For each primary screen described in the specification, call `generate_screen_from_text` with rich layout, accessibility, and component details.
+               * Call `create_project` (or target the active project) with the feature title.
+               * Call `create_design_system` to establish colour palette, typography (Inter/Roboto), corner roundness, and appearance theme aligned with the project.
+               * For each primary screen in the specification, call `generate_screen_from_text` with rich layout, accessibility, and component details.
                * Call `get_screen` for each generated screen to retrieve its `html_code` reference.
-               * Download ONLY the HTML code using `download_file` with `name: <screen.html_code.name>`:
-                 Save the HTML code to `specs/<feature>/designs/<screen-id>.html` using `write_file`.
-                 Do NOT call `download_file` on `screenshot.name`. The HTML file contains the full markup, CSS tokens, and layout.
+               * Download ONLY the HTML code with `download_file` (`name: <screen.html_code.name>`) and save it to `specs/<feature>/designs/<screen-id>.html` using `write_file`. Never download `screenshot.name`.
              {% endif %}
-          4. Extract and create the canonical design tokens stylesheet at `specs/<feature>/designs/tokens.css`:
-             - Define CSS variables under `:root` for colors (`--color-background`, `--color-surface`, `--color-primary`, `--color-text`, etc.), radii (`--radius-sm`, `--radius-md`, `--radius-lg`), typography (`--font-family`, `--font-size-*`), and spacing (`--space-*`).
-             - WIRE IT INTO THE APP: the visual gate reads `getComputedStyle(document.documentElement)`, so every token must exist in the running DOM. Import the stylesheet from the application entry (`src/styles/app.css` -> `@import '../../../../specs/<feature>/designs/tokens.css';` is brittle; prefer copying the `:root` block into `src/styles/app.css` or `src/styles/tokens.css` and importing that). If the DOM does not expose a token, the gate fails even though the design file is perfect.
-             - Keep `var(--other-token)` references: the audit resolves them like the browser. Do NOT de-reference aliases just to satisfy the check.
+             - If Stitch is unreachable or rate-limited, fall back to local wireframe HTML instead of stopping.
+             {% else %}
+             - LOCAL WIREFRAME PATH (`enable_stitch=false`):
+               * Write one self-contained HTML file per screen: `specs/<feature>/designs/<screen-id>.html`, with inline `<style>` using the design tokens and real content from the spec (no lorem ipsum, no broken links).
+               * Every screen must be usable at 360px and 1440px widths and include focus styles (`:focus-visible`), semantic landmarks, and `aria-label` on interactive controls.
+               * Do NOT create `.png` files or screenshots.
+             {% endif %}
+          4. Create the canonical design tokens at `specs/<feature>/designs/tokens.css`:
+             - Declare CSS variables under `:root`: colours (`--color-background`, `--color-surface`, `--color-primary`, `--color-text`, ...), radii (`--radius-sm|md|lg`), typography (`--font-family`, `--font-size-*`), and spacing (`--space-*`).
+             - WIRE THEM INTO THE APP: the visual gate reads `getComputedStyle(document.documentElement)`, so every token must exist in the running DOM. Copy the `:root` block into `src/styles/app.css` (or `src/styles/tokens.css` imported by it). If the DOM does not expose a token, the gate fails even though the design file is perfect.
+             - Keep `var(--other-token)` references; the audit resolves them exactly like the browser. Do NOT de-reference aliases to satisfy the check.
           5. Create `specs/<feature>/designs/routes-manifest.json` following `.specify/templates/routes-manifest.json.tmpl`:
-             - Map each screen to its local development route (e.g. `/`, `/analytics`), title, DOM test selector, and fixture mock data path.
-             - Generate declared fixture JSON mock files in `specs/<feature>/designs/fixtures/`.
-          6. Fallback Resilience: If Google Stitch MCP is unavailable or encounters connection/rate-limit errors, generate clean wireframe HTML files directly (`<screen-id>.html`), `tokens.css`, and `routes-manifest.json`. Do NOT create dummy `.png` files.
-          7. Output a summary table in the terminal listing all generated screens, HTML files, and token variables.
+             - Map each screen to a local route, title, DOM `selector`, viewport, and fixture path.
+             - The `selector` MUST exist in the implementation later (the contracts gate cross-checks `src/`), so prefer a stable `[data-testid="..."]` contract and write it down in `plan.md`/`tasks.md`.
+             - Generate the declared fixture JSON files under `specs/<feature>/designs/fixtures/`.
+          6. Self-check before finishing: the three artifacts exist, `tokens.css` is non-empty, the manifest references existing fixtures, and the tokens are wired into the app stylesheet. A missing artifact is a gate failure later, not a warning.
+          7. Output a summary table in the terminal listing screens, HTML files, token variables, and where the tokens were wired.
 
   - id: critique-design
     type: if
@@ -376,6 +395,13 @@ steps:
                 materialized `playwright.design.config.ts` and
                 `tests/design/design-audit.spec.ts` when designs exist. Verify them
                 instead of deleting the visual gate.
+              - MISSING DESIGN ARTIFACTS (UI features): when
+                `specs/<feature>/designs/` lacks screen HTML, `tokens.css`,
+                `routes-manifest.json` or its fixtures, GENERATE them. Local
+                wireframe HTML is a valid fallback when Stitch is disabled. Then
+                wire `tokens.css` into the app stylesheet so the DOM exposes the
+                tokens. Never skip the contracts/visual gates and never pass
+                `--tokens-only` to make them disappear.
               - UNCHECKED TASKS: implement them. Never tick a checkbox without running
                 `check-quality-gate.sh` and seeing exit code 0.
               - DEPENDENCIES: install with `npm install` / `vp install` in the terminal.

@@ -113,6 +113,10 @@ describe('Workflow YAML Schema Validation', () => {
     expect(repairAgent.prompt).toContain('AUTONOMOUS REPAIR');
     expect(repairAgent.prompt).toContain('--allow-no-tests');
     expect(repairAgent.prompt).toContain('NEVER edit');
+    // A UI gate failure caused by missing designs must be repaired by producing
+    // the artifacts, not by disabling the gate.
+    expect(repairAgent.prompt).toContain('MISSING DESIGN ARTIFACTS');
+    expect(repairAgent.prompt).toContain('wireframe HTML');
 
     // Recheck steps must propagate their exit code, otherwise the loop condition
     // can never observe a failure (the bug in the previous single-pass loop).
@@ -187,16 +191,22 @@ describe('Workflow YAML Schema Validation', () => {
 
     const generateDesignsStep = wf.steps.find((s: any) => s.id === 'generate-designs');
     expect(generateDesignsStep.type).toBe('if');
+    // Any UI feature needs design artifacts. Gating the step on enable_stitch
+    // skipped it entirely when Stitch was disabled, and the --require-ui gates
+    // then failed with nothing on disk.
     expect(generateDesignsStep.condition).toContain('inputs.has_ui');
-    expect(generateDesignsStep.condition).toContain('inputs.enable_stitch');
-    const stitchPrompt = generateDesignsStep.then.find((s: any) => s.id === 'stitch-design-generation');
-    expect(stitchPrompt.prompt).toContain('Stitch');
-    expect(stitchPrompt.prompt).toContain('tokens.css');
+    expect(generateDesignsStep.condition).not.toContain('inputs.enable_stitch');
+    const designPrompt = generateDesignsStep.then.find((s: any) => s.id === 'design-assets');
+    expect(designPrompt.prompt).toContain('Stitch');
+    expect(designPrompt.prompt).toContain('LOCAL WIREFRAME PATH');
+    expect(designPrompt.prompt).toContain('enable_stitch=false');
+    expect(designPrompt.prompt).toContain('tokens.css');
     // The DOM must expose the tokens, not just the design file.
-    expect(stitchPrompt.prompt).toContain('getComputedStyle(document.documentElement)');
-    expect(stitchPrompt.prompt).toContain('routes-manifest.json');
-    expect(stitchPrompt.prompt).toContain('stitch_project_id');
-    expect(stitchPrompt.prompt).toContain('list_screens');
+    expect(designPrompt.prompt).toContain('getComputedStyle(document.documentElement)');
+    expect(designPrompt.prompt).toContain('routes-manifest.json');
+    expect(designPrompt.prompt).toContain('stitch_project_id');
+    expect(designPrompt.prompt).toContain('list_screens');
+    expect(designPrompt.prompt).toContain('fixtures');
 
     const critiqueStep = wf.steps.find((s: any) => s.id === 'critique-design');
     expect(critiqueStep.type).toBe('if');

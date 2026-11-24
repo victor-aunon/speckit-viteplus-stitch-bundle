@@ -12,6 +12,15 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- `has_ui=true` with `enable_stitch=false` skipped `generate-designs` entirely
+  (its condition was `has_ui and enable_stitch`), so `critique-design` ran on
+  nothing and the `--require-ui` gates failed with no artifacts. The step now
+  runs for every UI feature and, without Stitch, generates local wireframes +
+  `tokens.css` + `routes-manifest.json` + fixtures, which the workflow already
+  allowed as fallback but never requested.
+- The starter `package.json` did not declare `@axe-core/playwright`, so the WCAG
+  test silently degraded to a DOM scan that does not check contrast. It now ships
+  (`^4.14.0`) alongside `@playwright/test`.
 - The starter `package.json` did not declare `@playwright/test`, so the visual gate
   could only run by letting `npx` fetch it. The dependency now ships with the
   template (`^1.65.1`); existing projects need `npm i -D @playwright/test` plus
