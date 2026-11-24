@@ -426,12 +426,33 @@ if [ ! -f "$PACKAGE_FILE" ]; then
   fi
 fi
 
-# 7b. Provision the Vite+ config when absent. It registers the React plugin
-#     (Fast Refresh); without it the agent has to invent a config and the file
-#     is human-owned, so a missing plugin becomes an unfixable DX bug.
+# 7b. Provision the Vite+ config when absent.
+#     `vite.config.ts` is Vite+'s config container (lint/fmt/check/test/run), not a
+#     marker of "this app is bundled by Vite". In a Vite UI project it also carries
+#     the React plugin (Fast Refresh); in a full-stack framework (Next, Nuxt, Astro,
+#     Remix, SvelteKit) the bundler is the framework's own, so injecting
+#     `@vitejs/plugin-react` + `@shadcn/lint` would be wrong and would fail to
+#     resolve in a dependency tree that does not ship them.
+#
+#     Detection is deliberately file-based: the framework config is the fact, not
+#     a dependency guess.
+FRAMEWORK="vite"
+for candidate in "next:next.config" "nuxt:nuxt.config" "astro:astro.config" "remix:remix.config" "sveltekit:svelte.config"; do
+  FRAMEWORK_NAME="${candidate%%:*}"
+  FRAMEWORK_GLOB="${candidate##*:}"
+  if compgen -G "$TARGET_DIR/$FRAMEWORK_GLOB.*" >/dev/null 2>&1; then
+    FRAMEWORK="$FRAMEWORK_NAME"
+    break
+  fi
+done
+
 VITE_CONFIG_FILE="$TARGET_DIR/vite.config.ts"
 if [ ! -f "$VITE_CONFIG_FILE" ]; then
-  if [ -f "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" ]; then
+  if [ "$FRAMEWORK" != "vite" ] && [ -f "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" ]; then
+    cp "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" "$VITE_CONFIG_FILE"
+    echo "✓ Detected $FRAMEWORK: initialized vite.config.ts (Vite+ lint/fmt/boundaries only, no Vite bundler plugins)"
+    echo "  Next step: add \`vite-plus\` (or use the global \`vp\` CLI) so \`vp check\` runs here."
+  elif [ -f "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" ]; then
     cp "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" "$VITE_CONFIG_FILE"
     echo "✓ Initialized vite.config.ts (React plugin + Vite+ lint rules)"
   fi

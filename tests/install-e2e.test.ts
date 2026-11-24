@@ -304,4 +304,53 @@ hooks:
     fs.unlinkSync(zipPath);
     removeDir(tempDir);
   });
+
+  it('provisions a bundler-agnostic vite.config.ts when the project is Next.js', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-install-next-'));
+    try {
+      fs.writeFileSync(
+        path.join(tempDir, 'package.json'),
+        JSON.stringify({ name: 'next-app', scripts: { dev: 'next dev', build: 'next build' } }, null, 2),
+        'utf8'
+      );
+      fs.writeFileSync(path.join(tempDir, 'next.config.mjs'), 'export default {};\n', 'utf8');
+
+      const output = runBash(installScript, [`--target-dir=${tempDir}`]);
+      expect(output).toContain('Detected next');
+
+      const config = fs.readFileSync(path.join(tempDir, 'vite.config.ts'), 'utf8');
+      // The bundler belongs to the framework: injecting the React plugin or the
+      // Tailwind/shadcn rules would fail to resolve in a Next dependency tree.
+      expect(config).not.toContain('@vitejs/plugin-react');
+      expect(config).not.toContain('@shadcn/lint');
+      // A plain object needs no local `vite-plus` install to be loadable.
+      expect(config).not.toContain("from 'vite-plus'");
+      expect(config).toContain('typeCheck');
+      expect(config).toContain('complexity');
+
+      // The project's own package.json is never rewritten.
+      const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+      expect(pkg.scripts.build).toBe('next build');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
+
+  it('provisions the React config for a Vite project without a framework config', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-install-vite-'));
+    try {
+      fs.writeFileSync(
+        path.join(tempDir, 'package.json'),
+        JSON.stringify({ name: 'vite-app', scripts: { dev: 'vp dev' } }, null, 2),
+        'utf8'
+      );
+      const output = runBash(installScript, [`--target-dir=${tempDir}`]);
+      expect(output).toContain('Initialized vite.config.ts (React plugin');
+      const config = fs.readFileSync(path.join(tempDir, 'vite.config.ts'), 'utf8');
+      expect(config).toContain('@vitejs/plugin-react');
+      expect(config).toContain('@shadcn/lint');
+    } finally {
+      removeDir(tempDir);
+    }
+  });
 });

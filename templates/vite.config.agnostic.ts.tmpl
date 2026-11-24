@@ -1,0 +1,91 @@
+/**
+ * Vite+ configuration for a project whose BUNDLER is not Vite.
+ *
+ * `vite.config.ts` is Vite+'s single configuration container (`create`, `run`,
+ * `fmt`, `lint`, `check`, `test`, `pack`, `staged`), not a marker of "this app is
+ * built by Vite". Next.js, Nuxt, Astro, Remix and SvelteKit projects use it only
+ * for the quality toolchain.
+ *
+ * Exported as a PLAIN OBJECT on purpose: a non-Vite project does not necessarily
+ * install `vite-plus` locally, and importing `defineConfig` from that package
+ * would make this file fail to load — turning every `vp check` into a crash
+ * instead of a lint run. The global `vp` CLI reads these blocks directly.
+ *
+ * Deliberately absent (they belong to a Vite UI app, not to this profile):
+ *   - the React plugin (the bundler is the framework's own)
+ *   - shadcn/Tailwind lint rules and `react/no-multi-comp`
+ *   - UI layer import boundaries (there is no `src/**/ui` boundary to police)
+ */
+export default {
+  lint: {
+    options: {
+      typeAware: true,
+      typeCheck: true,
+    },
+    rules: {
+      // Cyclomatic complexity and structural limits stay: they are the reason
+      // the gate exists, and they are bundler-agnostic.
+      complexity: ['error', 10],
+      'max-lines-per-function': ['error', { max: 50, skipBlankLines: true, skipComments: true }],
+      'max-depth': ['error', 3],
+      'max-params': ['error', 4],
+    },
+    // Clean Architecture boundaries for the vertical slices of a non-UI feature.
+    // A full-stack framework keeps the API in its own convention directory
+    // (`app/api/**` in Next), so these globs only match `src/**` on purpose.
+    overrides: [
+      {
+        files: ['**/src/**/domain/**', '**/src/core/domain/**'],
+        rules: {
+          'no-restricted-imports': [
+            'error',
+            {
+              patterns: [
+                {
+                  group: [
+                    '**/application/**',
+                    '**/infrastructure/**',
+                    '**/src/**/application/**',
+                    '**/src/**/infrastructure/**',
+                  ],
+                  message:
+                    'Clean Architecture Violation: Domain cannot depend on Application or Infrastructure (vertical slice rule).',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        files: ['**/src/**/application/**', '**/src/core/application/**'],
+        rules: {
+          'no-restricted-imports': [
+            'error',
+            {
+              patterns: [
+                {
+                  group: ['**/infrastructure/**', '**/src/**/infrastructure/**'],
+                  message:
+                    'Clean Architecture Violation: Application cannot depend on Infrastructure (vertical slice rule).',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        files: ['**/*.test.{ts,tsx,js,jsx}', '**/*.spec.{ts,tsx,js,jsx}', '**/tests/**', '**/test/**'],
+        rules: {
+          'max-lines-per-function': 'off',
+        },
+      },
+    ],
+  },
+  fmt: {
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+    tabWidth: 2,
+    printWidth: 100,
+  },
+};
