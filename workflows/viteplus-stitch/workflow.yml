@@ -69,9 +69,10 @@ steps:
 
       REAL EXECUTION & DEPENDENCY MANDATE:
       - You MUST install real dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified.
+      - NEVER use `read_file`, `list_directory`, or file-reading tools on `node_modules/` (symlinks trigger sandbox boundary errors). Diagnose packages via terminal: `npm ls`, `npm install`, or `vp check`.
       - After completing each task in `tasks.md`, you MUST run `bash .specify/scripts/bash/check-quality-gate.sh` via the terminal and verify it passes (exit code 0).
       - Marking a task `- [x]` without executing the quality gate in the terminal is strictly forbidden.
-      - Spec Kit runs automated quality gates (`gate-quality`, `gate-bundle`, `gate-contracts`) as non-agent shell steps. If dependencies are missing or checks fail, the workflow engine aborts immediately.
+      - Spec Kit runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`) as non-agent shell steps with an automated self-healing repair window.
 
       Acknowledge this rule and stop. Do not modify any files in this step.
 
@@ -286,6 +287,11 @@ steps:
           AUTOMATED REPAIR LOOP: Quality or performance gates detected issues in the implementation.
 
           Do not panic. You have an active repair window to diagnose and fix the failures.
+
+          TOOL RESTRICTION & SANDBOX SAFETY:
+          - NEVER call `read_file`, `list_directory`, or file-reading tools on `node_modules/`. In modern package managers (pnpm/vite-plus/npm), `node_modules` contains symlinks resolving outside the project root, triggering fatal sandbox boundary errors.
+          - Manage and diagnose dependencies EXCLUSIVELY via terminal commands: `npm install`, `npm ls`, or `vp check`.
+          - Only use file tools (`read_file`, `replace`, `write_file`) on application source files in `src/`, `package.json`, or configuration files.
 
           1. DIAGNOSE:
              - Check `.specify/telemetry.jsonl` and `specs/<feature>/evidence/quality-gate.json` (or `bundle-budget.json`).

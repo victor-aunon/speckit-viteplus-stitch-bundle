@@ -97,5 +97,6 @@ A task or feature cannot be declared complete without deterministic machine-gene
 
 A green task cannot be simulated:
 - **Mandatory Dependencies (`node_modules`)**: The agent MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
+- **Sandbox Boundary Safety (`node_modules/`)**: NEVER use `read_file`, `list_directory`, or file-reading tools on `node_modules/`. In modern package managers (pnpm, npm, vite-plus), `node_modules` contains symlinks pointing outside the workspace sandbox, which triggers fatal environment errors. Manage and inspect packages exclusively via terminal commands (`npm ls`, `npm install`, `vp check`).
 - **Terminal Execution Required**: The agent MUST execute `.specify/scripts/bash/check-quality-gate.sh` via terminal after completing each task in `tasks.md`. Marking a task checkbox `- [x]` without executing the gate in the terminal is a fatal violation of Quality Gate Integrity.
-- **Imperative Pipeline Enforcement**: The Spec Kit workflow runs automated quality gates (`gate-quality`, `gate-bundle`, `gate-contracts`) as non-agent shell steps. If `node_modules` is missing or any gate fails, the workflow engine halts execution immediately.
+- **Imperative Pipeline Enforcement**: The Spec Kit workflow runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`) as non-agent shell steps with an automated self-healing repair window.
