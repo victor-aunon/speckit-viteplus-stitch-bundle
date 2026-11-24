@@ -13,10 +13,18 @@ feature almost always lives inside an existing React/Vite repository, so:
 - The feature declares its own runtime in `specs/<feature>/runtime.json` (start from
   `.specify/templates/runtime.json.tmpl`):
   - `{"kind":"http","command":"npm run dev:api","port":3000,"readiness":"/health"}`
+  - `{"kind":"http","command":"npm run dev","port":3000,"readiness":"/api/health"}`
   - `{"kind":"none","reason":"<why this feature has no runtime entrypoint>"}`
-- An HTTP feature adds a **new** script (`dev:api`, `start:api`) instead of
-  repurposing `dev`. The port comes from the typed env config, and `spec.md`,
-  `quickstart.md`, the contract and the script must agree on it.
+- Exposing HTTP depends on the framework: with a Vite bundler add a **new** script
+  (`dev:api`, `start:api`) instead of repurposing `dev`; with a full-stack framework
+  (Next, Nuxt, Astro, Remix, SvelteKit) the framework dev server already serves the
+  endpoints, so declare it with a **specific** readiness path such as `/api/health`.
+  The port comes from the typed env config, and `spec.md`, `quickstart.md`, the
+  contract and the script must agree on it.
+- Vite **built-ins** (`vp dev`, `vite`, `vp preview`) are rejected as the runtime: they
+  always start the built-in Vite dev server and ignore `package.json` scripts
+  (`https://viteplus.dev/guide/run`). A dev-server runtime with `readiness: "/"` is
+  rejected too: a frontend dev server answers 200 on `/` no matter what the API does.
 - `check-dev-entrypoint.sh --require-contract` is the authority: it starts the
   declared command itself, probes the declared port, and fails unless it gets HTTP
   2xx. A manual `tsx src/main.ts` that nothing declares is a red gate, not a

@@ -62,7 +62,10 @@ src/features/<slice>/
 
 - Declare the feature runtime in `specs/<feature>/runtime.json`:
   `{"kind":"http","command":"npm run dev:api","port":3000,"readiness":"/health"}` or `{"kind":"none","reason":"..."}`.
-- Expose an API through a NEW script (`dev:api`, `start:api`). Never rename, repurpose or delete `dev`.
+  In a full-stack framework (Next/Nuxt/Astro) the framework dev server serves the endpoints:
+  use `"command": "npm run dev"` with a specific path like `/api/health`, do not add a second server.
+- In a Vite project expose an API through a NEW script (`dev:api`, `start:api`). Never rename, repurpose or delete `dev`.
+- Vite built-ins (`vp dev`, `vite`, `vp preview`) are not a valid runtime: they ignore `package.json` scripts. Only `vp run <script>` delegates.
 - The port comes from `src/config/env.ts`; `spec.md`, `quickstart.md` and the contract must agree.
 - `check-dev-entrypoint.sh --require-contract` starts the declared command itself and fails unless it answers HTTP 2xx. Validating a server you started by hand is not evidence.
 

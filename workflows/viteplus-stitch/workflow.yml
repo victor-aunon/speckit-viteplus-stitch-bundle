@@ -91,15 +91,23 @@ steps:
       - Declare how the feature runs in `specs/<feature>/runtime.json` (start from
         `.specify/templates/runtime.json.tmpl`):
           {"kind":"http","command":"npm run dev:api","port":3000,"readiness":"/health"}
+          {"kind":"http","command":"npm run dev","port":3000,"readiness":"/api/health"}
           {"kind":"none","reason":"<why this feature has no runtime entrypoint>"}
-      - When the feature exposes HTTP, add the API entrypoint as a NEW package.json
-        script (for example `"dev:api": "tsx watch src/main.ts"` and
-        `"start:api": "tsx src/main.ts"`). Never repurpose, rename or delete `dev`:
-        in a Vite+ project that script belongs to the UI dev server.
+      - How to expose HTTP depends on the framework:
+        * Bundler is Vite (this repository): add a NEW script (`"dev:api": "tsx watch
+          src/main.ts"`) and never touch `dev`. `"command": "npm run dev:api"`.
+        * Full-stack framework (Next.js, Nuxt, Astro, Remix, SvelteKit): the framework
+          dev server already serves the endpoints (`app/api/<route>/route.ts`), so
+          declare `"command": "npm run dev"` (or `"vp run dev"`) with a SPECIFIC
+          readiness path such as `/api/health`. Do not invent a second server.
       - `gate_runtime` runs `check-dev-entrypoint.sh --require-contract`: it starts the
         declared command, probes the declared port and readiness path, and fails
         unless it gets an HTTP 2xx response. A manual `tsx src/main.ts` that the
         contract does not declare is a red gate, not a workaround.
+      - Vite built-ins (`vp dev`, `vite`, `vp preview`) are REJECTED as the runtime: they
+        always start the built-in Vite dev server and ignore package.json scripts. A
+        dev-server runtime with `"readiness": "/"` is also rejected, because a frontend
+        dev server answers 200 on / regardless of the API.
       - The port MUST come from the typed env config (`src/config/env.ts`) and be
         declared in `runtime.json` with the same value; the gate probes exactly that
         port, so drift between the two is a red gate. The spec, `quickstart.md`,
