@@ -108,26 +108,49 @@ The workflow uses `integration: auto` by default, which reads the integration se
 ## Step-by-Step Workflow Execution
 
 ```
-[ Step 1: specify ]  ──►  [ Step 2: audit-spec ]  ──►  [ Step 3: plan ]
-                                  │                               │
-                          (review-spec gate)          [ Step 4: generate-designs ]
-                                                                  │
-                                                      [ Step 5: critique-design ]
-                                                                  │
-                                                          (review-design gate)
-                                                                  │
-[ Step 10: verify ]  ◄── [ Step 9: auto_repair ]  ◄──   [ Step 7: tasks ]
-  - Scenario Matrix        (Self-Healing Loop)             │
-  - Evidence Log                   ▲                       ▼
-  - Delta-Spec Sync                │              [ Step 8: implement ]
-                           [ Shell Gates ]                 │
-                           - bootstrap_deps                ▼
-                           - gate_quality      ──► [ Quality Feedback ]
-                           - gate_bundle           (continue_on_error)
-                           - gate_contracts
+[ guardrails ] ──► [ 1. specify ] ──► [ 2. audit-spec ] ──► ( review-spec gate )
+                                                                    │
+                                                                    ▼
+                                                            [ 3. plan ]
+                                                                    │
+                                    ┌───────────────────────────────┘
+                                    │ (if has_ui: true)
+                                    ▼
+                          [ 4. generate-designs ]
+                          (Stitch UI & tokens.css)
+                                    │
+                                    ▼
+                          [ 5. critique-design ]
+                          (Impeccable craft audit)
+                                    │
+                                    ▼
+                          ( review-design gate )
+                                    │
+    ┌───────────────────────────────┘
+    │
+    ▼
+[ 6. tasks ] ──► [ 7. implement ] ──► [ 8. Shell Quality Gates ]
+                                      - bootstrap_deps (install)
+                                      - gate_quality (vp check)
+                                      - gate_bundle (Rolldown)
+                                      - gate_contracts (routes & tokens)
+                                                    │
+                                    ┌───────────────┴───────────────┐
+                                    ▼ (if issues detected)          ▼ (if clean exit 0)
+                          [ 9. auto_repair ]                        │
+                          - repair_agent                            │
+                          - recheck_quality & recheck_bundle        │
+                                    │                               │
+                                    └───────────────┬───────────────┘
+                                                    │
+                                                    ▼
+                                            [ 10. verify ]
+                                            - Scenario Verification Matrix
+                                            - Machine Evidence Log (*.json)
+                                            - Delta-Spec Sync
 ```
 
-### Step 1: Start a New Feature
+### Step 1: Start a New Feature (`specify`)
 Trigger the cycle with a prompt describing what you want to build:
 ```bash
 specify workflow run viteplus-stitch --input spec="Create a credit card management module with list, details, and fee calculations"
@@ -178,30 +201,33 @@ When `has_ui: true`:
   - **If changes needed**: Select **`[reject]`** to abort or refine screens before planning.
 - In **unattended mode** (`auto_continue: true`): bypassed automatically, freezing audited designs and progressing to tasks.
 
-### Step 7: Phase-by-Phase Task Breakdown (`speckit.tasks`)
+### Step 7: Phase-by-Phase Task Breakdown (`tasks`)
 Generates `tasks.md` split into strictly ordered phases:
 - `Phase 1: Setup` (Vite+ configuration, dependencies, CSS tokens)
 - `Phase 2: Core & Domain` (Entities, Value Objects, Repository Ports)
 - `Phase 3..N: User Stories` (TDD, application services, atomic components)
 - `Phase Final: Polish & Verification` (Impeccable animate, audit, and E2E)
 
-### Step 8: Phased Implementation with Automated Quality Gates
-The agent executes tasks phase by phase. After each phase completes, deterministic quality gates run:
-1. **Static Gate (`vp check`)**:
-   - Validates types (`tsc`), formatting (Oxfmt), and linting (Oxlint with Airbnb rules).
-   - Enforces cyclomatic complexity 10 and 50 lines max per function for business logic (`domain`, `application`, `infrastructure`). UI presentation components (`src/**/ui/**`) are exempted (`max-lines-per-function: 'off'`) to prevent artificial component fragmentation ("ravioli code") in accessible JSX components with ARIA attributes and variants.
-   - Enforces Clean Architecture: Domain cannot import Application, Infrastructure, or UI.
-   - Centralized typed env config: fails if application code reads `process.env` or `import.meta.env` directly outside `src/config/env.ts`.
-2. **Visual Playwright Gate (`verify-stitch-design.sh`)**:
-   - Compares DOM `:root` computed tokens against `tokens.css`.
-   - Runs WCAG 2.1 AA accessibility checks on all declared routes.
-   - When golden screenshot masters exist, runs snapshot comparison with tolerance `0.05`. If no golden screenshot is present, screenshot diffing is skipped gracefully while token and A11y checks pass. If no `designs/` directory exists (`enable_stitch=false` or `has_ui=false`), the gate self-skips cleanly with exit code 0.
+### Step 8: Phased Implementation (`implement`)
+The agent executes tasks phase by phase.
+- In **interactive mode** (`auto_continue: false`): pauses after each phase for human review.
+- In **unattended mode** (`auto_continue: true`): executes all implementation phases continuously.
 
-### Step 9: Verification & Delta-Spec Sync (`verify`)
-Once implementation completes, the workflow executes the final certification:
+### Step 9: Imperative Shell Quality Gates & Auto-Repair Loop (`auto_repair`)
+Once tasks are complete, the workflow engine executes deterministic shell gates in the host OS with `continue_on_error: true`:
+1. **`bootstrap_deps`**: Ensures `node_modules` exists via `vp install` or `npm install`.
+2. **`gate_quality`**: Runs `check-quality-gate.sh` (Vite+ / Oxfmt / Oxlint / Clean Architecture vertical slice boundaries / Vitest regression suite / compilation).
+3. **`gate_bundle`**: Runs `check-bundle-budget.sh` (production asset limits <250KB per chunk, <1000KB total).
+4. **`gate_contracts`** (when `has_ui: true`): Runs `check-contracts.sh` and `verify-stitch-design.sh` with strict `--require-ui`.
+5. **Self-Healing Loop (`auto_repair`)**:
+   - If all gates exit with code `0`, the workflow skips auto-repair and proceeds directly to verification.
+   - If any gate detects failures, the `repair_agent` is activated in an automated repair window. The agent reproduces the failure via terminal, fixes the application code, re-runs the checks, and proceeds to verification without halting the workflow.
+
+### Step 10: Verification & Delta-Spec Sync (`verify`)
+The workflow executes final empirical certification against raw machine evidence:
 1. **Accessibility & Craft Audit**: When `has_ui: true`, activates `impeccable` to audit WCAG 2.1 AA compliance, keyboard navigation (`:focus-visible`), touch targets (44px), and reduced-motion support (`impeccable audit` + `impeccable animate`).
 2. **Scenario Verification Matrix**: Cross-checks each Given/When/Then scenario against automated test proof.
-3. **Verification Report (`VERIFICATION_REPORT.md`)**: Generates full evidence log with test runs, gate outputs, and bundle budget metrics.
+3. **Verification Report (`VERIFICATION_REPORT.md`)**: Synthesizes the raw machine-generated evidence in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `stitch-design.json`) and `.specify/telemetry.jsonl`.
 4. **Delta-Spec Sync**: Documents any architectural refinements or domain clarifications discovered during implementation.
 
 ---
