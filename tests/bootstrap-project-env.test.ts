@@ -46,6 +46,29 @@ describe('bootstrap-project-env.sh', () => {
     expect(git('log', '--oneline').trim().split('\n')).toHaveLength(1);
   });
 
+  it('keeps run state and telemetry out of the baseline commit', () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"bootstrap-fixture"}', 'utf8');
+    fs.mkdirSync(path.join(tempDir, '.specify/workflows/runs/abc'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, '.specify/workflows/runs/abc/state.json'),
+      JSON.stringify({ transcript: 'agent output that must not be committed' }),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(tempDir, '.specify/telemetry.jsonl'), '{"event":"x"}\n', 'utf8');
+
+    runBash(scriptPath, [`--root=${tempDir}`, '--no-templates']);
+
+    const tracked = git('ls-files');
+    // state.json stores stdout/stderr of every step: committing it leaks context.
+    expect(tracked).not.toContain('.specify/workflows/runs/');
+    expect(tracked).not.toContain('.specify/telemetry.jsonl');
+    // Project tooling is still part of the baseline.
+    expect(tracked).toContain('package.json');
+    const ignore = fs.readFileSync(path.join(tempDir, '.gitignore'), 'utf8');
+    expect(ignore).toContain('.specify/workflows/runs/');
+    expect(ignore).toContain('.specify/telemetry.jsonl');
+  });
+
   it('is idempotent: a second run does nothing', () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"bootstrap-fixture"}', 'utf8');
 

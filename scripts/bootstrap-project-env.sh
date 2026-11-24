@@ -35,7 +35,8 @@ Options:
 What it does:
   1. Creates a .git repository when the project root has none, and records a
      baseline commit so diff-based gates have a HEAD to compare against.
-  2. Ensures node_modules/ and dist/ are git-ignored before the baseline commit.
+  2. Ensures node_modules/, dist/, .specify/workflows/runs/ and
+     .specify/telemetry.jsonl are git-ignored before the baseline commit.
   3. Copies the Playwright design config and design-audit spec from
      .specify/templates/ so the visual gate can actually run.
 
@@ -104,7 +105,10 @@ if [ "$DO_GIT" = true ] && command -v git >/dev/null 2>&1; then
   if [ -e "$ROOT/.git" ]; then
     # Never stage dependencies or build output into a baseline snapshot.
     GITIGNORE="$ROOT/.gitignore"
-    for ignore_entry in "node_modules/" "dist/"; do
+    # Run state and telemetry are local artifacts: state.json stores the stdout
+    # and stderr of every prompt/command step (agent transcripts), so committing
+    # them leaks context into the repository and bloats the baseline.
+    for ignore_entry in "node_modules/" "dist/" ".specify/workflows/runs/" ".specify/telemetry.jsonl"; do
       if [ ! -f "$GITIGNORE" ]; then
         printf '%s\n' "$ignore_entry" >> "$GITIGNORE"
         echo "✓ Created .gitignore with $ignore_entry"
