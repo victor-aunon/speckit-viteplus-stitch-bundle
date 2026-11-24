@@ -350,19 +350,36 @@ echo "✓ Runtime command: $DEV_CMD"
 echo "✓ Resolved port: $PORT (source: $PORT_SOURCE)"
 echo "✓ Readiness URL: $TARGET_URL (timeout: ${TIMEOUT}s)"
 
+# Vite+ BUILT-INS are not the app: `vp dev` / `vite` always start the built-in Vite
+# dev server and ignore package.json scripts (https://viteplus.dev/guide/run). A
+# contract claiming an HTTP runtime cannot point at them.
+VITE_BUILTIN_PATTERN='(^|[^[:alnum:]_-])(vp|vite|vite-plus)[[:space:]]+(dev|preview|serve)([[:space:]]|$)|(^|[^[:alnum:]_-])(vite|vp|vite-plus)[[:space:]]*$'
+
+# Framework dev servers ARE legitimate: Next serves its API routes from `next dev`
+# (`app/api/*/route.ts`), Nuxt from `nuxt dev`, and `vp run dev` delegates to
+# whatever the project declares. They are accepted, but the readiness path must be
+# specific: `/` on a frontend dev server proves nothing about an API.
+DEV_SERVER_PATTERN='(^|[^[:alnum:]_-])(vp|vpr|npm|pnpm|yarn|bun)[[:space:]]+run[[:space:]]+dev([[:space:]]|$)|(^|[^[:alnum:]_-])(next|nuxt|astro|remix|svelte-kit)[[:space:]]+(dev|start)([[:space:]]|$)'
+
+if printf '%s' "$DEV_CMD" | grep -Eq "$VITE_BUILTIN_PATTERN"; then
+  fail "the runtime contract points at a Vite built-in command: \"$DEV_CMD\"." \
+    '`vp dev` always starts the built-in Vite dev server and ignores package.json' \
+    'scripts, so it can never serve the API of a non-Vite project.' \
+    'Declare the API entrypoint instead ("npm run dev:api" with a dev:api script,' \
+    'or "vp run dev", which delegates to your own dev script).'
+fi
+
+if [ "$READY_PATH" = "/" ] && printf '%s' "$DEV_CMD" | grep -Eq "$DEV_SERVER_PATTERN"; then
+  fail "readiness path \"/\" is not acceptable for a dev-server runtime: \"$DEV_CMD\"." \
+    'A frontend dev server answers 200 on / no matter what the API does, so the' \
+    'probe would pass without proving anything about the feature.' \
+    'Declare a real API path (for example "/health" or "/api/health").'
+fi
+
 if [ "$DRY_RUN" = true ]; then
   echo "✓ [RUNTIME ENTRYPOINT GATE]: Dry run completed successfully. Nothing was started."
   emit_gate_telemetry "passed" 0
   exit 0
-fi
-
-# The declared command must not be the frontend dev server: it claims to be the
-# API. This is a contract error, not a project-type restriction.
-if printf '%s' "$DEV_CMD" | grep -Eq '(^|[^[:alnum:]_-])(vp|vite|vite-plus)[[:space:]]+(dev|serve|preview)|(^|[^[:alnum:]_-])(vite|vp|vite-plus)[[:space:]]*$|(^|[^[:alnum:]_-])(next|nuxt|astro)[[:space:]]+(dev|start)'; then
-  fail "the runtime contract points at a frontend dev server: \"$DEV_CMD\"." \
-    "Declare the API entrypoint instead (for example \"npm run dev:api\" with" \
-    '"dev:api": "tsx watch src/main.ts" in package.json).' \
-    "The project keeps its own 'dev' script for Vite; the API is a second process."
 fi
 
 if ! command -v curl >/dev/null 2>&1; then

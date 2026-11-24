@@ -248,15 +248,70 @@ describe('Runtime entrypoint contract gate', () => {
     }
   });
 
-  it('rejects a contract that points at the frontend dev server', () => {
+  it('rejects a contract that points at a Vite built-in command', () => {
     const dir = makeProject({
       'specs/001-shortener/runtime.json': CONTRACT({ command: 'vp dev', port: freePort() }),
     });
     try {
       const result = runGate(dir, ['--require-contract']);
       expect(result.status).toBe(1);
-      expect(result.output).toContain('frontend dev server');
+      expect(result.output).toContain('Vite built-in command');
+      expect(result.output).toContain('ignores package.json');
       expect(result.output).toContain('dev:api');
+    } finally {
+      removeDir(dir);
+    }
+  });
+
+  it('accepts a full-stack framework dev server when the readiness path is specific', () => {
+    // Next serves its API routes from `next dev` (`app/api/*/route.ts`), so the
+    // command is legitimate; only the readiness path has to be a real API route.
+    const dir = makeProject({
+      'specs/001-shortener/runtime.json': CONTRACT({
+        command: 'next dev',
+        port: freePort(),
+        readiness: '/api/health',
+      }),
+    });
+    try {
+      const result = runGate(dir, ['--require-contract', '--dry-run']);
+      expect(result.status).toBe(0);
+      expect(result.output).toContain('Dry run completed');
+      expect(result.output).toContain('/api/health');
+    } finally {
+      removeDir(dir);
+    }
+  });
+
+  it('rejects readiness "/" on a dev-server runtime, because it proves nothing', () => {
+    const dir = makeProject({
+      'specs/001-shortener/runtime.json': CONTRACT({
+        command: 'next dev',
+        port: freePort(),
+        readiness: '/',
+      }),
+    });
+    try {
+      const result = runGate(dir, ['--require-contract', '--dry-run']);
+      expect(result.status).toBe(1);
+      expect(result.output).toContain('readiness path');
+      expect(result.output).toContain('/api/health');
+    } finally {
+      removeDir(dir);
+    }
+  });
+
+  it('does not apply the dev-server readiness rule to a dedicated API process', () => {
+    const dir = makeProject({
+      'specs/001-shortener/runtime.json': CONTRACT({
+        command: 'npm run dev:api',
+        port: freePort(),
+        readiness: '/',
+      }),
+    });
+    try {
+      const result = runGate(dir, ['--require-contract', '--dry-run']);
+      expect(result.status).toBe(0);
     } finally {
       removeDir(dir);
     }
