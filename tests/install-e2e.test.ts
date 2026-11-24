@@ -39,10 +39,13 @@ describe('Bundle Installer Script E2E', () => {
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-verification-verdict.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/bootstrap-project-env.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-design-artifacts.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-dev-entrypoint.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/workflows/viteplus-stitch/AUDITOR.md'))).toBe(true);
     // Design templates are materialized without the .tmpl suffix.
     expect(fs.existsSync(path.join(tempDir, '.specify/templates/playwright.design.config.ts'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/templates/design-audit.spec.ts'))).toBe(true);
+    // Non-UI features declare their runtime with this template.
+    expect(fs.existsSync(path.join(tempDir, '.specify/templates/runtime.json.tmpl'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/extensions.yml'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/workflows/viteplus-stitch/GUARDRAILS.md'))).toBe(true);
 
@@ -291,6 +294,7 @@ hooks:
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-verification-verdict.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/bootstrap-project-env.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-design-artifacts.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-dev-entrypoint.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/workflows/viteplus-stitch/AUDITOR.md'))).toBe(true);
     // Design templates are materialized without the .tmpl suffix.
     expect(fs.existsSync(path.join(tempDir, '.specify/templates/playwright.design.config.ts'))).toBe(true);

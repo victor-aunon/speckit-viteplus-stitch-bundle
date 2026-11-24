@@ -114,6 +114,7 @@ cp "$BUNDLE_ROOT/scripts/check-tasks-complete.sh" "$SPECIFY_DIR/scripts/bash/che
 cp "$BUNDLE_ROOT/scripts/check-verification-verdict.sh" "$SPECIFY_DIR/scripts/bash/check-verification-verdict.sh"
 cp "$BUNDLE_ROOT/scripts/bootstrap-project-env.sh" "$SPECIFY_DIR/scripts/bash/bootstrap-project-env.sh"
 cp "$BUNDLE_ROOT/scripts/check-design-artifacts.sh" "$SPECIFY_DIR/scripts/bash/check-design-artifacts.sh"
+cp "$BUNDLE_ROOT/scripts/check-dev-entrypoint.sh" "$SPECIFY_DIR/scripts/bash/check-dev-entrypoint.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-quality-gate.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-env-config.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/verify-stitch-design.sh"
@@ -126,6 +127,7 @@ chmod +x "$SPECIFY_DIR/scripts/bash/check-tasks-complete.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-verification-verdict.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/bootstrap-project-env.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-design-artifacts.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/check-dev-entrypoint.sh"
 
 # 3. Copy templates
 if [ -d "$BUNDLE_ROOT/templates" ]; then
