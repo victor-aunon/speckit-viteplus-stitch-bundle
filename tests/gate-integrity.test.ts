@@ -275,21 +275,38 @@ exit 0
   });
 
   describe('append-only evidence', () => {
-    it('keeps a history line per run instead of overwriting the audit trail', () => {
+    it('records state changes without duplicating identical runs', () => {
       const featureDir = path.join(tempDir, 'specs/001-tasks');
       const evidenceDir = path.join(featureDir, 'evidence');
       fs.mkdirSync(evidenceDir, { recursive: true });
       fs.writeFileSync(path.join(featureDir, 'tasks.md'), '- [x] T001 done\n- [ ] T002 pending\n', 'utf8');
 
-      runBash(tasksGate, [`--feature-dir=${featureDir}`, '--allow-incomplete'], { stdio: 'pipe' });
-      runBash(tasksGate, [`--feature-dir=${featureDir}`, '--allow-incomplete'], { stdio: 'pipe' });
-
       const historyPath = path.join(evidenceDir, 'tasks.history.jsonl');
-      const lines = fs.readFileSync(historyPath, 'utf8').trim().split('\n');
-      expect(lines).toHaveLength(2);
-      const second = JSON.parse(lines[1]);
-      expect(second.previous_status).toBeDefined();
-      expect(second.tasks_pending).toBe(1);
+      const history = (): any[] =>
+        fs.readFileSync(historyPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+
+      // Identical outcome twice: the audit trail does not grow.
+      runBash(tasksGate, [`--feature-dir=${featureDir}`, '--allow-incomplete'], { stdio: 'pipe' });
+      runBash(tasksGate, [`--feature-dir=${featureDir}`, '--allow-incomplete'], { stdio: 'pipe' });
+      expect(history()).toHaveLength(1);
+      expect(history()[0].status).toBe('skipped');
+
+      // A different outcome is a state change and is appended.
+      try {
+        runBash(tasksGate, [`--feature-dir=${featureDir}`], { stdio: 'pipe' });
+      } catch {
+        // The gate fails on unchecked tasks; that is the point.
+      }
+
+      const events = history();
+      expect(events).toHaveLength(2);
+      expect(events[1].status).toBe('failed');
+      expect(events[1].previous_status).toBe('skipped');
+      expect(events[1].tasks_pending).toBe(1);
+
+      // The current artifact always mirrors the latest history entry.
+      const current = JSON.parse(fs.readFileSync(path.join(evidenceDir, 'tasks.json'), 'utf8'));
+      expect(current.status).toBe(events[1].status);
     });
   });
 

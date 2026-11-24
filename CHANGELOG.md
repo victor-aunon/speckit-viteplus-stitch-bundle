@@ -69,8 +69,10 @@ one-file change plus this changelog.
   and marks `full_visual_verification: false`. The Playwright config/spec
   templates are resolved with their `.tmpl` suffix and fail with an actionable
   error instead of a confusing "no tests found".
-- Evidence is append-only: each gate also writes `<gate>.history.jsonl` and
-  records `previous_status` in the current artifact.
+- Evidence is append-only on state changes: each gate writes `<gate>.json` with
+  the latest snapshot and appends to `<gate>.history.jsonl` only when the
+  outcome changes (timestamp/`previous_status` excluded), so repeated identical
+  runs no longer duplicate entries. Run frequency stays in `.specify/telemetry.jsonl`.
 - The previous `auto_repair` loop only looked at quality/bundle, ran once, and its
   recheck steps swallowed exit codes with `|| true`, so its condition could never
   be true. Replaced by the loops above, whose rechecks propagate real exit codes.

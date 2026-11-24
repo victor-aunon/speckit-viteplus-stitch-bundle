@@ -243,7 +243,31 @@ write_evidence() {
           evidence_type: "production_bundle_budget"
         };
         fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
-        fs.appendFileSync(outPath.replace(/\.json$/, ".history.jsonl"), JSON.stringify(data) + "\n", "utf8");
+        // Append-only, but only on state changes: repeated identical outcomes
+        // do not grow the history (the timestamp is not part of the payload).
+        // Execution frequency lives in .specify/telemetry.jsonl, not here.
+        const historyPath = outPath.replace(/\.json$/, ".history.jsonl");
+        const comparable = (entry) => {
+          // timestamp and previous_status are bookkeeping, not state.
+          const { timestamp, previous_status, ...rest } = entry;
+          return JSON.stringify(rest);
+        };
+        let lastHistory = "";
+        try {
+          const historyLines = fs.readFileSync(historyPath, "utf8").split("\n").filter(Boolean);
+          if (historyLines.length > 0) lastHistory = historyLines[historyLines.length - 1];
+        } catch {}
+        let changed = true;
+        if (lastHistory) {
+          try {
+            changed = comparable(JSON.parse(lastHistory)) !== comparable(data);
+          } catch {
+            changed = true;
+          }
+        }
+        if (changed) {
+          fs.appendFileSync(historyPath, JSON.stringify(data) + "\n", "utf8");
+        }
       ' "$EVIDENCE_DIR/bundle-budget.json" "$status" "$MAX_CHUNK_KB" "$LARGEST_CHUNK_KB" "$LARGEST_CHUNK_NAME" "$MAX_TOTAL_KB" "$TOTAL_KB" "$VIOLATIONS" "$TOTAL_SKIPPED" 2>/dev/null || true
     fi
   fi
