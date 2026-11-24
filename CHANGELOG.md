@@ -23,6 +23,13 @@ one-file change plus this changelog.
   reads the Vite surface and the Node surface behind explicit guards and
   normalises both into one typed object. Projects that copied the old template
   into an API must merge the Node branch (`globalThis.process?.env`).
+- **The quality gates delegate to the declared scripts.** `vp build`, `vp test`
+  and `vp dev` are Vite+ built-ins: they run the built-in Vite/Vitest commands and
+  ignore `package.json`. Following the Vite+ rule (*check `package.json` and
+  `vite.config.ts`, use `vp run <name>` when the project defines a script*), the
+  Build Gate and the bundle-budget gate now use `vp run build` when a `build`
+  script exists, and the Regression Gate uses `vp run test` when the project is not
+  a Vite app. Previously a Next/Nuxt/Astro project was graded with `vite build`.
 
 ### Added
 
@@ -34,6 +41,14 @@ one-file change plus this changelog.
   Template: `.specify/templates/runtime.json.tmpl`.
 - `gate_runtime` is wired into `repair_gates` (3 attempts) and `recheck_runtime`,
   and re-executed by the independent auditor (`AUDITOR.md`).
+- `templates/vite.config.agnostic.ts.tmpl`: the installer now detects
+  `next`/`nuxt`/`astro`/`remix`/`svelte` config files and provisions a Vite+ config
+  without the React plugin, shadcn rules or UI layer boundaries. It is a plain
+  object export so it loads without a local `vite-plus` install.
+- Full-stack framework dev servers are valid runtimes: `next dev`, `nuxt dev`,
+  `astro dev`, `remix dev`, `svelte-kit dev` and `vp run dev` are accepted when the
+  readiness path is specific (`/api/health`), because those frameworks serve their
+  own endpoints from the same dev server.
 
 ### Fixed
 
@@ -49,6 +64,14 @@ one-file change plus this changelog.
   code matched the `65535` of a validation message and probed the wrong port.
   Drift between `runtime.json` and `src/config/env.ts` now surfaces as a failed
   probe instead of a silent wrong-port success.
+- `templates/playwright.design.config.ts.tmpl` hardcoded `localhost:5173` and
+  `vp dev || npm run dev`. It now derives the port from `PLAYWRIGHT_TEST_BASE_URL`,
+  then `PLAYWRIGHT_PORT`, then `PORT`, and launches `vp run dev || npm run dev`, so
+  a Next/Nuxt/Astro app is audited on its real port.
+- A project that merely *owns* a `vite.config.ts` is no longer assumed to run
+  Vitest: the installer provisions that file for non-Vite frameworks too, so the
+  Regression Gate keys the built-in `vp test` on the absence of a framework config
+  instead. Otherwise a Next + Jest project would have run Vitest after installing.
 
 
 ### Fixed

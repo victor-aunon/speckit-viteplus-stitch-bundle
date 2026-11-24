@@ -381,6 +381,15 @@ The API entrypoint is a **new** package.json script, never a rewrite of `dev`:
 }
 ```
 
+**The exception is a full-stack framework**, which already serves its own endpoints
+from its dev server (`app/api/<route>/route.ts` in Next, `server/api/**` in Nuxt).
+There you declare the framework's own command and a **specific** readiness path
+instead of inventing a second server:
+
+```json
+{ "kind": "http", "command": "npm run dev", "port": 3000, "readiness": "/api/health" }
+```
+
 `gate_runtime` then does the part no LLM can fake: it starts `command` in its own
 process group, polls `port` + `readiness` until 2xx or timeout, tears it down, and
 records `evidence/runtime-entrypoint.json`. After the run you reproduce it with:
@@ -394,8 +403,14 @@ Rules worth knowing before you get bitten:
 
 - **A port already answering is exit 2, not a pass.** The gate refuses to grade a
   server it did not start, so a stale process cannot produce a false green.
-- **The contract cannot point at the UI dev server.** `vp dev`, `vite` or `next dev`
-  as the declared `kind: http` command is a contract violation, not a project rule.
+- **Vite built-ins are rejected as the runtime.** `vp dev`, `vite` and `vp preview`
+  always start the built-in Vite dev server and ignore `package.json` scripts
+  ([built-ins vs scripts](https://viteplus.dev/guide/run)), so they can never be the
+  API of a non-Vite project. Framework dev servers (`next dev`, `nuxt dev`,
+  `astro dev`, `remix dev`, `svelte-kit dev`, `vp run dev`) are accepted.
+- **`readiness: "/"` is rejected for a dev-server runtime.** A frontend dev server
+  answers 200 on `/` no matter what the API does, so the probe would pass without
+  proving anything. Declare `/health` or `/api/health`.
 - **`kind: none` needs a `reason`** and is recorded as `skipped`, so the independent
   auditor can check the declaration against the spec instead of trusting silence.
 - **Ports are declared, never guessed.** `runtime.json` must carry the same `port`
@@ -409,6 +424,41 @@ Rules worth knowing before you get bitten:
   and crashes the API on boot; reading only `process.env` breaks the browser bundle.
   Server keys (`PORT`, secrets) stay unprefixed on purpose so they never leak into
   the client bundle.
+
+## Non-Vite Frameworks (Next.js, Nuxt, Astro, Remix, SvelteKit)
+
+Vite+ is a **toolchain**, not a bundler requirement. `vite.config.ts` is its single
+configuration container (`lint`, `fmt`, `check`, `test`, `run`) even when the app is
+built by Next or Nuxt, so the bundle works there too — with three rules:
+
+1. **Built-ins vs scripts.** `vp dev` / `vp build` / `vp test` always run the built-in
+   Vite dev server, Vite build and Vitest. `vp run <name>` / `vpr <name>` run your
+   `package.json` scripts ([docs](https://viteplus.dev/guide/run)). The gates therefore
+   delegate: `vp run build` when the project declares `build` (so `next build` is what
+   runs), `vp run test` when the runner is not Vitest, and `vp run dev` for the visual
+   gate. The built-in `vp test` is only used when the project really is a Vite app
+   (no `next/nuxt/astro/remix/svelte` config, or a `vitest.config.*` present).
+2. **The installer does not inject Vite UI tooling.** When it detects a framework
+   config it provisions `vite.config.ts` from
+   `templates/vite.config.agnostic.ts.tmpl`: no React plugin, no shadcn/Tailwind
+   rules, no UI layer boundaries — but the same complexity limits, `typeCheck` and
+   Clean Architecture boundaries. It is exported as a **plain object** so it loads
+   even when `vite-plus` is not installed locally.
+3. **The visual gate follows the project.** Playwright now launches
+   `vp run dev || npm run dev` and derives the base URL from `PLAYWRIGHT_TEST_BASE_URL`,
+   then `PLAYWRIGHT_PORT`, then `PORT` — instead of hardcoding 5173.
+
+```bash
+# Existing Next.js project
+bash scripts/install.sh --target-dir=.
+# → ~ Detected next: initialized vite.config.ts (Vite+ lint/fmt/boundaries only)
+```
+
+> **Honest scope:** `has_ui: false` in a Next project is exercised end to end
+> (quality + runtime gates, including `next dev` serving `/api/health`). A full UI
+> feature in Next — Stitch tokens, route contracts, Playwright goldens — is
+> URL-based and expected to work, but has not been validated against a real
+> `create-next-app` project yet. Do not read this section as a promise.
 
 ## Standalone Quality Scripts CLI Reference
 
@@ -487,7 +537,7 @@ bash .specify/scripts/bash/check-dev-entrypoint.sh --feature-dir=specs/003-short
 bash .specify/scripts/bash/check-dev-entrypoint.sh --dry-run
 ```
 
-> **Integrity guarantees:** a port already answering before the gate starts is an **error (exit 2)**, not a pass — grading a process the gate did not start would certify nothing. A contract whose command is the frontend dev server (`vp dev`, `vite`, `next dev`) is a contract violation. `{"kind":"none"}` is allowed for domain/CLI features but must carry a `reason`, and it is recorded as `skipped` so the independent auditor can confront it with the spec.
+> **Integrity guarantees:** a port already answering before the gate starts is an **error (exit 2)**, not a pass — grading a process the gate did not start would certify nothing. Vite built-ins (`vp dev`, `vite`, `vp preview`) are a contract violation because they ignore `package.json` scripts, while framework dev servers (`next dev`, `nuxt dev`, `vp run dev`, …) are accepted as long as the readiness path is specific. `{"kind":"none"}` is allowed for domain/CLI features but must carry a `reason`, and it is recorded as `skipped` so the independent auditor can confront it with the spec. `--dry-run` validates the whole contract without starting anything.
 
 ### 4. `check-ghost-classes.sh` (Ghost Classes Gate & Multi-Engine Styling Support)
 Scans all JSX/TSX files for class names in `className` attributes and verifies that each referenced class exists in at least one stylesheet (`src/**/*.css`, `tokens.css`).
