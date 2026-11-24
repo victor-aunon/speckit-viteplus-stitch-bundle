@@ -27,6 +27,7 @@ The workflow will autonomously execute specification audits, UI critiques, atomi
 - 🖌️ **Optional Google Stitch MCP**: Automated creation of design systems, CSS tokens, and canonical UI screens directly from the terminal.
 - ✨ **Impeccable UI Craft Lifecycle**: Full-spectrum visual craft governance for UI features (`has_ui: true`). Runs pre-implementation heuristic art direction (`impeccable critique`), mandates loading skeletons, empty states, and error boundaries in user stories (`impeccable harden`), and polishes motion (`impeccable animate`) and accessibility (`impeccable audit`).
 - 👻 **Ghost Classes Quality Gate**: Static AST scanner that verifies that every CSS class referenced in JSX/TSX is declared in a project stylesheet, eliminating dead or missing styles.
+- 🧪 **Runtime Entrypoint Contract Gate**: Non-UI features (`has_ui: false`) declare their runtime in `specs/<feature>/runtime.json`; the gate starts that command itself, probes the declared port and fails unless it answers HTTP 2xx. A backend feature can no longer pass every gate while `npm run dev` boots the UI dev server and the API only exists behind a manual `tsx src/main.ts`.
 - 🛑 **Interactive Visual Review Gate**: Inspect and approve UI screens and design tokens before writing product code.
 - 🔬 **Strict Stitch Token Verification**: Every token declared in `tokens.css` must be present in the DOM with the exact Stitch value; drift fails the gate. `var(--other-token)` references are resolved exactly as the browser does before comparing, so token aliases are legitimate instead of forcing a de-reference of the design source.
 - 📊 **Structured Telemetry & Observability**: Every quality gate logs structured JSONL events (`.specify/telemetry.jsonl`) recording timestamp, step, model, subagent (integration process), role, gate duration in ms, scope, exit codes, and circuit breaker metrics. `--import-state` folds every workflow step from the active run's `state.json` into the log. Inspect with `emit-telemetry.sh --summary`.
@@ -62,15 +63,15 @@ Run inside the root directory of any repository initialized with Spec Kit (`spec
 ### Option A: Install from a specific GitHub Release (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --release=v1.2.0
+curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --release=v2.0.0
 ```
 
 ### Option B: Install using a downloaded Release `.zip`
 
-If you downloaded `viteplus-stitch-1.2.0.zip` from GitHub Releases:
+If you downloaded `viteplus-stitch-2.0.0.zip` from GitHub Releases:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --zip=./viteplus-stitch-1.2.0.zip
+curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --zip=./viteplus-stitch-2.0.0.zip
 ```
 
 *(Or unzip it and run `bash scripts/install.sh`)*
@@ -258,8 +259,9 @@ Once tasks are complete, the workflow engine executes deterministic shell gates 
 2. **`bootstrap_env`**: Runs `bootstrap-project-env.sh` — deterministic, idempotent `git init` + baseline commit (`.specify/workflows/runs/` and telemetry ignored) and Playwright config/design-audit materialization. The same script also runs first, as `bootstrap_env_early`, before any agent step. No LLM involved: these were never application bugs. It also runs **first** (`bootstrap_env_early`, right after `guardrails` and before any agent step), so no gate ever audits an ancestor repository — the `$HOME` trap — while spec, plan or designs are being written. The baseline commit uses `--allow-empty`, so a project with nothing to stage still gets a `HEAD` for `git diff HEAD`.
 3. **`gate_quality`**: Runs `check-quality-gate.sh` (Vite+ / Oxfmt / Oxlint / Clean Architecture boundaries / executed-test count / compilation).
 4. **`gate_bundle`**: Runs `check-bundle-budget.sh` (production asset limits <250KB per chunk, <1000KB total).
-5. **`gate_contracts`** (when `has_ui: true`): Runs `check-contracts.sh --require-ui` (selectors must exist in `src/`) and `verify-stitch-design.sh --require-ui` (full Playwright).
-6. **`gate_tasks`**: Runs `check-tasks-complete.sh`; unchecked items in `tasks.md` fail the gate.
+5. **`gate_runtime`** (when `has_ui: false`): Runs `check-dev-entrypoint.sh --require-contract` — starts the command declared in `specs/<feature>/runtime.json`, probes its port/readiness path, and fails without HTTP 2xx. Treats an already-occupied port as an error instead of grading a process it did not start.
+6. **`gate_contracts`** (when `has_ui: true`): Runs `check-contracts.sh --require-ui` (selectors must exist in `src/`) and `verify-stitch-design.sh --require-ui` (full Playwright).
+7. **`gate_tasks`**: Runs `check-tasks-complete.sh`; unchecked items in `tasks.md` fail the gate.
 
 **Self-healing (`repair_gates`, `do-while`, `max_iterations: 3`)**:
    - If every gate exits `0`, the loop body never runs and the workflow proceeds to verification.
@@ -269,7 +271,7 @@ Once tasks are complete, the workflow engine executes deterministic shell gates 
 ### Step 10: Independent Verification & Machine Verdict (`verify`, `gate_verdict`, `repair_verdict`)
 The workflow executes final empirical certification against raw machine evidence. The auditor follows `.specify/workflows/viteplus-stitch/AUDITOR.md` (one canonical protocol, shared by the first audit and any re-audit):
 1. **Re-execute the machine**: runs the gates itself and inspects outputs, instead of trusting the dashboard or the agent's summary.
-2. **Evidence audit**: `quality-gate.json` (with `tests_executed > 0`), `bundle-budget.json`, `contracts.json`, `tasks.json`, `stitch-design.json` (with `full_visual_verification: true`), and `.specify/telemetry.jsonl`. Structural-only artifacts (`stitch-design-tokens.json`) never satisfy a UI claim.
+2. **Evidence audit**: `quality-gate.json` (with `tests_executed > 0`), `bundle-budget.json`, `runtime-entrypoint.json` (non-UI features), `contracts.json`, `tasks.json`, `stitch-design.json` (with `full_visual_verification: true`), and `.specify/telemetry.jsonl`. Structural-only artifacts (`stitch-design-tokens.json`) never satisfy a UI claim.
 3. **Accessibility & Craft Audit**: When `has_ui: true`, activates `impeccable` to audit WCAG 2.1 AA compliance, keyboard navigation (`:focus-visible`), touch targets (44px), and reduced-motion support (`impeccable audit` + `impeccable animate`).
 4. **Scenario Verification Matrix**: Cross-checks each Given/When/Then scenario against executable proof.
 5. **Machine verdict**: writes `specs/<feature>/evidence/verification.json` with `verdict: "pass" | "reject"`, severity counters, scenario ratio and blocking `reasons`.
@@ -290,7 +292,7 @@ When running `specify workflow run viteplus-stitch`, you can configure the behav
 |---|:---:|:---:|:---:|---|
 | **`spec`** | `string` | — | **Yes** | Natural language description or feature prompt detailing what to build. |
 | **`scope`** | `string` | `""` | No | Restricts all code changes, test executions, and blast radius checks to a specific feature slice (e.g. `src/features/billing`). When empty, auto-detects from git status or targets the full project. |
-| **`has_ui`** | `boolean` | `true` | No | Controls UI-specific phases. When `false`, completely skips Google Stitch, Impeccable critique, Playwright visual gates, route contracts, and ghost classes check. Ideal for backend, domain, or CLI features. |
+| **`has_ui`** | `boolean` | `true` | No | Controls UI-specific phases. When `false`, skips Google Stitch, Impeccable critique, Playwright visual gates, route contracts and ghost classes, **and** activates the non-UI runtime contract (`gate_runtime` + `runtime.json`, see below). It does **not** remove React/Vite from the project: a backend feature inside a React app keeps its UI tooling and its `dev` script. |
 | **`enable_stitch`** | `boolean` | `true` | No | When `has_ui: true`, toggles whether to use Google Stitch MCP for automated design generation (`true`) or use component wireframes defined directly in `plan.md` (`false`). |
 | **`stitch_project_id`** | `string` | `""` | No | ID of an existing Google Stitch Studio project (e.g. `4044680601076201931`). When provided, imports your authored screens directly via `list_screens` instead of generating new ones with AI. |
 | **`auto_continue`** | `boolean` | `false` | No | Enables **Unattended Mode**. When `true`, automatically bypasses human approval gates (`review-spec`, `review-design`, and phase-by-phase pauses) once automated quality gates pass. When `false` (default), pauses for human confirmation. |
@@ -353,6 +355,61 @@ specify workflow run viteplus-stitch \
 
 ---
 
+## Non-UI Features (`has_ui: false`) — The Runtime Contract
+
+`has_ui` describes the **feature**, not the **project**. The common case is a backend,
+domain or CLI feature living inside an existing React/Vite repository, so the bundle
+**never** removes React, `vite.config.ts`, or the project's own `dev` script.
+
+The feature declares how it runs in `specs/<feature>/runtime.json` (start from
+`.specify/templates/runtime.json.tmpl`):
+
+```json
+{ "kind": "http", "command": "npm run dev:api", "port": 3000, "readiness": "/health" }
+{ "kind": "none", "reason": "domain-only: pure calculations, no entrypoint" }
+```
+
+The API entrypoint is a **new** package.json script, never a rewrite of `dev`:
+
+```json
+{
+  "scripts": {
+    "dev": "vp dev",
+    "dev:api": "tsx watch src/main.ts",
+    "start:api": "tsx src/main.ts"
+  }
+}
+```
+
+`gate_runtime` then does the part no LLM can fake: it starts `command` in its own
+process group, polls `port` + `readiness` until 2xx or timeout, tears it down, and
+records `evidence/runtime-entrypoint.json`. After the run you reproduce it with:
+
+```bash
+npm run dev:api
+curl -i localhost:3000/health
+```
+
+Rules worth knowing before you get bitten:
+
+- **A port already answering is exit 2, not a pass.** The gate refuses to grade a
+  server it did not start, so a stale process cannot produce a false green.
+- **The contract cannot point at the UI dev server.** `vp dev`, `vite` or `next dev`
+  as the declared `kind: http` command is a contract violation, not a project rule.
+- **`kind: none` needs a `reason`** and is recorded as `skipped`, so the independent
+  auditor can check the declaration against the spec instead of trusting silence.
+- **Ports are declared, never guessed.** `runtime.json` must carry the same `port`
+  your typed env config exports; the gate probes exactly that. If the two drift,
+  nothing answers and the gate fails — which is the drift detector working. Use
+  `--port=<N>` only for ad-hoc verifications.
+- **The env module must read BOTH runtimes.** The shipped
+  `.specify/templates/env.config.ts.tmpl` reads the Vite surface
+  (`import.meta.env`, browser) and the Node surface (`globalThis.process?.env`, API)
+  behind explicit guards. Reading only `import.meta.env` is `undefined` under Node
+  and crashes the API on boot; reading only `process.env` breaks the browser bundle.
+  Server keys (`PORT`, secrets) stay unprefixed on purpose so they never leak into
+  the client bundle.
+
 ## Standalone Quality Scripts CLI Reference
 
 > **💡 Mental Model Note:** You do **not** need to run these scripts manually during the normal SDD workflow. Spec Kit invokes them automatically inside lifecycle hooks (`after_task` and `after_implement`). This reference is provided for running manual checks in your local terminal or integrating them into CI/CD pipelines (e.g. GitHub Actions).
@@ -413,7 +470,26 @@ bash .specify/scripts/bash/check-contracts.sh \
 bash .specify/scripts/bash/check-contracts.sh --manifest=specs/001-feature/designs/routes-manifest.json --scope=src/features/billing
 ```
 
-### 3. `check-ghost-classes.sh` (Ghost Classes Gate & Multi-Engine Styling Support)
+### 3. `check-dev-entrypoint.sh` (Runtime Entrypoint Contract Gate — non-UI features)
+Verifies that a non-UI feature's declared runtime really starts and serves. It reads `specs/<feature>/runtime.json`, starts the declared command in its own process group, polls the declared port/readiness path until HTTP 2xx or timeout, then tears the process down and writes `evidence/runtime-entrypoint.json`.
+
+```bash
+# Default: verify the newest feature's contract (skips cleanly when none is declared)
+bash .specify/scripts/bash/check-dev-entrypoint.sh
+
+# Non-UI feature: the contract is mandatory (used by gate_runtime)
+bash .specify/scripts/bash/check-dev-entrypoint.sh --require-contract
+
+# Point at a specific feature / override the probe without editing the contract
+bash .specify/scripts/bash/check-dev-entrypoint.sh --feature-dir=specs/003-shortener --port=4000 --path=/health
+
+# Resolve the contract without starting anything
+bash .specify/scripts/bash/check-dev-entrypoint.sh --dry-run
+```
+
+> **Integrity guarantees:** a port already answering before the gate starts is an **error (exit 2)**, not a pass — grading a process the gate did not start would certify nothing. A contract whose command is the frontend dev server (`vp dev`, `vite`, `next dev`) is a contract violation. `{"kind":"none"}` is allowed for domain/CLI features but must carry a `reason`, and it is recorded as `skipped` so the independent auditor can confront it with the spec.
+
+### 4. `check-ghost-classes.sh` (Ghost Classes Gate & Multi-Engine Styling Support)
 Scans all JSX/TSX files for class names in `className` attributes and verifies that each referenced class exists in at least one stylesheet (`src/**/*.css`, `tokens.css`).
 
 **Multi-Engine Style Auto-Detection:** Automatically detects if the project uses a dynamic or scoped CSS solution:
@@ -446,7 +522,7 @@ bash .specify/scripts/bash/check-ghost-classes.sh --force
 bash .specify/scripts/bash/check-ghost-classes.sh --dry-run
 ```
 
-### 4. `verify-stitch-design.sh` (Stitch Token & Visual Gate)
+### 5. `verify-stitch-design.sh` (Stitch Token & Visual Gate)
 Runs route/component contracts, verifies `tokens.css` against DOM `:root` computed styles, and then Playwright visual snapshot regression.
 
 > **💡 Graceful Degradation / Auto-Bypass:** If `specs/<feature>/designs` does not exist (e.g. backend features run with `has_ui=false` or UI features run with `enable_stitch=false`), this script automatically **skips execution and exits with code 0**. If `tokens.css` is present but golden `.png` screenshots are omitted (text-only HTML assets), token verification and WCAG AA accessibility tests still run while screenshot diffing is bypassed by design — the artifact then claims tokens/DOM verification, not pixel parity.
@@ -464,7 +540,7 @@ bash .specify/scripts/bash/verify-stitch-design.sh --feature-dir=specs/001-featu
 bash .specify/scripts/bash/verify-stitch-design.sh --skip-orphans
 ```
 
-### 5. `check-bundle-budget.sh` (Production Performance Gate)
+### 6. `check-bundle-budget.sh` (Production Performance Gate)
 Executes `vp build` (Rolldown engine) and inspects production bundle sizes against defined budgets.
 
 ```bash
@@ -497,14 +573,14 @@ bash .specify/scripts/bash/check-bundle-budget.sh --strict
 
 **Brownfield grandfathering:** the *total* budget never blocks on inherited weight. If `dist/` already exceeds the total budget and no baseline is recorded, the gate passes with a `[BROWNFIELD BUDGET]` warning and prints the exact command to record the baseline. Once a baseline exists, any growth beyond `baseline + tolerance` fails. Per-chunk budgets stay enforced (except for `ignoreChunks` matches), so an agent-authored heavy chunk is still blocked.
 
-### 6. `check-env-config.sh` (Direct Environment Access Guard)
+### 7. `check-env-config.sh` (Direct Environment Access Guard)
 Ensures that no application file accesses `process.env` or `import.meta.env` directly outside the designated typed module.
 
 ```bash
 bash .specify/scripts/bash/check-env-config.sh --env-config=src/config/env.ts
 ```
 
-### 7. `check-blast-radius.sh` (Scope & Circuit Breaker Guard)
+### 8. `check-blast-radius.sh` (Scope & Circuit Breaker Guard)
 Prevents autonomous agents from modifying protected quality scripts, workflows, or files outside the feature scope.
 
 The project root must own its git repository. If `git rev-parse --show-toplevel` resolves to an ancestor (the `$HOME` trap), the gate **fails** instead of reporting that ancestor's modified files as your blast radius. All `git status` scans are scoped to the project root.
@@ -519,7 +595,7 @@ bash .specify/scripts/bash/check-blast-radius.sh --require-git
 bash .specify/scripts/bash/check-blast-radius.sh --allow-foreign-git
 ```
 
-### 8. `bootstrap-project-env.sh` (Deterministic Project Bootstrap)
+### 9. `bootstrap-project-env.sh` (Deterministic Project Bootstrap)
 Fixes the two gate failures that were never application bugs, idempotently and without an LLM:
 
 1. Creates `.git` when the project root has none and records a baseline commit so diff-based gates (`anti_tampering`, `blast_radius`) have a `HEAD`. `.gitignore` is updated first with `node_modules/`, `dist/`, `.specify/workflows/runs/` and `.specify/telemetry.jsonl`: run state stores the stdout/stderr of every step (agent transcripts), so it must never enter the snapshot.
@@ -537,7 +613,7 @@ bash .specify/scripts/bash/bootstrap-project-env.sh --no-git
 bash .specify/scripts/bash/bootstrap-project-env.sh --no-templates
 ```
 
-### 9. `check-design-artifacts.sh` (Design-Artifact Gate)
+### 10. `check-design-artifacts.sh` (Design-Artifact Gate)
 `generate-designs` is a prompt, and a prompt can finish without writing a single file. This gate makes that failure cheap: it runs immediately after the design step and fails in seconds, before any implementation tokens are spent.
 
 Requires, for a UI feature:
@@ -554,7 +630,7 @@ bash .specify/scripts/bash/check-design-artifacts.sh --feature-dir=specs/001-fea
 bash .specify/scripts/bash/check-design-artifacts.sh --allow-missing
 ```
 
-### 10. `check-tasks-complete.sh` (Task Completion Gate)
+### 11. `check-tasks-complete.sh` (Task Completion Gate)
 Completion cannot be proven by a scaffold. Fails while `tasks.md` still contains unchecked items and prints the first pending tasks.
 
 ```bash
@@ -565,7 +641,7 @@ bash .specify/scripts/bash/check-tasks-complete.sh
 bash .specify/scripts/bash/check-tasks-complete.sh --allow-incomplete
 ```
 
-### 11. `check-verification-verdict.sh` (Machine Verdict Gate)
+### 12. `check-verification-verdict.sh` (Machine Verdict Gate)
 The final verification step is a prompt, and a prompt cannot fail a workflow. This gate reads the machine-readable verdict the auditor must write and turns it into an exit code. A prose `VERIFICATION_REPORT.md` alone is not evidence.
 
 ```bash
@@ -589,7 +665,7 @@ bash .specify/scripts/bash/check-verification-verdict.sh --allow-missing
 }
 ```
 
-### 12. `emit-telemetry.sh` (Structured Telemetry & Observability Emitter)
+### 13. `emit-telemetry.sh` (Structured Telemetry & Observability Emitter)
 Logs structured JSONL execution events across all quality gates to `.specify/telemetry.jsonl`. Tracks execution durations in milliseconds, exit codes, feature scopes, circuit breaker trip events, and **provenance**: which workflow step ran, which AI model executed it, and which subagent/integration process was launched (`none` when not applicable).
 
 The summary renders `TIMESTAMP | STEP | AGENT | MODEL | SUBAGENT | STATUS | DURATION`:
