@@ -192,4 +192,34 @@ describe('Environment configuration quality gate', () => {
     const qualityGate = fs.readFileSync(qualityGatePath, 'utf8');
     expect(qualityGate).toContain('check-env-config.sh');
   });
+
+  describe('shipped env template', () => {
+    const templatePath = path.join(root, 'templates/env.config.ts.tmpl');
+
+    it('passes the gate when used as src/config/env.ts', () => {
+      const template = fs.readFileSync(templatePath, 'utf8');
+      const dir = makeProject({
+        'src/config/env.ts': template,
+        'src/features/billing/charge.ts':
+          'import { env } from "../../config/env";\nexport const url = env.API_BASE_URL;\n',
+      });
+      try {
+        const result = runGate(dir);
+        expect(result.status).toBe(0);
+        expect(result.output).toContain('ENV CONFIG GATE PASSED');
+      } finally {
+        removeDir(dir);
+      }
+    });
+
+    it('reads both runtimes, because a non-UI feature runs under Node', () => {
+      const template = fs.readFileSync(templatePath, 'utf8');
+      // Browser surface (Vite) and Node surface must BOTH be present: with only
+      // `import.meta.env` an API booting under tsx sees `undefined` and throws.
+      expect(template).toContain('import.meta.env');
+      expect(template).toMatch(/globalThis[\s\S]*?process/);
+      // The runtime gate reads this default, so the port must be declared here.
+      expect(template).toContain('PORT');
+    });
+  });
 });
