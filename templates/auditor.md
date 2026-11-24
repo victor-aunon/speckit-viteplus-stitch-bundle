@@ -24,6 +24,11 @@ polished the report looks:
   anti-tampering/blast-radius evidence is invalid: the gates audited another repo.
 - **Hand-edited evidence.** Evidence artifacts must be produced by the gates. If a
   status does not match a re-execution you performed, the verdict is `reject`.
+- **Stale evidence is not a defect.** `<gate>.json` is only the latest snapshot and
+  a gate may have been re-run after it was written. Before flagging a failure, check
+  `<gate>.history.jsonl`: if a later entry says `passed`, the artifact is stale —
+  re-run the gate and trust the fresh result. Never "fix" green code to match a
+  stale red artifact, and never edit the artifact to make it agree.
 
 ## 2. Disk-level evidence audit
 

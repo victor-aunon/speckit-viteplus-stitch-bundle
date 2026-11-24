@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import ts from 'typescript';
 import { runBash } from './helpers/bash';
 import { removeDir } from './helpers/fs';
 
@@ -41,6 +42,72 @@ describe('Strict Stitch design token gate', () => {
     // The old weak assertion (only checking the bag of styles exists) must be gone.
     expect(content).not.toContain('expect(rootStyles).toBeDefined()');
     expect(content).not.toContain('--color-bg-canvas');
+  });
+
+  // Execute the template's pure token helpers (no Playwright import needed):
+  // slice the dependency-free section and evaluate it.
+  const loadTokenHelpers = () => {
+    const source = fs.readFileSync(specTmpl, 'utf8');
+    const start = source.indexOf('export type DesignTokens');
+    const end = source.indexOf('export const DETERMINISTIC_RENDER_CSS');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const pure = source.slice(start, end).replace(/export /g, '');
+    // The helpers are TypeScript: transpile before evaluating them.
+    const javascript = ts.transpileModule(pure, {
+      compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2020 }
+    }).outputText;
+    const factory = new Function(
+      `${javascript}; return { parseDesignTokens, diffDesignTokens, normalizeTokenValue };`
+    );
+    return factory() as {
+      parseDesignTokens: (css: string) => Record<string, string>;
+      diffDesignTokens: (
+        expected: Record<string, string>,
+        actual: Record<string, string>
+      ) => string[];
+      normalizeTokenValue: (value: string) => string;
+    };
+  };
+
+  it('resolves var() references in tokens.css like the browser does', () => {
+    const { parseDesignTokens } = loadTokenHelpers();
+
+    const tokens = parseDesignTokens(
+      ':root {\n' +
+        '  --space-6: 2rem;\n' +
+        '  --layout-gutter: var(--space-6);\n' +
+        '  --mobile-gutter: var( --space-6 );\n' +
+        '  --nested: var(--layout-gutter);\n' +
+        '  --with-fallback: var(--missing, 1rem);\n' +
+        '}\n'
+    );
+
+    // The DOM reports the substituted value, not the reference.
+    expect(tokens['--layout-gutter']).toBe('2rem');
+    expect(tokens['--mobile-gutter']).toBe('2rem');
+    expect(tokens['--nested']).toBe('2rem');
+    expect(tokens['--with-fallback']).toBe('1rem');
+  });
+
+  it('does not hang on cyclic token references', () => {
+    const { parseDesignTokens } = loadTokenHelpers();
+    const tokens = parseDesignTokens(':root { --a: var(--b); --b: var(--a); }');
+    expect(Object.keys(tokens)).toEqual(['--a', '--b']);
+  });
+
+  it('compares resolved references against DOM computed values without drift', () => {
+    const { parseDesignTokens, diffDesignTokens } = loadTokenHelpers();
+
+    const expected = parseDesignTokens(
+      ':root { --space-6: 2rem; --layout-gutter: var(--space-6); --radius: 8px; }'
+    );
+    // What getComputedStyle returns after CSS substitution.
+    const actual = { '--space-6': '2rem', '--layout-gutter': '2rem', '--radius': '8px' };
+
+    expect(diffDesignTokens(expected, actual)).toEqual([]);
+    // A real drift is still caught.
+    expect(diffDesignTokens(expected, { ...actual, '--radius': '12px' })).toHaveLength(1);
   });
 
   it('design-audit template defines deterministic render CSS and supports mock fixtures and selectors', () => {

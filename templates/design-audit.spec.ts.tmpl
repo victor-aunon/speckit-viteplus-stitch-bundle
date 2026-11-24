@@ -11,15 +11,33 @@ const TOKEN_DECLARATION = /(--[A-Za-z0-9_-]+)\s*:\s*([^;{}]+);/g;
  * tokens.css is the canonical source of truth for the design system.
  */
 export function parseDesignTokens(css: string): DesignTokens {
-  const tokens: DesignTokens = {};
+  const declared: DesignTokens = {};
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
   let match: RegExpExecArray | null;
 
   while ((match = TOKEN_DECLARATION.exec(withoutComments)) !== null) {
-    tokens[match[1]] = match[2].trim().replace(/\s+/g, ' ');
+    declared[match[1]] = match[2].trim().replace(/\s+/g, ' ');
   }
 
-  return tokens;
+  // Custom properties are substituted at computed-value time, so the DOM reports
+  // the resolved value of `--gutter: var(--space-6)` as `2rem`, never as the
+  // reference. Comparing the raw declaration would fail for every token alias
+  // and force a semantically lossless de-reference of the design source just to
+  // satisfy a literal string match.
+  const resolveReferences = (value: string, seen: Set<string>): string =>
+    value.replace(/var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,\s*([^()]*))?\)/g, (whole, name: string, fallback?: string) => {
+      if (seen.has(name)) return whole;
+      const referenced = declared[name];
+      if (referenced === undefined) return (fallback ?? whole).trim();
+      return resolveReferences(referenced, new Set([...seen, name]));
+    });
+
+  const resolved: DesignTokens = {};
+  for (const [name, value] of Object.entries(declared)) {
+    resolved[name] = resolveReferences(value, new Set([name]));
+  }
+
+  return resolved;
 }
 
 export function normalizeTokenValue(value: string): string {

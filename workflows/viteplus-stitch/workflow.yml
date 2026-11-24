@@ -352,6 +352,10 @@ steps:
                 `contracts.json`, `tasks.json` and `.specify/telemetry.jsonl`.
               - Reproduce each failure by running the real gate in the terminal before
                 changing anything.
+              - STALE EVIDENCE: `*.json` is only the latest snapshot; check
+                `*.history.jsonl`. If a later entry passed, the artifact is stale.
+                Re-run the gate and trust the fresh result. Never change green code
+                to satisfy a stale red artifact, and never edit evidence by hand.
 
               REPAIR RULES (NON-NEGOTIABLE):
               - NEVER pass `--allow-no-tests`, `--allow-incomplete`, `--allow-missing`,

@@ -12,6 +12,11 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- The visual audit compared raw `tokens.css` declarations against DOM computed
+  values, so any token alias (`--layout-gutter: var(--space-6)` -> `2rem`) could
+  never match and the only way to pass was de-referencing the design source.
+  `parseDesignTokens` now resolves `var()` chains (including fallbacks and cyclic
+  guards) exactly like the browser.
 - Telemetry provenance lied twice: `state.json` stores `step_config.model`
   verbatim when the resolved value is empty, so `"{{ inputs.model }}"` was
   recorded as a model name (now reported as `integration-default`, or `none` for
