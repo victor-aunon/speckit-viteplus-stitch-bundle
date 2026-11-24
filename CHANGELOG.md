@@ -12,6 +12,11 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- `bootstrap_env_early` now runs first, right after `guardrails`, instead of
+  before `tasks`: until the project owns its repository every diff-based gate
+  audits an ancestor repository, so waiting until mid-run left spec/plan/design
+  exposed. The baseline commit uses `--allow-empty`, guaranteeing a `HEAD` for
+  `git diff HEAD` even when nothing is staged.
 - Each repair iteration now resets the circuit breaker before the agent runs, so
   attempt 3 is not consumed by `CIRCUIT BREAKER TRIPPED` and a resumed run does not
   start blocked. The breaker still stops runaway loops inside a task.

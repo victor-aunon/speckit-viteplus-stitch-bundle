@@ -85,6 +85,16 @@ steps:
 
       Acknowledge this rule and stop. Do not modify any files in this step.
 
+  # Git ownership and Playwright assets must exist BEFORE the agent writes
+  # anything: until the project root owns its repository, every diff-based gate
+  # (anti-tampering, blast radius) audits an ancestor repository instead — the
+  # classic $HOME trap. Deterministic and idempotent, so it runs first.
+  - id: bootstrap_env_early
+    type: shell
+    continue_on_error: true
+    run: |
+      bash .specify/scripts/bash/bootstrap-project-env.sh || true
+
   - id: specify
     command: speckit.specify
     integration: "{{ inputs.integration }}"
@@ -244,15 +254,6 @@ steps:
         message: "Review UI design proposal and Impeccable critique in specs/<feature>/designs/DESIGN_CRITIQUE.md."
         options: [approve, reject]
         on_reject: abort
-
-  # Git ownership and design assets must exist BEFORE the agent writes code:
-  # the per-task quality gate (hooks) and blast-radius audit would otherwise scan
-  # an ancestor repository.
-  - id: bootstrap_env_early
-    type: shell
-    continue_on_error: true
-    run: |
-      bash .specify/scripts/bash/bootstrap-project-env.sh || true
 
   - id: tasks
     command: speckit.tasks

@@ -79,6 +79,16 @@ describe('bootstrap-project-env.sh', () => {
     expect(git('log', '--oneline').trim().split('\n')).toHaveLength(1);
   });
 
+  it('always leaves a HEAD even when there is nothing to commit', () => {
+    // A repository without a HEAD makes `git diff HEAD` fail, blinding the
+    // anti-tampering gate.
+    const output = runBash(scriptPath, [`--root=${tempDir}`, '--no-templates']);
+
+    expect(output).toContain('Recorded baseline commit');
+    expect(git('rev-parse', '--verify', 'HEAD').trim()).toMatch(/^[0-9a-f]{40}$/);
+    expect(git('status', '--porcelain').trim()).toBe('');
+  });
+
   it('never initializes a repository that already exists', () => {
     git('init', '-q');
     git('config', 'user.email', 'test@example.com');

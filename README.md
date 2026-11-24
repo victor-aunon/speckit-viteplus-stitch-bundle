@@ -49,7 +49,7 @@ The workflow will autonomously execute specification audits, UI critiques, atomi
    ```
 3. **Google Stitch MCP** configured in your AI agent environment (**fully optional**). The bundle no longer declares Stitch under `requires.mcp`, so `specify bundle install` works on any machine; without the MCP server the workflow degrades to local wireframe HTML + `routes-manifest.json` (see `enable_stitch`).
 4. **Playwright** installed in the project (`npx playwright install --with-deps chromium`).
-5. **Git** in the project root. The anti-tampering and blast-radius gates audit the project's own repository; `bootstrap-project-env.sh` runs `git init` + a baseline commit automatically, and the gates refuse to run when `git rev-parse --show-toplevel` points at an ancestor (for example `$HOME`).
+5. **Git** in the project root. The anti-tampering and blast-radius gates audit the project's own repository; the workflow's first step (`bootstrap_env_early`) runs `git init` + a baseline commit before any agent work, and the gates refuse to run when `git rev-parse --show-toplevel` points at an ancestor (for example `$HOME`).
 
 > **Windows note:** use **Git Bash** to run the installer and the `.sh` quality gates. PowerShell works for `npm test`, but if `bash` resolves to WSL (`C:\Windows\System32\bash.exe`), the test suite automatically prefers Git Bash when it is installed. Git Bash is recommended for the workflow scripts themselves.
 
@@ -255,7 +255,7 @@ The agent executes tasks phase by phase.
 ### Step 9: Imperative Shell Quality Gates & Self-Healing (`bootstrap_env`, `gate_*`, `repair_gates`)
 Once tasks are complete, the workflow engine executes deterministic shell gates in the host OS with `continue_on_error: true`:
 1. **`bootstrap_deps`**: Ensures `node_modules` exists via `vp install` or `npm install`.
-2. **`bootstrap_env`**: Runs `bootstrap-project-env.sh` — deterministic, idempotent `git init` + baseline commit (`node_modules/` and `dist/` ignored) and Playwright config/design-audit materialization. No LLM involved: these were never application bugs. It also runs **earlier** (`bootstrap_env_early`, right before `tasks`) so the per-task hooks never audit an ancestor repository while the agent writes code.
+2. **`bootstrap_env`**: Runs `bootstrap-project-env.sh` — deterministic, idempotent `git init` + baseline commit (`.specify/workflows/runs/` and telemetry ignored) and Playwright config/design-audit materialization. The same script also runs first, as `bootstrap_env_early`, before any agent step. No LLM involved: these were never application bugs. It also runs **first** (`bootstrap_env_early`, right after `guardrails` and before any agent step), so no gate ever audits an ancestor repository — the `$HOME` trap — while spec, plan or designs are being written. The baseline commit uses `--allow-empty`, so a project with nothing to stage still gets a `HEAD` for `git diff HEAD`.
 3. **`gate_quality`**: Runs `check-quality-gate.sh` (Vite+ / Oxfmt / Oxlint / Clean Architecture boundaries / executed-test count / compilation).
 4. **`gate_bundle`**: Runs `check-bundle-budget.sh` (production asset limits <250KB per chunk, <1000KB total).
 5. **`gate_contracts`** (when `has_ui: true`): Runs `check-contracts.sh --require-ui` (selectors must exist in `src/`) and `verify-stitch-design.sh --require-ui` (full Playwright).

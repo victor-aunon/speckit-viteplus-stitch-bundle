@@ -15,6 +15,7 @@ describe('Workflow YAML Schema Validation', () => {
     const stepIds = wf.steps.map((s: any) => s.id);
     expect(stepIds).toEqual([
       'guardrails',
+      'bootstrap_env_early',
       'specify',
       'audit-spec',
       'review-spec',
@@ -22,7 +23,6 @@ describe('Workflow YAML Schema Validation', () => {
       'generate-designs',
       'critique-design',
       'review-design',
-      'bootstrap_env_early',
       'tasks',
       'implement',
       'bootstrap_deps',
@@ -78,6 +78,14 @@ describe('Workflow YAML Schema Validation', () => {
     expect(bootstrapEnv.type).toBe('shell');
     expect(bootstrapEnv.continue_on_error).toBe(true);
     expect(bootstrapEnv.run).toContain('bootstrap-project-env.sh');
+
+    // It must also run BEFORE the first agent step; otherwise every diff-based
+    // gate audits an ancestor repository ($HOME) while spec/plan/design run.
+    const stepOrder = wf.steps.map((s: any) => s.id);
+    const earlyIndex = stepOrder.indexOf('bootstrap_env_early');
+    expect(earlyIndex).toBeGreaterThan(stepOrder.indexOf('guardrails'));
+    expect(earlyIndex).toBeLessThan(stepOrder.indexOf('specify'));
+    expect(earlyIndex).toBeLessThan(stepOrder.indexOf('tasks'));
 
     // Bounded self-healing loop: every deterministic gate is repaired and re-run
     const repairGates = wf.steps.find((s: any) => s.id === 'repair_gates');

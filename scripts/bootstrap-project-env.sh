@@ -125,7 +125,7 @@ if [ "$DO_GIT" = true ] && command -v git >/dev/null 2>&1; then
       if git -C "$ROOT" \
         -c user.name="spec-kit bootstrap" \
         -c user.email="spec-kit@localhost" \
-        commit -q -m "chore: baseline snapshot before spec-driven implementation" 2>/dev/null; then
+        commit -q --allow-empty -m "chore: baseline snapshot before spec-driven implementation" 2>/dev/null; then
         echo "✓ Recorded baseline commit (diff-based gates now have a HEAD)"
         ACTIONS=$((ACTIONS + 1))
       else
