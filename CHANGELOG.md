@@ -12,6 +12,12 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- Each repair iteration now resets the circuit breaker before the agent runs, so
+  attempt 3 is not consumed by `CIRCUIT BREAKER TRIPPED` and a resumed run does not
+  start blocked. The breaker still stops runaway loops inside a task.
+- The baseline commit no longer includes `.specify/workflows/runs/` or
+  `.specify/telemetry.jsonl`: `state.json` stores the stdout/stderr of every
+  prompt/command step, so the snapshot could commit agent transcripts.
 - `has_ui=true` with `enable_stitch=false` skipped `generate-designs` entirely
   (its condition was `has_ui and enable_stitch`), so `critique-design` ran on
   nothing and the `--require-ui` gates failed with no artifacts. The step now
@@ -97,6 +103,11 @@ one-file change plus this changelog.
 
 ### Added
 
+- `check-design-artifacts.sh` + `design_artifacts` step: a deterministic gate right
+  after `generate-designs`. A prompt could "complete" without writing screens,
+  `tokens.css` or the manifest, and the failure only appeared after implementation.
+  It now fails in seconds with the exact missing list (`tokens.css`, `no_tokens`,
+  `screens_html`, `routes-manifest.json:invalid`, missing fixtures).
 - Telemetry provenance: every `.specify/telemetry.jsonl` record now carries the
   workflow `step`, the AI `model`, and the `subagent` (integration process) that
   executed it, with an explicit `none` when a field does not apply.

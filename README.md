@@ -30,7 +30,7 @@ The workflow will autonomously execute specification audits, UI critiques, atomi
 - 🛑 **Interactive Visual Review Gate**: Inspect and approve UI screens and design tokens before writing product code.
 - 🔬 **Strict Stitch Token Verification**: Every token declared in `tokens.css` must be present in the DOM with the exact Stitch value; drift fails the gate. `var(--other-token)` references are resolved exactly as the browser does before comparing, so token aliases are legitimate instead of forcing a de-reference of the design source.
 - 📊 **Structured Telemetry & Observability**: Every quality gate logs structured JSONL events (`.specify/telemetry.jsonl`) recording timestamp, step, model, subagent (integration process), role, gate duration in ms, scope, exit codes, and circuit breaker metrics. `--import-state` folds every workflow step from the active run's `state.json` into the log. Inspect with `emit-telemetry.sh --summary`.
-- 🛡️ **Machine-Generated Evidence for Definition of Done**: Eliminates subjective agent self-reporting. Generates raw machine proof artifacts in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `tasks.json`, `verification.json`, `stitch-design.json`) required for task completion. Evidence is append-only: every **state change** also appends a line to `<gate>.history.jsonl` (identical consecutive outcomes are not duplicated; execution frequency lives in `.specify/telemetry.jsonl`).
+- 🛡️ **Machine-Generated Evidence for Definition of Done**: Eliminates subjective agent self-reporting. Generates raw machine proof artifacts in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `design-artifacts.json`, `tasks.json`, `verification.json`, `stitch-design.json`) required for task completion. Evidence is append-only: every **state change** also appends a line to `<gate>.history.jsonl` (identical consecutive outcomes are not duplicated; execution frequency lives in `.specify/telemetry.jsonl`).
 - 🚦 **Gate Integrity (no lying green)**: A test suite that executes **zero tests** fails. `--tokens-only` can never satisfy a `--require-ui` claim and writes a separate structural artifact. `--require-ui` cross-checks every manifest selector against `src/`. The project must own its git repository, or anti-tampering/blast radius refuse to run. `check-tasks-complete.sh` blocks completion while `tasks.md` has unchecked items, and `check-verification-verdict.sh` fails the workflow unless the auditor wrote `{"verdict":"pass"}`.
 - 🩹 **Bounded Self-Healing (fix, don't just fail)**: `repair_gates` (`do-while`, 3 attempts) repairs and re-runs **every** deterministic gate (quality, bundle, contracts, visual, tasks); `repair_verdict` (2 attempts) handles a rejecting audit by fixing the reported reasons and triggering a full re-audit. Deterministic problems are fixed without an LLM (`bootstrap-project-env.sh`: `git init` + baseline commit + Playwright assets). If it cannot fix something honestly, the run aborts with the evidence instead of shipping green.
 - 🔄 **Phased Implementation with Checkpoints**: Playwright and Vite+ validate every phase, then the workflow pauses for approval before the next phase. Use `--auto-continue` to run all phases without pausing.
@@ -99,6 +99,7 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/check-ghost-classes.sh` | Ghost classes gate: scans JSX/TSX for undeclared CSS classes |
 | `.specify/scripts/bash/check-bundle-budget.sh` | Production performance & bundle size budget gate |
 | `.specify/scripts/bash/bootstrap-project-env.sh` | Deterministic bootstrap: `git init` + baseline commit, Playwright config/audit-spec materialization |
+| `.specify/scripts/bash/check-design-artifacts.sh` | Design-artifact gate: fails before implementation if screens, tokens or manifest are missing |
 | `.specify/scripts/bash/check-tasks-complete.sh` | Task-ledger completion gate (fails on unchecked tasks) |
 | `.specify/scripts/bash/check-verification-verdict.sh` | Machine verdict gate (fails unless `verification.json` says `pass`) |
 | `.specify/scripts/bash/emit-telemetry.sh` | Structured telemetry & observability event logger |
@@ -180,7 +181,7 @@ The workflow uses `integration: auto` by default, which reads the integration se
 ### Self-healing, not just failing
 Two bounded loops fix what they can instead of dumping failures on you:
 
-1. **`repair_gates` (3 attempts)** — covers *every* deterministic gate (quality, bundle, contracts, visual, tasks), not just two. Each attempt dispatches a repair agent with the failing evidence, then re-runs all gates. Recheck steps propagate their real exit codes (the previous loop used `|| true`, so its condition could never fire — it was decorative). If the loop exhausts its attempts, `abort_unrepaired` stops the run with the telemetry summary instead of shipping a broken feature.
+1. **`repair_gates` (3 attempts)** — covers *every* deterministic gate (quality, bundle, contracts, visual, tasks), not just two. Each iteration starts by resetting the circuit breaker, so an attempt is never consumed by `CIRCUIT BREAKER TRIPPED` and a resumed run does not start blocked. Each attempt dispatches a repair agent with the failing evidence, then re-runs all gates. Recheck steps propagate their real exit codes (the previous loop used `|| true`, so its condition could never fire — it was decorative). If the loop exhausts its attempts, `abort_unrepaired` stops the run with the telemetry summary instead of shipping a broken feature.
 2. **`repair_verdict` (2 attempts)** — if the independent auditor returns `reject`, a repair agent works through the verdict's `reasons`, and the auditor re-audits **from scratch**. `gate_verdict_final` then fails the run unless the fresh verdict is `pass`.
 
 Deterministic problems are not delegated to an LLM: `bootstrap_env` runs `bootstrap-project-env.sh`, which does `git init` + a baseline commit (with `node_modules/` ignored) and materializes the Playwright config and design-audit spec when designs exist.
@@ -521,7 +522,7 @@ bash .specify/scripts/bash/check-blast-radius.sh --allow-foreign-git
 ### 8. `bootstrap-project-env.sh` (Deterministic Project Bootstrap)
 Fixes the two gate failures that were never application bugs, idempotently and without an LLM:
 
-1. Creates `.git` when the project root has none and records a baseline commit so diff-based gates (`anti_tampering`, `blast_radius`) have a `HEAD`. `node_modules/` and `dist/` are added to `.gitignore` first, so dependencies never enter the snapshot.
+1. Creates `.git` when the project root has none and records a baseline commit so diff-based gates (`anti_tampering`, `blast_radius`) have a `HEAD`. `.gitignore` is updated first with `node_modules/`, `dist/`, `.specify/workflows/runs/` and `.specify/telemetry.jsonl`: run state stores the stdout/stderr of every step (agent transcripts), so it must never enter the snapshot.
 2. Copies `playwright.design.config.ts` to the project root and `design-audit.spec.ts` to `tests/design/` from `.specify/templates/` (including the `.tmpl` sources) when the feature declares designs.
 
 Nothing is ever overwritten, and the script always exits 0: the gates remain the authority.
@@ -536,7 +537,24 @@ bash .specify/scripts/bash/bootstrap-project-env.sh --no-git
 bash .specify/scripts/bash/bootstrap-project-env.sh --no-templates
 ```
 
-### 9. `check-tasks-complete.sh` (Task Completion Gate)
+### 9. `check-design-artifacts.sh` (Design-Artifact Gate)
+`generate-designs` is a prompt, and a prompt can finish without writing a single file. This gate makes that failure cheap: it runs immediately after the design step and fails in seconds, before any implementation tokens are spent.
+
+Requires, for a UI feature:
+
+- `designs/tokens.css` non-empty and declaring at least one `--token: value`.
+- `designs/routes-manifest.json` valid, with at least one screen that has `id`, `route` and `selector`, and every declared fixture present.
+- At least one screen HTML file (`designs/<screen>.html`). Local wireframes are valid when Stitch is disabled.
+
+```bash
+bash .specify/scripts/bash/check-design-artifacts.sh
+bash .specify/scripts/bash/check-design-artifacts.sh --feature-dir=specs/001-feature
+
+# Explicit opt-out for a feature that declares UI but genuinely has no designs
+bash .specify/scripts/bash/check-design-artifacts.sh --allow-missing
+```
+
+### 10. `check-tasks-complete.sh` (Task Completion Gate)
 Completion cannot be proven by a scaffold. Fails while `tasks.md` still contains unchecked items and prints the first pending tasks.
 
 ```bash
@@ -547,7 +565,7 @@ bash .specify/scripts/bash/check-tasks-complete.sh
 bash .specify/scripts/bash/check-tasks-complete.sh --allow-incomplete
 ```
 
-### 10. `check-verification-verdict.sh` (Machine Verdict Gate)
+### 11. `check-verification-verdict.sh` (Machine Verdict Gate)
 The final verification step is a prompt, and a prompt cannot fail a workflow. This gate reads the machine-readable verdict the auditor must write and turns it into an exit code. A prose `VERIFICATION_REPORT.md` alone is not evidence.
 
 ```bash
@@ -571,7 +589,7 @@ bash .specify/scripts/bash/check-verification-verdict.sh --allow-missing
 }
 ```
 
-### 11. `emit-telemetry.sh` (Structured Telemetry & Observability Emitter)
+### 12. `emit-telemetry.sh` (Structured Telemetry & Observability Emitter)
 Logs structured JSONL execution events across all quality gates to `.specify/telemetry.jsonl`. Tracks execution durations in milliseconds, exit codes, feature scopes, circuit breaker trip events, and **provenance**: which workflow step ran, which AI model executed it, and which subagent/integration process was launched (`none` when not applicable).
 
 The summary renders `TIMESTAMP | STEP | AGENT | MODEL | SUBAGENT | STATUS | DURATION`:
