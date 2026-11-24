@@ -29,6 +29,7 @@ describe('Workflow YAML Schema Validation', () => {
       'bootstrap_env',
       'gate_quality',
       'gate_bundle',
+      'gate_runtime',
       'gate_contracts',
       'gate_tasks',
       'repair_gates',
@@ -65,6 +66,14 @@ describe('Workflow YAML Schema Validation', () => {
     expect(bundleGateStep.type).toBe('shell');
     expect(bundleGateStep.continue_on_error).toBe(true);
     expect(bundleGateStep.run).toContain('check-bundle-budget.sh');
+
+    // Non-UI features must prove their declared runtime serves HTTP. The gate is
+    // the mirror image of the UI branch: it only runs when has_ui is false.
+    const runtimeGateStep = wf.steps.find((s: any) => s.id === 'gate_runtime');
+    expect(runtimeGateStep.type).toBe('if');
+    expect(runtimeGateStep.condition).toContain('not inputs.has_ui');
+    expect(JSON.stringify(runtimeGateStep)).toContain('check-dev-entrypoint.sh');
+    expect(JSON.stringify(runtimeGateStep)).toContain('--require-contract');
 
     const contractsGateStep = wf.steps.find((s: any) => s.id === 'gate_contracts');
     expect(contractsGateStep.type).toBe('if');

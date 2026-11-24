@@ -56,6 +56,18 @@ src/features/<slice>/
 
 ---
 
+## 4b. Non-UI Features Inside This Project (Backend / Domain / CLI)
+
+`has_ui: false` describes the feature, not the repository. This project keeps React, Vite and its `dev` script.
+
+- Declare the feature runtime in `specs/<feature>/runtime.json`:
+  `{"kind":"http","command":"npm run dev:api","port":3000,"readiness":"/health"}` or `{"kind":"none","reason":"..."}`.
+- Expose an API through a NEW script (`dev:api`, `start:api`). Never rename, repurpose or delete `dev`.
+- The port comes from `src/config/env.ts`; `spec.md`, `quickstart.md` and the contract must agree.
+- `check-dev-entrypoint.sh --require-contract` starts the declared command itself and fails unless it answers HTTP 2xx. Validating a server you started by hand is not evidence.
+
+---
+
 ## 5. Subagent-Driven Execution Architecture (Anti-Context Drift)
 
 To prevent cognitive degradation, context drift, sycophancy, and 900s timeouts on large feature sets:
@@ -73,6 +85,9 @@ Run these deterministic gates before declaring any task complete. Each gate emit
 ```bash
 # Core gate: formatting (Oxfmt), linting (Oxlint), strict typing, architecture boundaries, and test suite
 bash .specify/scripts/bash/check-quality-gate.sh
+
+# Runtime entrypoint contract (non-UI features: starts runtime.json's command and probes its port)
+bash .specify/scripts/bash/check-dev-entrypoint.sh --require-contract
 
 # Performance & bundle budget (max 250KB per chunk, max 1000KB total)
 bash .specify/scripts/bash/check-bundle-budget.sh

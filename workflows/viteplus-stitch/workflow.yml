@@ -82,6 +82,29 @@ steps:
       - After completing each task in `tasks.md`, you MUST run `bash .specify/scripts/bash/check-quality-gate.sh` via the terminal and verify it passes (exit code 0).
       - Marking a task `- [x]` without executing the quality gate in the terminal is strictly forbidden.
       - Spec Kit runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`) as non-agent shell steps with an automated self-healing repair window.
+      {% if not inputs.has_ui %}
+      RUNTIME ENTRYPOINT CONTRACT (has_ui=false):
+      - `has_ui` describes THIS FEATURE, not the project. Most non-UI features live
+        inside an existing React/Vite project, so you MUST NOT remove React, Vite,
+        `@vitejs/plugin-react`, `vite.config.ts`, the typed env config, or the
+        project's existing `dev` script.
+      - Declare how the feature runs in `specs/<feature>/runtime.json` (start from
+        `.specify/templates/runtime.json.tmpl`):
+          {"kind":"http","command":"npm run dev:api","port":3000,"readiness":"/health"}
+          {"kind":"none","reason":"<why this feature has no runtime entrypoint>"}
+      - When the feature exposes HTTP, add the API entrypoint as a NEW package.json
+        script (for example `"dev:api": "tsx watch src/main.ts"` and
+        `"start:api": "tsx src/main.ts"`). Never repurpose, rename or delete `dev`:
+        in a Vite+ project that script belongs to the UI dev server.
+      - `gate_runtime` runs `check-dev-entrypoint.sh --require-contract`: it starts the
+        declared command, probes the declared port and readiness path, and fails
+        unless it gets an HTTP 2xx response. A manual `tsx src/main.ts` that the
+        contract does not declare is a red gate, not a workaround.
+      - The port MUST come from the typed env config (`src/config/env.ts`) and be
+        declared in `runtime.json` with the same value; the gate probes exactly that
+        port, so drift between the two is a red gate. The spec, `quickstart.md`,
+        the contract and the script must all agree on it.
+      {% endif %}
 
       Acknowledge this rule and stop. Do not modify any files in this step.
 
@@ -319,6 +342,22 @@ steps:
         exit $err
       }
 
+  - id: gate_runtime
+    type: if
+    condition: "{{ not inputs.has_ui }}"
+    then:
+      - id: gate_runtime_check
+        type: shell
+        continue_on_error: true
+        run: |
+          bash .specify/scripts/bash/check-dev-entrypoint.sh --require-contract || {
+            err=$?
+            echo "" >/dev/tty 2>/dev/null || true
+            echo "⚠️  [RUNTIME GATE] The declared runtime entrypoint does not serve (Exit $err)." >/dev/tty 2>/dev/null || true
+            bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary >/dev/tty 2>/dev/null || true
+            exit $err
+          }
+
   - id: gate_contracts
     type: if
     condition: "{{ inputs.has_ui }}"
@@ -364,12 +403,12 @@ steps:
   # ---------------------------------------------------------------------------
   - id: repair_gates
     type: if
-    condition: "{{ steps.gate_quality.output.exit_code != 0 or steps.gate_bundle.output.exit_code != 0 or (inputs.has_ui and steps.gate_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.gate_visual_check.output.exit_code != 0) or steps.gate_tasks.output.exit_code != 0 }}"
+    condition: "{{ steps.gate_quality.output.exit_code != 0 or steps.gate_bundle.output.exit_code != 0 or (not inputs.has_ui and steps.gate_runtime_check.output.exit_code != 0) or (inputs.has_ui and steps.gate_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.gate_visual_check.output.exit_code != 0) or steps.gate_tasks.output.exit_code != 0 }}"
     then:
       - id: repair_gates_loop
         type: do-while
         max_iterations: 3
-        condition: "{{ steps.recheck_quality.output.exit_code != 0 or steps.recheck_bundle.output.exit_code != 0 or (inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0) or steps.recheck_tasks.output.exit_code != 0 }}"
+        condition: "{{ steps.recheck_quality.output.exit_code != 0 or steps.recheck_bundle.output.exit_code != 0 or (not inputs.has_ui and steps.recheck_runtime_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0) or steps.recheck_tasks.output.exit_code != 0 }}"
         steps:
           # The circuit breaker and this bounded loop both cap retries. Without a
           # reset, attempt 3 can be spent on "CIRCUIT BREAKER TRIPPED" instead of
@@ -425,6 +464,12 @@ steps:
                 `--tokens-only` to make them disappear.
               - UNCHECKED TASKS: implement them. Never tick a checkbox without running
                 `check-quality-gate.sh` and seeing exit code 0.
+              - RUNTIME ENTRYPOINT (non-UI features): when the declared runtime does not
+                serve, fix the API or the declaration itself. Declaring the Vite dev
+                server as the API runtime, editing `specs/<feature>/runtime.json` to a
+                port nothing listens on, or removing the project's `dev` script is
+                forbidden. The expected fix is a real API entrypoint script
+                (`dev:api`) bound to the port exported by `src/config/env.ts`.
               - DEPENDENCIES: install with `npm install` / `vp install` in the terminal.
                 NEVER use file-reading tools on `node_modules/` (sandbox symlink errors).
 
@@ -440,6 +485,15 @@ steps:
             continue_on_error: true
             run: |
               bash .specify/scripts/bash/check-bundle-budget.sh
+          - id: recheck_runtime
+            type: if
+            condition: "{{ not inputs.has_ui }}"
+            then:
+              - id: recheck_runtime_check
+                type: shell
+                continue_on_error: true
+                run: |
+                  bash .specify/scripts/bash/check-dev-entrypoint.sh --require-contract
           - id: recheck_contracts
             type: if
             condition: "{{ inputs.has_ui }}"
@@ -461,7 +515,7 @@ steps:
               bash .specify/scripts/bash/check-tasks-complete.sh
       - id: fail_after_repair
         type: if
-        condition: "{{ steps.recheck_quality.output.exit_code != 0 or steps.recheck_bundle.output.exit_code != 0 or (inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0) or steps.recheck_tasks.output.exit_code != 0 }}"
+        condition: "{{ steps.recheck_quality.output.exit_code != 0 or steps.recheck_bundle.output.exit_code != 0 or (not inputs.has_ui and steps.recheck_runtime_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0) or steps.recheck_tasks.output.exit_code != 0 }}"
         then:
           - id: abort_unrepaired
             type: shell

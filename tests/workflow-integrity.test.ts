@@ -79,14 +79,24 @@ describe('workflow integrity', () => {
     expect(missing).toEqual([]);
   });
 
-  it('guards UI-only step references with inputs.has_ui', () => {
+  it('guards profile-only step references with inputs.has_ui', () => {
     // An undefined nested id compared with `!= 0` evaluates TRUE, which would send
-    // a non-UI run into the repair loop and abort it.
-    const uiOnly = ['gate_contracts_check', 'gate_visual_check', 'recheck_contracts_check', 'recheck_visual_check'];
+    // a run of the other profile into the repair loop and abort it. Each profile-only
+    // step id must be read behind the exact guard that makes it exist.
+    const profileOnly: Array<{ id: string; guard: string }> = [
+      { id: 'gate_contracts_check', guard: 'inputs.has_ui and steps.' },
+      { id: 'gate_visual_check', guard: 'inputs.has_ui and steps.' },
+      { id: 'recheck_contracts_check', guard: 'inputs.has_ui and steps.' },
+      { id: 'recheck_visual_check', guard: 'inputs.has_ui and steps.' },
+      // Non-UI runtime gate: the mirror image. `not inputs.has_ui` is the only
+      // condition under which these steps run at all.
+      { id: 'gate_runtime_check', guard: 'not inputs.has_ui and steps.' },
+      { id: 'recheck_runtime_check', guard: 'not inputs.has_ui and steps.' },
+    ];
     const unguarded: string[] = [];
     for (const text of strings) {
-      for (const id of uiOnly) {
-        if (text.includes(`steps.${id}`) && !text.includes(`inputs.has_ui and steps.${id}`)) {
+      for (const { id, guard } of profileOnly) {
+        if (text.includes(`steps.${id}`) && !text.includes(`${guard}${id}`)) {
           unguarded.push(id);
         }
       }

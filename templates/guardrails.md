@@ -2,6 +2,28 @@
 
 This workflow is defined by its gates. A green suite that was obtained by weakening a gate is a **failed** task, even if every check reports success.
 
+## Non-UI Features Inside a Frontend Project (`has_ui: false`)
+
+`has_ui` describes the **feature**, not the **project**. A backend, domain, or CLI
+feature almost always lives inside an existing React/Vite repository, so:
+
+- **Never remove or rewrite the project's frontend tooling**: React, `vite.config.ts`,
+  `@vitejs/plugin-react`, the typed env config, or the existing `dev` script stay as
+  they are. `npm run dev` keeps booting the UI dev server.
+- The feature declares its own runtime in `specs/<feature>/runtime.json` (start from
+  `.specify/templates/runtime.json.tmpl`):
+  - `{"kind":"http","command":"npm run dev:api","port":3000,"readiness":"/health"}`
+  - `{"kind":"none","reason":"<why this feature has no runtime entrypoint>"}`
+- An HTTP feature adds a **new** script (`dev:api`, `start:api`) instead of
+  repurposing `dev`. The port comes from the typed env config, and `spec.md`,
+  `quickstart.md`, the contract and the script must agree on it.
+- `check-dev-entrypoint.sh --require-contract` is the authority: it starts the
+  declared command itself, probes the declared port, and fails unless it gets HTTP
+  2xx. A manual `tsx src/main.ts` that nothing declares is a red gate, not a
+  workaround. Pointing the contract at the Vite dev server is a contract violation.
+- `{"kind":"none"}` is legitimate (domain/CLI/library), but it is recorded as
+  `skipped` with its reason so the independent auditor can confront it with the spec.
+
 ## Never modify to make a check pass
 
 The agent MUST NOT edit, weaken, disable, skip, or delete any of the following in order to make a quality gate, test, or build pass:
@@ -10,6 +32,7 @@ The agent MUST NOT edit, weaken, disable, skip, or delete any of the following i
 - `package.json` quality scripts (creating `package.json`, managing dependencies with npm, and adding scripts during project setup is required; only weakening or deleting quality scripts to bypass a failure is forbidden)
 - `.specify/scripts/bash/check-quality-gate.sh`
 - `.specify/scripts/bash/check-env-config.sh`
+- `.specify/scripts/bash/check-dev-entrypoint.sh`
 - `.specify/scripts/bash/verify-stitch-design.sh`
 - `.specify/extensions.yml` hook definitions
 - test files, snapshots, fixtures, or coverage thresholds

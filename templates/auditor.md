@@ -38,6 +38,8 @@ Inspect the raw artifacts in `specs/<feature>/evidence/`:
   `tests_executed > 0`.
 - `bundle-budget.json`: `status == "passed"` with no unbudgeted overage.
 - `contracts.json`: `status == "passed"` (when UI is declared).
+- `runtime-entrypoint.json`: `status == "passed"` (non-UI features declaring
+  `kind: http`), or `status == "skipped"` with a `kind_none` reason.
 - `stitch-design.json`: `status == "passed"` with `full_visual_verification: true`
   (when UI is declared). `stitch-design-tokens.json` alone is **not** sufficient.
 - Tokens must be reachable in the running DOM (`getComputedStyle(document
@@ -56,11 +58,18 @@ Do not read the dashboard. Run the checks yourself and inspect the output:
 ```bash
 bash .specify/scripts/bash/check-quality-gate.sh          # tests/build/quality
 bash .specify/scripts/bash/check-bundle-budget.sh
+bash .specify/scripts/bash/check-dev-entrypoint.sh --require-contract  # non-UI features
 bash .specify/scripts/bash/check-contracts.sh --require-ui   # UI features
 bash .specify/scripts/bash/verify-stitch-design.sh --require-ui  # UI features
 bash .specify/scripts/bash/check-tasks-complete.sh
 grep -rn 'data-testid' src/ | head
 ```
+
+For non-UI features, confront `specs/<feature>/runtime.json` with the spec and with
+`evidence/runtime-entrypoint.json`: the declared `kind`, `command`, `port` and
+`readiness` path must match the documented `curl` scenarios. `kind: none` with a
+reason is valid for domain/CLI features; `kind: http` whose command is the Vite dev
+server, or whose port disagrees with the spec and the typed env config, is a REJECT.
 
 Cross-check every selector declared in the manifest against `src/`. Cross-check
 every acceptance scenario against an actual command output, not against prose.
