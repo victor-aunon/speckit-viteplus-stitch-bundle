@@ -92,7 +92,13 @@ describe('Workflow YAML Schema Validation', () => {
     expect(repairLoop.condition).toContain('steps.recheck_quality.output.exit_code != 0');
     expect(repairLoop.condition).toContain('steps.recheck_tasks.output.exit_code != 0');
 
+    // Each iteration resets the circuit breaker: otherwise attempt 3 is spent on
+    // "CIRCUIT BREAKER TRIPPED" and a resumed run starts blocked.
     const repairStepIds = repairLoop.steps.map((s: any) => s.id);
+    expect(repairStepIds[0]).toBe('reset_breaker');
+    const resetStep = repairLoop.steps[0];
+    expect(resetStep.type).toBe('shell');
+    expect(resetStep.run).toContain('check-blast-radius.sh --reset');
     expect(repairStepIds).toContain('repair_agent');
     expect(repairStepIds).toContain('recheck_quality');
     expect(repairStepIds).toContain('recheck_bundle');
@@ -141,10 +147,12 @@ describe('Workflow YAML Schema Validation', () => {
     expect(verdictLoop.type).toBe('do-while');
     expect(verdictLoop.condition).toContain('steps.gate_verdict_retry.output.exit_code != 0');
     expect(verdictLoop.steps.map((s: any) => s.id)).toEqual([
+      'reset_breaker_verdict',
       'verdict_repair_agent',
       'verify_retry',
       'gate_verdict_retry'
     ]);
+    expect(verdictLoop.steps[0].run).toContain('check-blast-radius.sh --reset');
 
     // Regression guard: an undefined step id evaluates `!= 0` as TRUE, so a
     // non-UI feature would otherwise enter the repair loop and abort a healthy
@@ -207,6 +215,15 @@ describe('Workflow YAML Schema Validation', () => {
     expect(designPrompt.prompt).toContain('stitch_project_id');
     expect(designPrompt.prompt).toContain('list_screens');
     expect(designPrompt.prompt).toContain('fixtures');
+
+    // A prompt can complete without writing files: a deterministic gate must
+    // fail in seconds instead of after implementation.
+    const designIds = generateDesignsStep.then.map((s: any) => s.id);
+    expect(designIds).toEqual(['design-assets', 'design_artifacts']);
+    const designGate = generateDesignsStep.then.find((s: any) => s.id === 'design_artifacts');
+    expect(designGate.type).toBe('shell');
+    expect(designGate.continue_on_error).toBeUndefined();
+    expect(designGate.run).toContain('check-design-artifacts.sh');
 
     const critiqueStep = wf.steps.find((s: any) => s.id === 'critique-design');
     expect(critiqueStep.type).toBe('if');

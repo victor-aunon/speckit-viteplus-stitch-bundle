@@ -199,6 +199,18 @@ steps:
           6. Self-check before finishing: the three artifacts exist, `tokens.css` is non-empty, the manifest references existing fixtures, and the tokens are wired into the app stylesheet. A missing artifact is a gate failure later, not a warning.
           7. Output a summary table in the terminal listing screens, HTML files, token variables, and where the tokens were wired.
 
+      # Deterministic gate: a prompt can finish without writing anything. Failing
+      # here costs seconds; the alternative is discovering it after implementation.
+      - id: design_artifacts
+        type: shell
+        run: |
+          bash .specify/scripts/bash/check-design-artifacts.sh || {
+            err=$?
+            echo "" >/dev/tty 2>/dev/null || true
+            echo "❌ [DESIGN GATE] Design artifacts are incomplete. Generate them, then resume the run." >/dev/tty 2>/dev/null || true
+            exit $err
+          }
+
   - id: critique-design
     type: if
     condition: "{{ inputs.has_ui }}"
@@ -358,6 +370,14 @@ steps:
         max_iterations: 3
         condition: "{{ steps.recheck_quality.output.exit_code != 0 or steps.recheck_bundle.output.exit_code != 0 or (inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0) or steps.recheck_tasks.output.exit_code != 0 }}"
         steps:
+          # The circuit breaker and this bounded loop both cap retries. Without a
+          # reset, attempt 3 can be spent on "CIRCUIT BREAKER TRIPPED" instead of
+          # the real failure, and a resumed run starts blocked until a human resets.
+          - id: reset_breaker
+            type: shell
+            continue_on_error: true
+            run: |
+              bash .specify/scripts/bash/check-blast-radius.sh --reset
           - id: repair_agent
             type: prompt
             integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
@@ -496,6 +516,11 @@ steps:
         max_iterations: 2
         condition: "{{ steps.gate_verdict_retry.output.exit_code != 0 }}"
         steps:
+          - id: reset_breaker_verdict
+            type: shell
+            continue_on_error: true
+            run: |
+              bash .specify/scripts/bash/check-blast-radius.sh --reset
           - id: verdict_repair_agent
             type: prompt
             integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
