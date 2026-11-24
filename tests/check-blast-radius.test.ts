@@ -78,7 +78,9 @@ describe('check-blast-radius.sh', () => {
 
     const healthyAgain = runBash(scriptPath, [`--state-dir=${tempStateDir}`, '--max-failures=3', '--check-breaker']);
     expect(healthyAgain).toContain('Circuit breaker is healthy (failures: 0 / 3)');
-  });
+    // This case spawns 7 sequential bash+node processes; the default 15s budget
+    // is too tight when the rest of the suite runs in parallel.
+  }, 60000);
 
   it('should reset failure counter on --record-success', () => {
     runBash(scriptPath, [`--state-dir=${tempStateDir}`, '--record-failure']);
