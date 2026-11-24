@@ -10,6 +10,16 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
+### Fixed
+
+- `generate-designs` crashed mid-run with `unknown filter 'replace'` for features
+  importing an existing Stitch project. The workflow expression engine only
+  registers `default`, `join`, `map`, `contains` and `from_json`; project-ID
+  normalization is now an instruction to the agent instead of a non-existent
+  filter. A new suite (`tests/workflow-expressions.test.ts`) rejects unsupported
+  filters statically and renders every workflow template with the real Spec Kit
+  evaluator.
+
 ### Changed
 
 - **Gate integrity: a green signal is no longer accepted as proof.** A workflow

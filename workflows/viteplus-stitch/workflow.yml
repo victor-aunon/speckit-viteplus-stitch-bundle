@@ -155,7 +155,8 @@ steps:
              {% if inputs.stitch_project_id %}
              - EXISTING STITCH STUDIO PROJECT (inputs.stitch_project_id: "{{ inputs.stitch_project_id }}"):
                * Do NOT generate new screens from text. Import existing screens from project ID "{{ inputs.stitch_project_id }}".
-               * Call `list_screens(projectId: "{{ inputs.stitch_project_id | replace('projects/', '') }}")` to enumerate all project screens.
+               * Normalize the ID first: if it was provided as `projects/<id>`, use only `<id>` (the Stitch API rejects the prefixed form). Do the normalization yourself; the workflow expression engine has no string-filter functions.
+               * Call `list_screens(projectId: "{{ inputs.stitch_project_id }}")` to enumerate all project screens.
                * Call `get_screen` for each screen to retrieve its `html_code` reference.
                * Download each HTML file using `download_file` with `name: <screen.html_code.name>` and save to `specs/<feature>/designs/<screen-id>.html`.
                * Inspect downloaded HTML files to extract and populate `tokens.css` with active CSS variables.
