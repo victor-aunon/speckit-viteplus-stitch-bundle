@@ -348,6 +348,129 @@ describe('emit-telemetry.sh', () => {
     });
   });
 
+  describe('project defaults for shell events', () => {
+    const projectDir = () => path.join(tempDir, 'project');
+    const writeIntegration = (integration: string) => {
+      fs.mkdirSync(path.join(projectDir(), '.specify'), { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir(), '.specify/integration.json'),
+        JSON.stringify({ integration, default_integration: integration }),
+        'utf8'
+      );
+    };
+    const writeRunState = (model: string) => {
+      const runDir = path.join(projectDir(), '.specify/workflows/runs/runX');
+      fs.mkdirSync(runDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(runDir, 'state.json'),
+        JSON.stringify({
+          run_id: 'runX',
+          workflow_id: 'viteplus-stitch',
+          step_results: {
+            plan: { type: 'command', integration: 'pi', model, status: 'completed' }
+          },
+          updated_at: '2026-01-01T00:00:00.000000+00:00'
+        }),
+        'utf8'
+      );
+    };
+    const lastRecord = () =>
+      JSON.parse(fs.readFileSync(logFile, 'utf8').trim().split('\n').pop() as string);
+
+    it('inherits the integration chosen at initialization and a default model', () => {
+      writeIntegration('pi');
+
+      runBash(scriptPath, [`--file=${logFile}`, '--gate=check-quality-gate', '--status=passed'], {
+        cwd: projectDir()
+      });
+
+      const record = lastRecord();
+      expect(record.agent).toBe('pi');
+      // No model was recorded: the integration picks it.
+      expect(record.model).toBe('integration-default');
+    });
+
+    it('inherits the concrete model recorded by the active run', () => {
+      writeIntegration('pi');
+      writeRunState('gemini-2.8-pro');
+
+      runBash(scriptPath, [`--file=${logFile}`, '--gate=check-contracts', '--status=passed'], {
+        cwd: projectDir()
+      });
+
+      const record = lastRecord();
+      expect(record.agent).toBe('pi');
+      expect(record.model).toBe('gemini-2.8-pro');
+    });
+
+    it('never inherits an unresolved template as the model', () => {
+      writeIntegration('pi');
+      writeRunState('{{ inputs.model }}');
+
+      runBash(scriptPath, [`--file=${logFile}`, '--gate=check-contracts', '--status=passed'], {
+        cwd: projectDir()
+      });
+
+      expect(lastRecord().model).toBe('integration-default');
+    });
+
+    it('never overrides an explicit agent or model', () => {
+      writeIntegration('pi');
+      writeRunState('gemini-2.8-pro');
+
+      runBash(
+        scriptPath,
+        [
+          `--file=${logFile}`,
+          '--gate=check-quality-gate',
+          '--agent=claude',
+          '--model=sonnet',
+          '--status=passed'
+        ],
+        { cwd: projectDir() }
+      );
+
+      const record = lastRecord();
+      expect(record.agent).toBe('claude');
+      expect(record.model).toBe('sonnet');
+    });
+
+    it('stays none when the project declares no integration', () => {
+      fs.mkdirSync(projectDir(), { recursive: true });
+
+      runBash(scriptPath, [`--file=${logFile}`, '--gate=check-quality-gate', '--status=passed'], {
+        cwd: projectDir()
+      });
+
+      const record = lastRecord();
+      expect(record.agent).toBe('none');
+      expect(record.model).toBe('none');
+    });
+
+    it('does not rewrite the provenance of imported step executions', () => {
+      writeIntegration('pi');
+      const runDir = path.join(projectDir(), '.specify/workflows/runs/runY');
+      fs.mkdirSync(runDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(runDir, 'state.json'),
+        JSON.stringify({
+          run_id: 'runY',
+          workflow_id: 'demo',
+          step_results: { gate_tasks: { type: 'shell', integration: null, model: null, status: 'completed' } },
+          updated_at: '2026-01-01T00:00:00.000000+00:00'
+        }),
+        'utf8'
+      );
+
+      runBash(scriptPath, [`--file=${logFile}`, '--import-state'], { cwd: projectDir() });
+
+      const record = lastRecord();
+      expect(record.event).toBe('step_execution');
+      expect(record.agent).toBe('none');
+      expect(record.model).toBe('none');
+    });
+  });
+
   it('should support --summary to display formatted telemetry table', () => {
     runBash(scriptPath, [
       `--file=${logFile}`,

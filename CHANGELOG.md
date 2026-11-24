@@ -108,6 +108,11 @@ one-file change plus this changelog.
 
 ### Added
 
+- Shell gate events inherit the project default provenance instead of a bare
+  `none`: the integration chosen at initialization (`.specify/integration.json`)
+  and the concrete model recorded by the active run, falling back to
+  `integration-default`. Explicit flags still win, and imported `step_execution`
+  rows keep their exact values (shell/if steps remain `none`).
 - `check-design-artifacts.sh` + `design_artifacts` step: a deterministic gate right
   after `generate-designs`. A prompt could "complete" without writing screens,
   `tokens.css` or the manifest, and the failure only appeared after implementation.

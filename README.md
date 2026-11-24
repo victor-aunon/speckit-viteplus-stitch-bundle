@@ -597,7 +597,8 @@ The summary renders `TIMESTAMP | STEP | AGENT | MODEL | SUBAGENT | STATUS | DURA
 - **`agent`** is the integration process that ran the step (`pi`, `claude`, `antigravity`, ...).
 - **`model`** is the AI model (`sonnet`, `gemini-2.8-flash`, ...). It shows `integration-default` when no `-i model=...` was passed: the integration picks the model, so claiming a name would be a lie. Unresolved engine placeholders (`{{ inputs.model }}`) are never recorded as model names.
 - **`subagent`** is the role/persona assigned to the step, taken from its `ROLE:` line in the run's `workflow.yml` snapshot (including `yaml.safe_dump`-style snapshots).
-- Shell gates (quality, bundle, contracts, visual, tasks) and the per-task hooks have **no agent, model or role** — bash executed them. `none` there is the accurate value, not a missing field.
+- Shell gates (quality, bundle, contracts, visual, tasks) and the per-task hooks are executed by bash, so they carry no executor of their own. Instead of a bare `none`, they inherit the **project default**: the integration chosen at initialization (`.specify/integration.json`) and the concrete model the active run recorded (never an unresolved `{{ inputs.model }}`), falling back to `integration-default`. `none` now means "no integration is declared at all".
+- Imported `step_execution` rows keep their exact provenance: a shell or control-flow step stays `none`; only prompt/command steps report an agent, model and role.
 
 ```bash
 # Display formatted summary table of recent steps and gate executions

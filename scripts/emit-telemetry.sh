@@ -447,6 +447,11 @@ fi
 # Format ISO-8601 UTC timestamp
 TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")"
 
+# Gate events are executed by bash, so they carry no agent/model of their own.
+# When a project declares an integration (and a run recorded a concrete model),
+# inherit it: the row now answers "which agent/model was in charge", instead of a
+# bare "none". Step executions keep their exact provenance (shell/if = none).
+#
 # Assemble JSON event safely using Node.js or portable fallback
 if command -v node >/dev/null 2>&1; then
   node -e '
@@ -474,13 +479,63 @@ if command -v node >/dev/null 2>&1; then
       try { details = JSON.parse(detailsRaw); } catch {}
     }
 
+    const path = require("path");
+    const readJson = (file) => {
+      try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+    };
+    const isTemplate = (value) =>
+      typeof value === "string" && (value.includes("{{") || value.includes("{%"));
+
+    // Project defaults: the integration chosen at initialization plus the model
+    // the active run actually recorded (never an unresolved template).
+    const resolveProjectDefaults = () => {
+      const defaults = { agent: "", model: "" };
+      const integration = readJson(path.join(".specify", "integration.json"));
+      if (integration) {
+        defaults.agent = integration.integration || integration.default_integration || "";
+      }
+
+      let newest = null;
+      try {
+        const runsRoot = path.join(".specify", "workflows", "runs");
+        for (const name of fs.readdirSync(runsRoot)) {
+          const file = path.join(runsRoot, name, "state.json");
+          try {
+            const stat = fs.statSync(file);
+            if (!newest || stat.mtimeMs > newest.mtime) newest = { file, mtime: stat.mtimeMs };
+          } catch {}
+        }
+      } catch {}
+
+      if (newest) {
+        const state = readJson(newest.file);
+        const steps = state && state.step_results ? Object.values(state.step_results) : [];
+        for (const step of steps) {
+          if (!step || (step.type !== "prompt" && step.type !== "command")) continue;
+          if (!defaults.agent && step.integration && !isTemplate(step.integration)) defaults.agent = step.integration;
+          if (!defaults.model && step.model && !isTemplate(step.model)) defaults.model = step.model;
+        }
+      }
+
+      if (!defaults.model && defaults.agent) defaults.model = "integration-default";
+      return defaults;
+    };
+
+    let resolvedAgent = agent;
+    let resolvedModel = model;
+    if (event !== "step_execution" && (!agent || agent === "none" || !model || model === "none")) {
+      const defaults = resolveProjectDefaults();
+      if ((!resolvedAgent || resolvedAgent === "none") && defaults.agent) resolvedAgent = defaults.agent;
+      if ((!resolvedModel || resolvedModel === "none") && defaults.model) resolvedModel = defaults.model;
+    }
+
     const record = {
       timestamp,
       event,
       gate: gate || undefined,
       step: step || undefined,
-      agent,
-      model,
+      agent: resolvedAgent,
+      model: resolvedModel,
       subagent,
       status,
       duration_ms: Number(durationMs) || 0,
