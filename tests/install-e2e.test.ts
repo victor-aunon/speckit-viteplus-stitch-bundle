@@ -35,6 +35,13 @@ describe('Bundle Installer Script E2E', () => {
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-contracts.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-bundle-budget.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/emit-telemetry.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-tasks-complete.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-verification-verdict.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/bootstrap-project-env.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/workflows/viteplus-stitch/AUDITOR.md'))).toBe(true);
+    // Design templates are materialized without the .tmpl suffix.
+    expect(fs.existsSync(path.join(tempDir, '.specify/templates/playwright.design.config.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/templates/design-audit.spec.ts'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/extensions.yml'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/workflows/viteplus-stitch/GUARDRAILS.md'))).toBe(true);
 
@@ -191,6 +198,13 @@ describe('Bundle Installer Script E2E', () => {
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-contracts.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-bundle-budget.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/emit-telemetry.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-tasks-complete.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-verification-verdict.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/bootstrap-project-env.sh'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/workflows/viteplus-stitch/AUDITOR.md'))).toBe(true);
+    // Design templates are materialized without the .tmpl suffix.
+    expect(fs.existsSync(path.join(tempDir, '.specify/templates/playwright.design.config.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.specify/templates/design-audit.spec.ts'))).toBe(true);
 
     // Clean up
     fs.unlinkSync(zipPath);

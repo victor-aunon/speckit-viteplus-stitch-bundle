@@ -25,12 +25,17 @@ describe('Workflow YAML Schema Validation', () => {
       'tasks',
       'implement',
       'bootstrap_deps',
+      'bootstrap_env',
       'gate_quality',
       'gate_bundle',
       'gate_contracts',
-      'auto_repair',
+      'gate_tasks',
+      'repair_gates',
       'verify',
-      'telemetry_sync'
+      'gate_verdict',
+      'repair_verdict',
+      'telemetry_sync',
+      'gate_verdict_final'
     ]);
 
     // The first step must instruct the model that gate tampering is forbidden
@@ -67,14 +72,87 @@ describe('Workflow YAML Schema Validation', () => {
     expect(contractChecks).toContain('gate_contracts_check');
     expect(contractChecks).toContain('gate_visual_check');
 
-    // Automated self-healing repair loop
-    const autoRepairStep = wf.steps.find((s: any) => s.id === 'auto_repair');
-    expect(autoRepairStep.type).toBe('if');
-    expect(autoRepairStep.condition).toContain('steps.gate_quality.output.exit_code != 0');
-    const repairAgent = autoRepairStep.then.find((s: any) => s.id === 'repair_agent');
+    // Deterministic bootstrap: git ownership + Playwright asset materialization
+    const bootstrapEnv = wf.steps.find((s: any) => s.id === 'bootstrap_env');
+    expect(bootstrapEnv.type).toBe('shell');
+    expect(bootstrapEnv.continue_on_error).toBe(true);
+    expect(bootstrapEnv.run).toContain('bootstrap-project-env.sh');
+
+    // Bounded self-healing loop: every deterministic gate is repaired and re-run
+    const repairGates = wf.steps.find((s: any) => s.id === 'repair_gates');
+    expect(repairGates.type).toBe('if');
+    expect(repairGates.condition).toContain('steps.gate_quality.output.exit_code != 0');
+    expect(repairGates.condition).toContain('steps.gate_tasks.output.exit_code != 0');
+    expect(repairGates.condition).toContain('steps.gate_visual_check.output.exit_code != 0');
+
+    const repairLoop = repairGates.then.find((s: any) => s.id === 'repair_gates_loop');
+    expect(repairLoop.type).toBe('do-while');
+    expect(repairLoop.max_iterations).toBeGreaterThan(1);
+    expect(repairLoop.condition).toContain('steps.recheck_quality.output.exit_code != 0');
+    expect(repairLoop.condition).toContain('steps.recheck_tasks.output.exit_code != 0');
+
+    const repairStepIds = repairLoop.steps.map((s: any) => s.id);
+    expect(repairStepIds).toContain('repair_agent');
+    expect(repairStepIds).toContain('recheck_quality');
+    expect(repairStepIds).toContain('recheck_bundle');
+    expect(repairStepIds).toContain('recheck_contracts');
+    expect(repairStepIds).toContain('recheck_tasks');
+
+    // UI rechecks are nested under a has_ui guard, mirroring the gate structure
+    const recheckContracts = repairLoop.steps.find((s: any) => s.id === 'recheck_contracts');
+    expect(recheckContracts.type).toBe('if');
+    expect(recheckContracts.condition).toContain('inputs.has_ui');
+    expect(recheckContracts.then.map((s: any) => s.id)).toEqual([
+      'recheck_contracts_check',
+      'recheck_visual_check'
+    ]);
+
+    const repairAgent = repairLoop.steps.find((s: any) => s.id === 'repair_agent');
     expect(repairAgent.type).toBe('prompt');
-    expect(repairAgent.prompt).toContain('AUTOMATED REPAIR LOOP');
-    expect(repairAgent.prompt).toContain('REMEDIATE IN APPLICATION CODE');
+    expect(repairAgent.prompt).toContain('AUTONOMOUS REPAIR');
+    expect(repairAgent.prompt).toContain('--allow-no-tests');
+    expect(repairAgent.prompt).toContain('NEVER edit');
+
+    // Recheck steps must propagate their exit code, otherwise the loop condition
+    // can never observe a failure (the bug in the previous single-pass loop).
+    for (const stepId of ['recheck_quality', 'recheck_bundle', 'recheck_tasks']) {
+      const step = repairLoop.steps.find((s: any) => s.id === stepId);
+      expect(step.continue_on_error).toBe(true);
+      expect(step.run).not.toContain('|| true');
+    }
+
+    // Exhausted repair aborts the workflow instead of shipping a broken feature
+    const failAfterRepair = repairGates.then.find((s: any) => s.id === 'fail_after_repair');
+    expect(failAfterRepair.type).toBe('if');
+    const abortStep = failAfterRepair.then.find((s: any) => s.id === 'abort_unrepaired');
+    expect(abortStep.type).toBe('shell');
+    expect(abortStep.run).toContain('exit 1');
+
+    // Verdict repair loop: a rejecting audit triggers repair + re-audit
+    const repairVerdict = wf.steps.find((s: any) => s.id === 'repair_verdict');
+    expect(repairVerdict.type).toBe('if');
+    expect(repairVerdict.condition).toContain('steps.gate_verdict.output.exit_code != 0');
+    const verdictLoop = repairVerdict.then.find((s: any) => s.id === 'repair_verdict_loop');
+    expect(verdictLoop.type).toBe('do-while');
+    expect(verdictLoop.condition).toContain('steps.gate_verdict_retry.output.exit_code != 0');
+    expect(verdictLoop.steps.map((s: any) => s.id)).toEqual([
+      'verdict_repair_agent',
+      'verify_retry',
+      'gate_verdict_retry'
+    ]);
+
+    // Regression guard: an undefined step id evaluates `!= 0` as TRUE, so a
+    // non-UI feature would otherwise enter the repair loop and abort a healthy
+    // run. Every UI check reference must be gated behind inputs.has_ui.
+    for (const condition of [repairGates.condition, repairLoop.condition, failAfterRepair.condition]) {
+      expect(condition).toContain('inputs.has_ui and steps.');
+    }
+
+    // The final gate has no continue_on_error: a rejecting verdict fails the run.
+    const finalVerdict = wf.steps.find((s: any) => s.id === 'gate_verdict_final');
+    expect(finalVerdict.type).toBe('shell');
+    expect(finalVerdict.continue_on_error).toBeUndefined();
+    expect(finalVerdict.run).toContain('check-verification-verdict.sh');
 
     const auditSpecStep = wf.steps.find((s: any) => s.id === 'audit-spec');
     expect(auditSpecStep.type).toBe('prompt');
@@ -84,10 +162,19 @@ describe('Workflow YAML Schema Validation', () => {
     const verifyStep = wf.steps.find((s: any) => s.id === 'verify');
     expect(verifyStep.type).toBe('prompt');
     expect(verifyStep.prompt).toContain('LEAD ADVERSARIAL QUALITY AUDITOR');
+    expect(verifyStep.prompt).toContain('AUDITOR.md');
+    expect(verifyStep.prompt).toContain('verification.json');
     expect(verifyStep.prompt).toContain('VERIFICATION_REPORT.md');
-    expect(verifyStep.prompt).toContain('Delta-Spec Sync');
-    expect(verifyStep.prompt).toContain('Scenario Verification Matrix');
-    expect(verifyStep.prompt).toContain('impeccable');
+
+    // The audit checklist lives in one place and is installed by the bundle
+    const auditorPath = path.resolve(__dirname, '../templates/auditor.md');
+    expect(fs.existsSync(auditorPath)).toBe(true);
+    const auditor = fs.readFileSync(auditorPath, 'utf8');
+    expect(auditor).toContain('Delta-Spec Sync');
+    expect(auditor).toContain('Scenario');
+    expect(auditor).toContain('impeccable');
+    expect(auditor).toContain('--tokens-only');
+    expect(auditor).toContain('"verdict": "pass"');
 
     const reviewSpecStep = wf.steps.find((s: any) => s.id === 'review-spec');
     expect(reviewSpecStep.type).toBe('if');

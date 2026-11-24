@@ -245,6 +245,12 @@ steps:
         npm install --no-audit --no-fund || vp install || pnpm install || true
       fi
 
+  - id: bootstrap_env
+    type: shell
+    continue_on_error: true
+    run: |
+      bash .specify/scripts/bash/bootstrap-project-env.sh || true
+
   - id: gate_quality
     type: shell
     continue_on_error: true
@@ -296,87 +302,196 @@ steps:
             exit $err
           }
 
-  - id: auto_repair
+  - id: gate_tasks
+    type: shell
+    continue_on_error: true
+    run: |
+      bash .specify/scripts/bash/check-tasks-complete.sh || {
+        err=$?
+        echo "" >/dev/tty 2>/dev/null || true
+        echo "⚠️  [TASKS GATE] Unchecked tasks remain (Exit $err)." >/dev/tty 2>/dev/null || true
+        exit $err
+      }
+
+  # ---------------------------------------------------------------------------
+  # Bounded self-healing loop. Every deterministic gate is repaired, re-run and
+  # re-evaluated. The recheck steps MUST NOT append `|| true`: a swallowed exit
+  # code would make the loop condition always false (the previous loop's bug).
+  # ---------------------------------------------------------------------------
+  - id: repair_gates
     type: if
-    condition: "{{ steps.gate_quality.output.exit_code != 0 or steps.gate_bundle.output.exit_code != 0 }}"
+    condition: "{{ steps.gate_quality.output.exit_code != 0 or steps.gate_bundle.output.exit_code != 0 or (inputs.has_ui and steps.gate_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.gate_visual_check.output.exit_code != 0) or steps.gate_tasks.output.exit_code != 0 }}"
     then:
-      - id: repair_agent
-        type: prompt
-        integration: "{{ inputs.integration }}"
-        model: "{{ inputs.model }}"
-        timeout: 900
-        prompt: |
-          ROLE: RELIABILITY & COMPILER SRE SPECIALIST.
-          AUTOMATED REPAIR LOOP: Quality or performance gates detected issues in the implementation.
+      - id: repair_gates_loop
+        type: do-while
+        max_iterations: 3
+        condition: "{{ steps.recheck_quality.output.exit_code != 0 or steps.recheck_bundle.output.exit_code != 0 or (inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0) or steps.recheck_tasks.output.exit_code != 0 }}"
+        steps:
+          - id: repair_agent
+            type: prompt
+            integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
+            model: "{{ inputs.implement_model | default(inputs.model) }}"
+            timeout: 1800
+            prompt: |
+              ROLE: RELIABILITY & COMPILER SRE SPECIALIST (AUTONOMOUS REPAIR).
+              The implementation gates failed. You own this repair window: fix the
+              APPLICATION CODE and the PRODUCT BEHAVIOR, never the checks.
 
-          Do not panic. You have an active repair window to diagnose and fix the failures.
+              EVIDENCE FIRST:
+              - Read `specs/<feature>/evidence/quality-gate.json`, `bundle-budget.json`,
+                `contracts.json`, `tasks.json` and `.specify/telemetry.jsonl`.
+              - Reproduce each failure by running the real gate in the terminal before
+                changing anything.
 
-          TOOL RESTRICTION & SANDBOX SAFETY:
-          - NEVER call `read_file`, `list_directory`, or file-reading tools on `node_modules/`. In modern package managers (pnpm/vite-plus/npm), `node_modules` contains symlinks resolving outside the project root, triggering fatal sandbox boundary errors.
-          - Manage and diagnose dependencies EXCLUSIVELY via terminal commands: `npm install`, `npm ls`, or `vp check`.
-          - Only use file tools (`read_file`, `replace`, `write_file`) on application source files in `src/`, `package.json`, or configuration files.
+              REPAIR RULES (NON-NEGOTIABLE):
+              - NEVER pass `--allow-no-tests`, `--allow-incomplete`, `--allow-missing`,
+                `--allow-foreign-git`, `--tokens-only`, `--skip-tests`, `--skip-build`
+                or `--skip-orphans`. This loop exists to fix code, not to silence gates.
+              - NEVER edit `.specify/scripts/**`, `vite.config.*`, `vitest.config.*`,
+                `package.json` quality scripts, test snapshots, lint/complexity rules,
+                or any evidence JSON by hand.
+              - ZERO EXECUTED TESTS is the most common failure: write real co-located
+                unit/integration tests for the feature slice, then re-run the gate.
+                A scaffold placeholder is not an implementation.
+              - GHOST SELECTOR: add the declared `data-testid` / `id` / class to the
+                component. The manifest is human-owned; if the design genuinely
+                differs, stop and ask instead of rewriting it.
+              - MISSING PLAYWRIGHT ASSETS: `bootstrap-project-env.sh` already
+                materialized `playwright.design.config.ts` and
+                `tests/design/design-audit.spec.ts` when designs exist. Verify them
+                instead of deleting the visual gate.
+              - UNCHECKED TASKS: implement them. Never tick a checkbox without running
+                `check-quality-gate.sh` and seeing exit code 0.
+              - DEPENDENCIES: install with `npm install` / `vp install` in the terminal.
+                NEVER use file-reading tools on `node_modules/` (sandbox symlink errors).
 
-          1. DIAGNOSE:
-             - Check `.specify/telemetry.jsonl` and `specs/<feature>/evidence/quality-gate.json` (or `bundle-budget.json`).
-             - Run `bash .specify/scripts/bash/check-quality-gate.sh` via terminal to reproduce and inspect the exact compiler, linter, or test failures.
-          2. REMEDIATE IN APPLICATION CODE:
-             - If `node_modules` or packages are missing or unresolved (e.g. `vite` or other dependencies in `package.json`), install them using `npm install` in the terminal.
-             - If TypeScript types, linter, complexity, or Clean Architecture boundaries failed, fix the code under `src/`.
-             - If tests failed, fix the implementation so the test suite passes.
-             - If bundle budget failed, configure dynamic imports (`React.lazy`) or code-splitting for heavy libraries.
-             - CRITICAL: Under NO circumstances tamper with gates, alter `vite.config.ts` rules, or add `@ts-ignore` / `eslint-disable`. Fix the root cause in application code.
-          3. RE-VERIFY:
-             - Run `bash .specify/scripts/bash/check-quality-gate.sh` via terminal until it exits with code 0.
-             - Run `bash .specify/scripts/bash/check-bundle-budget.sh` via terminal until it exits with code 0.
-          4. Output a concise summary of the fixes applied.
-
-      - id: recheck_quality
-        type: shell
-        continue_on_error: true
-        run: |
-          bash .specify/scripts/bash/check-quality-gate.sh {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || true
-
-      - id: recheck_bundle
-        type: shell
-        continue_on_error: true
-        run: |
-          bash .specify/scripts/bash/check-bundle-budget.sh || true
+              Re-run the failing gates yourself and print a 5-line summary:
+              root cause -> fix -> gate result per failing gate.
+          - id: recheck_quality
+            type: shell
+            continue_on_error: true
+            run: |
+              bash .specify/scripts/bash/check-quality-gate.sh {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}
+          - id: recheck_bundle
+            type: shell
+            continue_on_error: true
+            run: |
+              bash .specify/scripts/bash/check-bundle-budget.sh
+          - id: recheck_contracts
+            type: if
+            condition: "{{ inputs.has_ui }}"
+            then:
+              - id: recheck_contracts_check
+                type: shell
+                continue_on_error: true
+                run: |
+                  bash .specify/scripts/bash/check-contracts.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}
+              - id: recheck_visual_check
+                type: shell
+                continue_on_error: true
+                run: |
+                  bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}
+          - id: recheck_tasks
+            type: shell
+            continue_on_error: true
+            run: |
+              bash .specify/scripts/bash/check-tasks-complete.sh
+      - id: fail_after_repair
+        type: if
+        condition: "{{ steps.recheck_quality.output.exit_code != 0 or steps.recheck_bundle.output.exit_code != 0 or (inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0) or steps.recheck_tasks.output.exit_code != 0 }}"
+        then:
+          - id: abort_unrepaired
+            type: shell
+            run: |
+              echo "" >/dev/tty 2>/dev/null || true
+              echo "❌ [REPAIR LOOP EXHAUSTED]: gates are still failing after 3 repair attempts." >/dev/tty 2>/dev/null || true
+              echo "   The workflow stops instead of shipping a broken feature. Inspect the evidence below." >/dev/tty 2>/dev/null || true
+              bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary >/dev/tty 2>/dev/null || true
+              echo "" >/dev/tty 2>/dev/null || true
+              echo "   Next step: fix the root cause, reset the breaker (bash .specify/scripts/bash/check-blast-radius.sh --reset)," >/dev/tty 2>/dev/null || true
+              echo "   then resume the run with 'specify workflow resume'." >/dev/tty 2>/dev/null || true
+              exit 1
 
   - id: verify
     type: prompt
     integration: "{{ inputs.integration }}"
     model: "{{ inputs.model }}"
-    timeout: 600
+    timeout: 900
     prompt: |
       ROLE: LEAD ADVERSARIAL QUALITY AUDITOR (INDEPENDENT QC INSPECTOR).
-      You are an independent quality auditor with strict separation of duties.
-      You were NOT involved in writing the implementation code, and you MUST NOT trust any prior self-reported claims in `tasks.md`.
-      Your sole responsibility is to verify hard, physical, machine-generated evidence on disk.
+      You did NOT write this implementation, and you MUST NOT trust any prior
+      self-reported claim in `tasks.md` or the agent's summary.
 
-      1. DISK-LEVEL EVIDENCE AUDIT:
-         Inspect raw proof files in `specs/<feature>/evidence/`:
-         - `quality-gate.json`: Ensure status is "passed" and no checks are "failed".
-         - `bundle-budget.json`: Ensure status is "passed" with zero unbudgeted chunk overages.
-         - When `has_ui: true`: Ensure `contracts.json` and `stitch-design.json` are present and "passed".
-         - Check `.specify/telemetry.jsonl`: Verify that automated gate executions actually occurred.
-         If any evidence file is missing or reports failure, REJECT the verification immediately.
-      2. If this feature has UI (`has_ui: true`):
-         - Activate the `impeccable` skill using the `activate_skill(name: 'impeccable')` tool (do NOT use `read_file` on external paths outside the workspace) and perform a comprehensive Accessibility & Design Audit (`impeccable audit` checklist: WCAG 2.1 AA contrast, keyboard navigation `:focus-visible`, minimum 44px touch targets, and responsive layout scaling).
-         - Confirm micro-interactions and transitions respect `@media (prefers-reduced-motion: reduce)` (`impeccable animate`).
-      3. Verify each acceptance scenario (Given/When/Then) against concrete empirical evidence:
-         - Unit, integration, and regression tests passing with zero failures
-         - Clean Architecture boundary validation passing (`vp check`)
-         - Route & component contracts and ghost classes passing (`check-contracts.sh` with `SPECIFY_HAS_UI=true` when `has_ui: true`)
-         - Visual fidelity & Stitch token tests passing (`verify-stitch-design.sh` with `SPECIFY_HAS_UI=true` when `has_ui: true`)
-         - Production bundle budget passing (`check-bundle-budget.sh`)
-         - Machine-generated evidence files present and valid in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, plus `contracts.json` and `stitch-design.json`)
-      4. IMMUTABLE EVIDENCE REQUIREMENT:
-         Every claim in `VERIFICATION_REPORT.md` must be corroborated by raw evidence artifacts in `specs/<feature>/evidence/` and structured gate logs in `.specify/telemetry.jsonl`. Self-reported claims without machine evidence are invalid.
-      5. Generate `specs/<feature>/VERIFICATION_REPORT.md` with:
-         - Scenario Verification Matrix (Pass/Fail per acceptance criterion)
-         - Empirical Evidence Log (cites machine evidence from `specs/<feature>/evidence/`, test outputs, gate outputs, screenshots, audit findings)
-         - Delta-Spec Sync: Document any architectural clarifications or domain adjustments made during implementation.
-      6. Output an Executive Closing Summary in the terminal for asynchronous human review.
+      MANDATORY PROTOCOL: read `.specify/workflows/viteplus-stitch/AUDITOR.md`
+      and execute it exactly. It defines the evidence rules, the re-execution
+      commands, the acceptance-scenario matrix, the accessibility audit, and the
+      machine-verdict contract.
+
+      Two deliverables are required, both under `specs/<feature>/`:
+      1. `evidence/verification.json` with `{"verdict": "pass" | "reject", ...}`.
+      2. `VERIFICATION_REPORT.md` whose `VERDICT:` line matches that JSON.
+
+      The workflow fails unless the machine verdict is `"pass"`. If the feature is
+      a scaffold, reject it and list the blocking reasons. Never soften a reject.
+
+  - id: gate_verdict
+    type: shell
+    continue_on_error: true
+    run: |
+      bash .specify/scripts/bash/check-verification-verdict.sh || {
+        err=$?
+        echo "" >/dev/tty 2>/dev/null || true
+        echo "⚠️  [VERDICT GATE] Independent audit did not approve the feature (Exit $err). Entering repair loop." >/dev/tty 2>/dev/null || true
+        exit $err
+      }
+
+  - id: repair_verdict
+    type: if
+    condition: "{{ steps.gate_verdict.output.exit_code != 0 }}"
+    then:
+      - id: repair_verdict_loop
+        type: do-while
+        max_iterations: 2
+        condition: "{{ steps.gate_verdict_retry.output.exit_code != 0 }}"
+        steps:
+          - id: verdict_repair_agent
+            type: prompt
+            integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
+            model: "{{ inputs.implement_model | default(inputs.model) }}"
+            timeout: 1800
+            prompt: |
+              ROLE: RELIABILITY ENGINEER (POST-AUDIT REPAIR).
+              The independent auditor REJECTED this feature.
+
+              1. Read `specs/<feature>/evidence/verification.json` — the `reasons`
+                 array lists the blocking findings — and `VERIFICATION_REPORT.md`.
+              2. Fix the APPLICATION CODE so every blocking reason is closed.
+              3. Re-run the deterministic gates yourself to confirm.
+
+              You may NOT edit the audit report, the verdict JSON, other evidence
+              artifacts, or any gate. You may NOT pass `--allow-*` flags. Passing
+              those would silence the gate instead of fixing the product, and the
+              independent auditor re-audits from scratch after you finish.
+          - id: verify_retry
+            type: prompt
+            integration: "{{ inputs.integration }}"
+            model: "{{ inputs.model }}"
+            timeout: 900
+            prompt: |
+              ROLE: LEAD ADVERSARIAL QUALITY AUDITOR (RE-AUDIT AFTER REPAIR).
+              The previous audit REJECTED this feature. Read the previous
+              `verification.json` `reasons` and `VERIFICATION_REPORT.md`, then audit
+              the CURRENT state FROM SCRATCH. Do not assume the repair worked.
+
+              Follow `.specify/workflows/viteplus-stitch/AUDITOR.md` exactly, re-run
+              the gates yourself, and OVERWRITE `evidence/verification.json` and
+              `VERIFICATION_REPORT.md` with the fresh verdict. A prose report without
+              the machine verdict is invalid.
+          - id: gate_verdict_retry
+            type: shell
+            continue_on_error: true
+            run: |
+              bash .specify/scripts/bash/check-verification-verdict.sh
 
   - id: telemetry_sync
     type: shell
@@ -384,3 +499,10 @@ steps:
     run: |
       bash .specify/scripts/bash/emit-telemetry.sh --import-state || true
       bash .specify/scripts/bash/emit-telemetry.sh --summary >/dev/tty 2>/dev/null || true
+
+  # Final hard gate: the workflow must not report success without an approving
+  # machine verdict. This step has no continue_on_error on purpose.
+  - id: gate_verdict_final
+    type: shell
+    run: |
+      bash .specify/scripts/bash/check-verification-verdict.sh

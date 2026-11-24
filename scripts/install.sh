@@ -110,6 +110,9 @@ cp "$BUNDLE_ROOT/scripts/check-contracts.sh" "$SPECIFY_DIR/scripts/bash/check-co
 cp "$BUNDLE_ROOT/scripts/check-ghost-classes.sh" "$SPECIFY_DIR/scripts/bash/check-ghost-classes.sh"
 cp "$BUNDLE_ROOT/scripts/check-bundle-budget.sh" "$SPECIFY_DIR/scripts/bash/check-bundle-budget.sh"
 cp "$BUNDLE_ROOT/scripts/emit-telemetry.sh" "$SPECIFY_DIR/scripts/bash/emit-telemetry.sh"
+cp "$BUNDLE_ROOT/scripts/check-tasks-complete.sh" "$SPECIFY_DIR/scripts/bash/check-tasks-complete.sh"
+cp "$BUNDLE_ROOT/scripts/check-verification-verdict.sh" "$SPECIFY_DIR/scripts/bash/check-verification-verdict.sh"
+cp "$BUNDLE_ROOT/scripts/bootstrap-project-env.sh" "$SPECIFY_DIR/scripts/bash/bootstrap-project-env.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-quality-gate.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-env-config.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/verify-stitch-design.sh"
@@ -118,11 +121,22 @@ chmod +x "$SPECIFY_DIR/scripts/bash/check-contracts.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-ghost-classes.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-bundle-budget.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/emit-telemetry.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/check-tasks-complete.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/check-verification-verdict.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/bootstrap-project-env.sh"
 
 # 3. Copy templates
 if [ -d "$BUNDLE_ROOT/templates" ]; then
   cp "$BUNDLE_ROOT/templates/"* "$SPECIFY_DIR/templates/" 2>/dev/null || true
 fi
+
+# The Playwright/design-audit templates ship with a *.tmpl suffix but are consumed
+# without it (verify-stitch-design.sh resolves the un-suffixed path).
+for tmpl in "playwright.design.config.ts" "design-audit.spec.ts"; do
+  if [ -f "$SPECIFY_DIR/templates/${tmpl}.tmpl" ] && [ ! -f "$SPECIFY_DIR/templates/${tmpl}" ]; then
+    cp "$SPECIFY_DIR/templates/${tmpl}.tmpl" "$SPECIFY_DIR/templates/${tmpl}"
+  fi
+done
 
 # 4. Install the non-negotiable quality-gate guardrails
 #    - A standalone copy the workflow prompt step tells the model to read.
@@ -130,6 +144,9 @@ fi
 #      .specify/memory/constitution.md on every invocation.
 if [ -f "$BUNDLE_ROOT/templates/guardrails.md" ]; then
   cp "$BUNDLE_ROOT/templates/guardrails.md" "$SPECIFY_DIR/workflows/viteplus-stitch/GUARDRAILS.md"
+fi
+if [ -f "$BUNDLE_ROOT/templates/auditor.md" ]; then
+  cp "$BUNDLE_ROOT/templates/auditor.md" "$SPECIFY_DIR/workflows/viteplus-stitch/AUDITOR.md"
 fi
 
 MEMORY_DIR="$SPECIFY_DIR/memory"
@@ -147,13 +164,28 @@ if [ ! -f "$CONSTITUTION_FILE" ]; then
 The agent MUST NOT modify Vite settings (`vite.config.ts` or any Vite/Vite+ config),
 `package.json` quality scripts, the bundle quality gates
 (`.specify/scripts/bash/check-quality-gate.sh`, `check-env-config.sh`,
-`verify-stitch-design.sh`), `.specify/extensions.yml`, test files/snapshots, or any
+`verify-stitch-design.sh`, `check-contracts.sh`, `check-tasks-complete.sh`,
+`check-verification-verdict.sh`), `.specify/extensions.yml`, test files/snapshots, or any
 lint/type/complexity rule to make a failing gate or test pass.
 When a gate fails, fix the application code. If a gate is genuinely wrong, stop and
 ask the human for explicit approval before changing it. Gate configuration is
 human-owned; silence or a passing run is not approval.
 
 See `.specify/workflows/viteplus-stitch/GUARDRAILS.md` for the full policy.
+
+### Evidence Integrity (NON-NEGOTIABLE)
+<!-- viteplus-stitch:evidence-integrity -->
+A green signal is not proof. The agent MUST NOT:
+- Claim completion while `tasks.md` has unchecked tasks (`check-tasks-complete.sh`).
+- Report a feature as verified unless `specs/<feature>/evidence/verification.json`
+  contains `{"verdict":"pass"}` (`check-verification-verdict.sh`).
+- Treat a suite that executed zero tests, or `verify-stitch-design.sh --tokens-only`,
+  as verification. Structural checks are not visual or behavioral proof.
+- Pass `--allow-no-tests`, `--allow-incomplete`, `--allow-missing`,
+  `--allow-foreign-git`, or `--tokens-only` without explicit human approval.
+- Hand-edit evidence artifacts. Evidence is append-only (`<gate>.history.jsonl`).
+The project root MUST own its git repository (`git init`); inheriting an ancestor
+repository makes anti-tampering and blast radius audit the wrong tree.
 
 ### Impeccable UI Craft Lifecycle
 <!-- viteplus-stitch:impeccable-lifecycle -->
@@ -183,13 +215,28 @@ elif ! grep -q "viteplus-stitch:quality-gate-integrity" "$CONSTITUTION_FILE"; th
 The agent MUST NOT modify Vite settings (`vite.config.ts` or any Vite/Vite+ config),
 `package.json` quality scripts, the bundle quality gates
 (`.specify/scripts/bash/check-quality-gate.sh`, `check-env-config.sh`,
-`verify-stitch-design.sh`), `.specify/extensions.yml`, test files/snapshots, or any
+`verify-stitch-design.sh`, `check-contracts.sh`, `check-tasks-complete.sh`,
+`check-verification-verdict.sh`), `.specify/extensions.yml`, test files/snapshots, or any
 lint/type/complexity rule to make a failing gate or test pass.
 When a gate fails, fix the application code. If a gate is genuinely wrong, stop and
 ask the human for explicit approval before changing it. Gate configuration is
 human-owned; silence or a passing run is not approval.
 
 See `.specify/workflows/viteplus-stitch/GUARDRAILS.md` for the full policy.
+
+### Evidence Integrity (NON-NEGOTIABLE)
+<!-- viteplus-stitch:evidence-integrity -->
+A green signal is not proof. The agent MUST NOT:
+- Claim completion while `tasks.md` has unchecked tasks (`check-tasks-complete.sh`).
+- Report a feature as verified unless `specs/<feature>/evidence/verification.json`
+  contains `{"verdict":"pass"}` (`check-verification-verdict.sh`).
+- Treat a suite that executed zero tests, or `verify-stitch-design.sh --tokens-only`,
+  as verification. Structural checks are not visual or behavioral proof.
+- Pass `--allow-no-tests`, `--allow-incomplete`, `--allow-missing`,
+  `--allow-foreign-git`, or `--tokens-only` without explicit human approval.
+- Hand-edit evidence artifacts. Evidence is append-only (`<gate>.history.jsonl`).
+The project root MUST own its git repository (`git init`); inheriting an ancestor
+repository makes anti-tampering and blast radius audit the wrong tree.
 
 ### Impeccable UI Craft Lifecycle
 <!-- viteplus-stitch:impeccable-lifecycle -->
@@ -224,6 +271,10 @@ else
     if grep -q "^hooks:" "$EXTENSIONS_FILE"; then
       cat >> "$EXTENSIONS_FILE" << 'EOF'
   after_task:
+    - name: "project-bootstrap"
+      description: "Idempotent git init + baseline commit and Playwright/design-audit template materialization"
+      command: ".specify/scripts/bash/bootstrap-project-env.sh"
+      optional: false
     - name: "viteplus-quality-gate"
       description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, typed env config guard, and scoped regression tests without build)"
       command: ".specify/scripts/bash/check-quality-gate.sh --skip-build ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
@@ -233,6 +284,10 @@ else
       command: ".specify/scripts/bash/verify-stitch-design.sh --tokens-only --skip-orphans ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
       optional: false
   after_implement:
+    - name: "project-bootstrap"
+      description: "Idempotent git init + baseline commit and Playwright/design-audit template materialization"
+      command: ".specify/scripts/bash/bootstrap-project-env.sh"
+      optional: false
     - name: "final-quality-gate"
       description: "Comprehensive final verification of quality, architecture, production build, and full test suite (scoped inside a feature slice when one is set)"
       command: ".specify/scripts/bash/check-quality-gate.sh ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
@@ -240,6 +295,10 @@ else
     - name: "bundle-budget-gate"
       description: "Validates production build performance and bundle size limits"
       command: ".specify/scripts/bash/check-bundle-budget.sh"
+      optional: false
+    - name: "tasks-completion-gate"
+      description: "Fails when tasks.md still contains unchecked tasks, so a scaffold cannot be reported as complete"
+      command: ".specify/scripts/bash/check-tasks-complete.sh"
       optional: false
     - name: "final-visual-gate"
       description: "Comprehensive final visual audit against Stitch designs"
@@ -251,6 +310,10 @@ EOF
 
 hooks:
   after_task:
+    - name: "project-bootstrap"
+      description: "Idempotent git init + baseline commit and Playwright/design-audit template materialization"
+      command: ".specify/scripts/bash/bootstrap-project-env.sh"
+      optional: false
     - name: "viteplus-quality-gate"
       description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, typed env config guard, and scoped regression tests without build)"
       command: ".specify/scripts/bash/check-quality-gate.sh --skip-build ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
@@ -260,6 +323,10 @@ hooks:
       command: ".specify/scripts/bash/verify-stitch-design.sh --tokens-only --skip-orphans ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
       optional: false
   after_implement:
+    - name: "project-bootstrap"
+      description: "Idempotent git init + baseline commit and Playwright/design-audit template materialization"
+      command: ".specify/scripts/bash/bootstrap-project-env.sh"
+      optional: false
     - name: "final-quality-gate"
       description: "Comprehensive final verification of quality, architecture, production build, and full test suite (scoped inside a feature slice when one is set)"
       command: ".specify/scripts/bash/check-quality-gate.sh ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
@@ -267,6 +334,10 @@ hooks:
     - name: "bundle-budget-gate"
       description: "Validates production build performance and bundle size limits"
       command: ".specify/scripts/bash/check-bundle-budget.sh"
+      optional: false
+    - name: "tasks-completion-gate"
+      description: "Fails when tasks.md still contains unchecked tasks, so a scaffold cannot be reported as complete"
+      command: ".specify/scripts/bash/check-tasks-complete.sh"
       optional: false
     - name: "final-visual-gate"
       description: "Comprehensive final visual audit against Stitch designs"
@@ -333,6 +404,16 @@ if [ -f "$REGISTRY_FILE" ]; then
       fs.writeFileSync('$REGISTRY_FILE', JSON.stringify(reg, null, 2));
     } catch (e) {}
   " 2>/dev/null || true
+fi
+
+# 10. Git ownership pre-flight. Anti-tampering and blast radius audit the project's
+# own repository; nested projects without .git would audit an ancestor repo instead.
+if command -v git >/dev/null 2>&1; then
+  if ! git -C "$TARGET_DIR" rev-parse --show-toplevel >/dev/null 2>&1; then
+    echo "⚠️  No git repository detected in $TARGET_DIR."
+    echo "   Run 'git init && git add -A && git commit -m \"chore: baseline\"' before the workflow."
+    echo "   Anti-tampering and blast radius gates fail (or go blind) without it."
+  fi
 fi
 
 echo "✅ Installation of viteplus-stitch completed successfully in $TARGET_DIR"

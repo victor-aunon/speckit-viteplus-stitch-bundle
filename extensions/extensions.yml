@@ -2,6 +2,10 @@
 schema_version: "1.0"
 hooks:
   after_task:
+    - name: "project-bootstrap"
+      description: "Idempotent git init + baseline commit and Playwright/design-audit template materialization"
+      command: ".specify/scripts/bash/bootstrap-project-env.sh"
+      optional: false
     - name: "viteplus-quality-gate"
       description: "Runs vp check (Airbnb linter, Oxlint, types, complexity, architecture layer boundaries, typed env config guard, and scoped regression tests without build)"
       command: ".specify/scripts/bash/check-quality-gate.sh --skip-build ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
@@ -13,6 +17,10 @@ hooks:
       optional: false
 
   after_implement:
+    - name: "project-bootstrap"
+      description: "Idempotent git init + baseline commit and Playwright/design-audit template materialization"
+      command: ".specify/scripts/bash/bootstrap-project-env.sh"
+      optional: false
     - name: "final-quality-gate"
       description: "Comprehensive final verification of quality, architecture, production build, and full test suite (scoped inside a feature slice when one is set)"
       command: ".specify/scripts/bash/check-quality-gate.sh ${SPECIFY_SCOPE:+--scope=$SPECIFY_SCOPE}"
@@ -20,6 +28,10 @@ hooks:
     - name: "bundle-budget-gate"
       description: "Validates production build performance and bundle size limits"
       command: ".specify/scripts/bash/check-bundle-budget.sh"
+      optional: false
+    - name: "tasks-completion-gate"
+      description: "Fails when tasks.md still contains unchecked tasks, so a scaffold cannot be reported as complete"
+      command: ".specify/scripts/bash/check-tasks-complete.sh"
       optional: false
     - name: "final-visual-gate"
       description: "Comprehensive final visual audit against Stitch designs"
