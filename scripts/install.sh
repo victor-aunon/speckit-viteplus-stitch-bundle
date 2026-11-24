@@ -348,6 +348,58 @@ EOF
   fi
 fi
 
+# 5b. Upgrade hooks in an already-installed extensions.yml.
+#     The block above only fires when no gate hook exists, so existing projects
+#     would silently miss newly added hooks (e.g. project-bootstrap). Insert each
+#     missing hook under its existing section instead of appending a duplicate
+#     YAML key.
+insert_hook_after() {
+  local section="$1"
+  local hook_name="$2"
+  local body="$3"
+  local hook_file target_file
+  hook_file="$(mktemp "${TMPDIR:-/tmp}/speckit-hook-XXXXXX" 2>/dev/null || printf '%s/speckit-hook-%s' "${TMPDIR:-/tmp}" "$$")"
+  printf '%s\n' "$body" > "$hook_file"
+  target_file="$(mktemp "${TMPDIR:-/tmp}/speckit-ext-XXXXXX" 2>/dev/null || printf '%s/speckit-ext-%s' "${TMPDIR:-/tmp}" "$$")"
+  if awk -v section="$section:" -v hookfile="$hook_file" '
+    { print }
+    $0 == "  " section && !done {
+      while ((getline line < hookfile) > 0) print line
+      close(hookfile)
+      done = 1
+    }
+  ' "$EXTENSIONS_FILE" > "$target_file" 2>/dev/null; then
+    if [ -s "$target_file" ] && grep -q "name: \"$hook_name\"" "$target_file"; then
+      mv "$target_file" "$EXTENSIONS_FILE"
+      echo "✓ Added $hook_name hook to $EXTENSIONS_FILE"
+    else
+      rm -f "$target_file"
+    fi
+  else
+    rm -f "$target_file"
+  fi
+  rm -f "$hook_file"
+}
+
+if [ -f "$EXTENSIONS_FILE" ]; then
+  BOOTSTRAP_HOOK='    - name: "project-bootstrap"
+      description: "Idempotent git init + baseline commit and Playwright/design-audit template materialization"
+      command: ".specify/scripts/bash/bootstrap-project-env.sh"
+      optional: false'
+  TASKS_HOOK='    - name: "tasks-completion-gate"
+      description: "Fails when tasks.md still contains unchecked tasks, so a scaffold cannot be reported as complete"
+      command: ".specify/scripts/bash/check-tasks-complete.sh"
+      optional: false'
+
+  if ! grep -q "project-bootstrap" "$EXTENSIONS_FILE"; then
+    insert_hook_after "after_task" "project-bootstrap" "$BOOTSTRAP_HOOK"
+    insert_hook_after "after_implement" "project-bootstrap" "$BOOTSTRAP_HOOK"
+  fi
+  if ! grep -q "tasks-completion-gate" "$EXTENSIONS_FILE"; then
+    insert_hook_after "after_implement" "tasks-completion-gate" "$TASKS_HOOK"
+  fi
+fi
+
 # 6. Provision or augment root AGENTS.md for AI agent guidance (Gemini CLI, Claude Code, Cursor, Copilot)
 AGENTS_FILE="$TARGET_DIR/AGENTS.md"
 if [ ! -f "$AGENTS_FILE" ]; then

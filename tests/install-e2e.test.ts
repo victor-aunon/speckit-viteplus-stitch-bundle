@@ -165,6 +165,60 @@ describe('Bundle Installer Script E2E', () => {
     removeDir(tempDir);
   });
 
+  it('should add newly introduced hooks to an already-installed extensions.yml', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-hook-upgrade-test-'));
+    const specifyDir = path.join(tempDir, '.specify');
+    fs.mkdirSync(specifyDir, { recursive: true });
+
+    // A project installed with an older bundle: gate hooks exist, the new
+    // project-bootstrap / tasks-completion-gate hooks do not.
+    const legacyYaml = `schema_version: "1.0"
+hooks:
+  after_task:
+    - name: "viteplus-quality-gate"
+      command: ".specify/scripts/bash/check-quality-gate.sh --skip-build"
+      optional: false
+  after_implement:
+    - name: "final-quality-gate"
+      command: ".specify/scripts/bash/check-quality-gate.sh"
+      optional: false
+`;
+    fs.writeFileSync(path.join(specifyDir, 'extensions.yml'), legacyYaml, 'utf8');
+
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+
+    const merged = yaml.parse(fs.readFileSync(path.join(specifyDir, 'extensions.yml'), 'utf8'));
+    const afterTask = merged.hooks.after_task.map((hook: any) => hook.name);
+    const afterImplement = merged.hooks.after_implement.map((hook: any) => hook.name);
+
+    expect(afterTask).toContain('project-bootstrap');
+    expect(afterTask).toContain('viteplus-quality-gate');
+    expect(afterImplement).toContain('project-bootstrap');
+    expect(afterImplement).toContain('tasks-completion-gate');
+    expect(afterImplement).toContain('final-quality-gate');
+    // Idempotent: no hook is duplicated.
+    expect(afterTask.filter((name: string) => name === 'project-bootstrap')).toHaveLength(1);
+    expect(afterImplement.filter((name: string) => name === 'tasks-completion-gate')).toHaveLength(1);
+
+    removeDir(tempDir);
+  });
+
+  it('should not duplicate hooks when reinstalled twice', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-hook-idempotent-test-'));
+    fs.mkdirSync(path.join(tempDir, '.specify'), { recursive: true });
+
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+
+    const merged = yaml.parse(fs.readFileSync(path.join(tempDir, '.specify/extensions.yml'), 'utf8'));
+    for (const section of ['after_task', 'after_implement']) {
+      const names = merged.hooks[section].map((hook: any) => hook.name);
+      expect(new Set(names).size).toBe(names.length);
+    }
+
+    removeDir(tempDir);
+  });
+
   // Requires both `unzip` and the Spec Kit CLI (`specify bundle build`); skipped when
   // either tool is missing (e.g. a bare CI runner).
   it.skipIf(!bashHasCommand('unzip') || !bashHasCommand('specify'))('should install cleanly from a built .zip artifact using --zip option', () => {

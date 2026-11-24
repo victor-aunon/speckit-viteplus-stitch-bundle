@@ -12,6 +12,10 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- `install.sh` only injected hooks into an `extensions.yml` that had no gate
+  hooks at all, so upgraded projects silently missed newly introduced hooks
+  (`project-bootstrap`, `tasks-completion-gate`). Missing hooks are now inserted
+  under their existing section, without duplicating YAML keys.
 - `generate-designs` crashed mid-run with `unknown filter 'replace'` for features
   importing an existing Stitch project. The workflow expression engine only
   registers `default`, `join`, `map`, `contains` and `from_json`; project-ID
