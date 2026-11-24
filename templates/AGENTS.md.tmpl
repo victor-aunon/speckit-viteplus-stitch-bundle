@@ -83,6 +83,19 @@ SPECIFY_HAS_UI=true bash .specify/scripts/bash/check-contracts.sh
 # Stitch visual tokens & Playwright regression (set SPECIFY_HAS_UI=true or pass --require-ui for UI features)
 SPECIFY_HAS_UI=true bash .specify/scripts/bash/verify-stitch-design.sh --tokens-only
 
+# Deterministic project bootstrap: git init + baseline commit + Playwright assets
+bash .specify/scripts/bash/bootstrap-project-env.sh
+
+# Task completion ledger (fails while tasks.md has unchecked items)
+bash .specify/scripts/bash/check-tasks-complete.sh
+
+# Machine-readable final verdict (fails unless evidence/verification.json says "pass")
+bash .specify/scripts/bash/check-verification-verdict.sh
+
+# Never pass these to make a gate green without explicit human approval:
+#   --allow-no-tests  --allow-incomplete  --allow-missing  --allow-foreign-git
+#   --tokens-only (incompatible with --require-ui)
+
 # Review recorded telemetry: every workflow step, model, subagent and gate outcome
 bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary
 ```

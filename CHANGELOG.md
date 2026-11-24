@@ -10,6 +10,30 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
+### Changed
+
+- **Gate integrity: a green signal is no longer accepted as proof.** A workflow
+  previously completed with zero tests, a scaffold-only implementation and ghost
+  UI selectors, because several gates were green by construction.
+- `check-quality-gate.sh` now counts executed tests. Zero tests (or an
+  unparseable report) fail the gate; `--allow-no-tests` is an explicit human
+  opt-in that records `regression_tests: skipped`. `--passWithNoTests` is gone.
+- `check-quality-gate.sh` and `check-blast-radius.sh` resolve the project root and
+  refuse to run when `git rev-parse --show-toplevel` points at an ancestor
+  repository (the `$HOME` trap). All git scans are scoped to the project root.
+- `check-contracts.sh`: `--require-ui` implies `--check-orphans` and cross-checks
+  every manifest selector against `src/`; ghost selectors fail the gate.
+- `verify-stitch-design.sh`: `--tokens-only` is rejected together with
+  `--require-ui`, writes `stitch-design-tokens.json` (never `stitch-design.json`)
+  and marks `full_visual_verification: false`. The Playwright config/spec
+  templates are resolved with their `.tmpl` suffix and fail with an actionable
+  error instead of a confusing "no tests found".
+- Evidence is append-only: each gate also writes `<gate>.history.jsonl` and
+  records `previous_status` in the current artifact.
+- The previous `auto_repair` loop only looked at quality/bundle, ran once, and its
+  recheck steps swallowed exit codes with `|| true`, so its condition could never
+  be true. Replaced by the loops above, whose rechecks propagate real exit codes.
+
 ### Added
 
 - Telemetry provenance: every `.specify/telemetry.jsonl` record now carries the
@@ -21,6 +45,28 @@ one-file change plus this changelog.
   and per-step durations from `log.jsonl`. Imports are idempotent (upsert).
 - `telemetry_sync` workflow step imports the full run and prints the summary at
   the end of the lifecycle; gate-failure summaries import as well.
+- `check-tasks-complete.sh`: completion gate for the `tasks.md` ledger, wired as
+  the `gate_tasks` workflow step.
+- `check-verification-verdict.sh`: machine verdict gate. The `verify` prompt must
+  now write `evidence/verification.json`, and the `gate_verdict` step fails the
+  workflow on `reject`, malformed or missing verdicts.
+- Installer materializes `playwright.design.config.ts` and
+  `design-audit.spec.ts` from their `.tmpl` sources and warns when the project is
+  not its own git repository.
+- `bootstrap-project-env.sh` + `bootstrap_env` workflow step: deterministic
+  `git init` with an ignored-dependency baseline commit, and idempotent
+  Playwright/design-audit template materialization. Several gate failures were
+  never application bugs.
+- **Bounded self-healing loops**: `repair_gates` (`do-while`, 3 attempts) covers
+  every deterministic gate (quality, bundle, contracts, visual, tasks) and
+  re-runs them after the repair agent; `abort_unrepaired` stops the run when the
+  loop is exhausted. `repair_verdict` (2 attempts) handles a rejecting audit by
+  repairing the reported reasons and triggering a full re-audit.
+- `gate_verdict_final` is a hard shell step (no `continue_on_error`) so the
+  workflow can no longer report success with a rejecting verdict.
+- `templates/auditor.md` (installed as `.specify/workflows/viteplus-stitch/AUDITOR.md`)
+  holds the audit checklist and verdict contract; the `verify` prompt references
+  it, so the retry audit cannot drift from the first one.
 
 ### Changed
 

@@ -62,6 +62,8 @@ Before planning, the agent must perform an automated Spec Quality Audit (`audit-
 To ensure safe unattended execution:
 - **Blast Radius**: The agent must NEVER modify files outside the feature slice/assigned scope. Tooling, workflows, quality scripts (`check-quality-gate.sh`, `check-blast-radius.sh`, `check-env-config.sh`, `verify-stitch-design.sh`), extensions, and templates are strictly protected against modification.
 - **Circuit Breaker**: If quality gate checks fail 3 consecutive times during a task, the Circuit Breaker trips and halts execution immediately. This prevents token-draining thrashing loops. When tripped, uncommitted regressions must be reverted (`git restore .`) before resetting.
+- **Repair loops are for fixing code**: the workflow's `repair_gates` (3 attempts) and `repair_verdict` (2 attempts) loops exist to fix the application. Inside them it is explicitly forbidden to silence a gate with `--allow-no-tests`, `--allow-incomplete`, `--allow-missing`, `--allow-foreign-git`, `--tokens-only`, `--skip-tests`, `--skip-build` or `--skip-orphans`, to edit gates/configs/tests/snapshots, or to hand-edit evidence. If the loop cannot fix it honestly, the run aborts — that is the correct outcome.
+- **Independent audit protocol**: final verification follows `.specify/workflows/viteplus-stitch/AUDITOR.md`. The auditor re-runs the gates, rejects scaffolds, and writes the machine verdict. Never write the verdict yourself, and never soften an audit.
 
 ## Atomic Design & Component Isolation (Anti-Bloat Guard)
 
@@ -89,9 +91,21 @@ When a project utilizes Tailwind CSS or a dynamic utility framework:
 ## Empirical Machine Evidence & Definition of Done (DoD)
 
 A task or feature cannot be declared complete without deterministic machine-generated evidence:
-- **Machine Proofs in `specs/<feature>/evidence/`**: Verification requires machine-generated proof files (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, and `stitch-design.json`). Self-reported success without machine proof is rejected.
+- **Machine Proofs in `specs/<feature>/evidence/`**: Verification requires machine-generated proof files (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `tasks.json`, and `stitch-design.json`). Self-reported success without machine proof is rejected.
 - **No Silent Skips**: When UI is declared (`has_ui: true`), visual verification and route contracts are mandatory. Missing design folders or manifests fail the gate instead of skipping.
-- **Auditability via Telemetry**: All gate executions log structured events to `.specify/telemetry.jsonl` to ensure complete observability of execution duration, gate statuses, and circuit breaker health.
+- **Append-Only Evidence**: Evidence artifacts are never hand-edited. Every gate also appends to `<gate>.history.jsonl`, so previous verdicts survive later runs. Overwriting a `passed` artifact with a hand-written status is fabrication.
+- **Auditability via Telemetry**: All gate executions log structured events to `.specify/telemetry.jsonl` to ensure complete observability of execution duration, gate statuses, model/subagent provenance, and circuit breaker health.
+
+## Evidence Integrity: Green Is a Signal, Not a Proof
+
+These rules exist because a workflow once reported success with zero executed tests, a scaffold-only implementation, and ghost UI selectors. They are non-negotiable:
+
+- **Tests must execute**: `check-quality-gate.sh` fails when the suite runs **zero** tests or when the test report cannot be parsed. `--allow-no-tests` is a human-approved exemption; agents must never pass it on their own. A "green" suite with `No test files found` is a failure.
+- **Structural checks are not visual verification**: `verify-stitch-design.sh --tokens-only` only validates `tokens.css` structure. It writes `stitch-design-tokens.json`, never `stitch-design.json`, and is rejected outright when `--require-ui` is active. Only the full Playwright gate can claim visual fidelity.
+- **Selectors must exist in code**: with `--require-ui`, every selector declared in `routes-manifest.json` must be found in `src/`. A manifest that only validates against itself is a ghost contract.
+- **The project must own its git repository**: if `git rev-parse --show-toplevel` resolves above the project root (the classic `$HOME` scenario), the gates fail. Run `git init` and commit a baseline. `--allow-foreign-git` is never acceptable for real work.
+- **Completion is machine-verified**: `check-tasks-complete.sh` fails while `tasks.md` has unchecked tasks, and `check-verification-verdict.sh` fails the workflow unless `specs/<feature>/evidence/verification.json` says `{"verdict":"pass"}`. A prose report — however eloquent — cannot approve a feature.
+- **Never bypass with flags**: `--allow-no-tests`, `--allow-incomplete`, `--allow-missing`, `--allow-foreign-git`, and `--tokens-only` all disable rigor. Passing any of them requires explicit human approval in the same conversation, exactly like modifying a gate.
 
 ## Real Execution & Mandatory Dependency Installation
 
@@ -99,7 +113,7 @@ A green task cannot be simulated:
 - **Mandatory Dependencies (`node_modules`)**: The agent MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
 - **Sandbox Boundary Safety (`node_modules/`)**: NEVER use `read_file`, `list_directory`, or file-reading tools on `node_modules/`. In modern package managers (pnpm, npm, vite-plus), `node_modules` contains symlinks pointing outside the workspace sandbox, which triggers fatal environment errors. Manage and inspect packages exclusively via terminal commands (`npm ls`, `npm install`, `vp check`).
 - **Terminal Execution Required**: The agent MUST execute `.specify/scripts/bash/check-quality-gate.sh` via terminal after completing each task in `tasks.md`. Marking a task checkbox `- [x]` without executing the gate in the terminal is a fatal violation of Quality Gate Integrity.
-- **Imperative Pipeline Enforcement**: The Spec Kit workflow runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`) as non-agent shell steps with an automated self-healing repair window.
+- **Imperative Pipeline Enforcement**: The Spec Kit workflow runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`, `gate_tasks`, `gate_verdict`) as non-agent shell steps with an automated self-healing repair window. Shell gates can fail the workflow; prompt prose cannot.
 
 ## Subagent-Driven Execution Architecture (Anti-Context Drift)
 

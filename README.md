@@ -30,7 +30,9 @@ The workflow will autonomously execute specification audits, UI critiques, atomi
 - 🛑 **Interactive Visual Review Gate**: Inspect and approve UI screens and design tokens before writing product code.
 - 🔬 **Strict Stitch Token Verification**: Every token declared in `tokens.css` must be present in the DOM with the exact Stitch value; drift fails the gate.
 - 📊 **Structured Telemetry & Observability**: Every quality gate logs structured JSONL events (`.specify/telemetry.jsonl`) recording timestamp, step, model, subagent (integration process), role, gate duration in ms, scope, exit codes, and circuit breaker metrics. `--import-state` folds every workflow step from the active run's `state.json` into the log. Inspect with `emit-telemetry.sh --summary`.
-- 🛡️ **Machine-Generated Evidence for Definition of Done**: Eliminates subjective agent self-reporting. Generates raw machine proof artifacts in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `stitch-design.json`) required for task completion.
+- 🛡️ **Machine-Generated Evidence for Definition of Done**: Eliminates subjective agent self-reporting. Generates raw machine proof artifacts in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `tasks.json`, `verification.json`, `stitch-design.json`) required for task completion. Evidence is append-only: every run also appends a line to `<gate>.history.jsonl`.
+- 🚦 **Gate Integrity (no lying green)**: A test suite that executes **zero tests** fails. `--tokens-only` can never satisfy a `--require-ui` claim and writes a separate structural artifact. `--require-ui` cross-checks every manifest selector against `src/`. The project must own its git repository, or anti-tampering/blast radius refuse to run. `check-tasks-complete.sh` blocks completion while `tasks.md` has unchecked items, and `check-verification-verdict.sh` fails the workflow unless the auditor wrote `{"verdict":"pass"}`.
+- 🩹 **Bounded Self-Healing (fix, don't just fail)**: `repair_gates` (`do-while`, 3 attempts) repairs and re-runs **every** deterministic gate (quality, bundle, contracts, visual, tasks); `repair_verdict` (2 attempts) handles a rejecting audit by fixing the reported reasons and triggering a full re-audit. Deterministic problems are fixed without an LLM (`bootstrap-project-env.sh`: `git init` + baseline commit + Playwright assets). If it cannot fix something honestly, the run aborts with the evidence instead of shipping green.
 - 🔄 **Phased Implementation with Checkpoints**: Playwright and Vite+ validate every phase, then the workflow pauses for approval before the next phase. Use `--auto-continue` to run all phases without pausing.
 
 ---
@@ -47,6 +49,7 @@ The workflow will autonomously execute specification audits, UI critiques, atomi
    ```
 3. **Google Stitch MCP** configured in your AI agent environment (**fully optional**). The bundle no longer declares Stitch under `requires.mcp`, so `specify bundle install` works on any machine; without the MCP server the workflow degrades to local wireframe HTML + `routes-manifest.json` (see `enable_stitch`).
 4. **Playwright** installed in the project (`npx playwright install --with-deps chromium`).
+5. **Git** in the project root. The anti-tampering and blast-radius gates audit the project's own repository; `bootstrap-project-env.sh` runs `git init` + a baseline commit automatically, and the gates refuse to run when `git rev-parse --show-toplevel` points at an ancestor (for example `$HOME`).
 
 > **Windows note:** use **Git Bash** to run the installer and the `.sh` quality gates. PowerShell works for `npm test`, but if `bash` resolves to WSL (`C:\Windows\System32\bash.exe`), the test suite automatically prefers Git Bash when it is installed. Git Bash is recommended for the workflow scripts themselves.
 
@@ -95,8 +98,12 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/check-contracts.sh` | Route manifest & orphan component contract integrity gate |
 | `.specify/scripts/bash/check-ghost-classes.sh` | Ghost classes gate: scans JSX/TSX for undeclared CSS classes |
 | `.specify/scripts/bash/check-bundle-budget.sh` | Production performance & bundle size budget gate |
+| `.specify/scripts/bash/bootstrap-project-env.sh` | Deterministic bootstrap: `git init` + baseline commit, Playwright config/audit-spec materialization |
+| `.specify/scripts/bash/check-tasks-complete.sh` | Task-ledger completion gate (fails on unchecked tasks) |
+| `.specify/scripts/bash/check-verification-verdict.sh` | Machine verdict gate (fails unless `verification.json` says `pass`) |
 | `.specify/scripts/bash/emit-telemetry.sh` | Structured telemetry & observability event logger |
-| `.specify/templates/` | `vite.config.ts`, Playwright, env config, and design-audit templates |
+| `.specify/templates/` | `vite.config.ts`, Playwright config, env config, and design-audit templates |
+| `.specify/templates/auditor.md` (installed as `.specify/workflows/viteplus-stitch/AUDITOR.md`) | Independent audit protocol: evidence rules, re-execution commands, machine verdict contract |
 | `.specify/workflows/viteplus-stitch/GUARDRAILS.md` | Non-negotiable policy: never weaken gates to pass tests |
 | `.specify/memory/constitution.md` | Receives the "Quality Gate Integrity" section (read by every command) |
 | `AGENTS.md` | Root workspace guidelines: Clean Architecture boundaries, env-config & quality gates for any AI agent (Gemini, Claude, Cursor, Copilot) |
@@ -131,24 +138,53 @@ The workflow uses `integration: auto` by default, which reads the integration se
     ▼
 [ 6. tasks ] ──► [ 7. implement ] ──► [ 8. Shell Quality Gates ]
                                       - bootstrap_deps (install)
-                                      - gate_quality (vp check)
-                                      - gate_bundle (Rolldown)
-                                      - gate_contracts (routes & tokens)
+                                      - bootstrap_env  (git init + Playwright assets)
+                                      - gate_quality   (vp check + executed tests > 0)
+                                      - gate_bundle    (Rolldown)
+                                      - gate_contracts (selectors must exist in src/)
+                                      - gate_tasks     (tasks.md fully checked)
                                                     │
                                     ┌───────────────┴───────────────┐
                                     ▼ (if issues detected)          ▼ (if clean exit 0)
-                          [ 9. auto_repair ]                        │
-                          - repair_agent                            │
-                          - recheck_quality & recheck_bundle        │
+                     [ 9. repair_gates loop ]                       │
+                     do-while, max_iterations: 3                    │
+                     - repair_agent (application code only)         │
+                     - recheck_quality / bundle / contracts /       │
+                       visual / tasks (exit codes propagated)       │
+                     - abort_unrepaired (hard exit 1) if red        │
                                     │                               │
                                     └───────────────┬───────────────┘
                                                     │
                                                     ▼
                                             [ 10. verify ]
-                                            - Scenario Verification Matrix
-                                            - Machine Evidence Log (*.json)
-                                            - Delta-Spec Sync
+                                            - AUDITOR.md protocol (read it)
+                                            - evidence/verification.json (machine verdict)
+                                            - VERIFICATION_REPORT.md
+                                                    │
+                                    ┌───────────────┴───────────────┐
+                                    ▼ (verdict = reject)            ▼ (verdict = pass)
+                     [ repair_verdict loop ]                        │
+                     do-while, max_iterations: 2                    │
+                     - verdict_repair_agent (reason-driven)         │
+                     - verify_retry (full re-audit)                 │
+                     - gate_verdict_retry                           │
+                                    │                               │
+                                    └───────────────┬───────────────┘
+                                                    ▼
+                                    [ gate_verdict_final ]
+                                    fails the run unless the machine
+                                    verdict is "pass"
 ```
+
+### Self-healing, not just failing
+Two bounded loops fix what they can instead of dumping failures on you:
+
+1. **`repair_gates` (3 attempts)** — covers *every* deterministic gate (quality, bundle, contracts, visual, tasks), not just two. Each attempt dispatches a repair agent with the failing evidence, then re-runs all gates. Recheck steps propagate their real exit codes (the previous loop used `|| true`, so its condition could never fire — it was decorative). If the loop exhausts its attempts, `abort_unrepaired` stops the run with the telemetry summary instead of shipping a broken feature.
+2. **`repair_verdict` (2 attempts)** — if the independent auditor returns `reject`, a repair agent works through the verdict's `reasons`, and the auditor re-audits **from scratch**. `gate_verdict_final` then fails the run unless the fresh verdict is `pass`.
+
+Deterministic problems are not delegated to an LLM: `bootstrap_env` runs `bootstrap-project-env.sh`, which does `git init` + a baseline commit (with `node_modules/` ignored) and materializes the Playwright config and design-audit spec when designs exist.
+
+Repair agents are explicitly forbidden from using `--allow-no-tests`, `--allow-incomplete`, `--allow-missing`, `--allow-foreign-git`, `--tokens-only`, `--skip-tests`, `--skip-build`, or `--skip-orphans`, and from editing gates, configs, tests, snapshots or evidence. Silencing a gate is never a repair.
 
 ### Step 1: Start a New Feature (`specify`)
 Trigger the cycle with a prompt describing what you want to build:
@@ -214,22 +250,33 @@ The agent executes tasks phase by phase.
 - In **interactive mode** (`auto_continue: false`): pauses after each phase for human review.
 - In **unattended mode** (`auto_continue: true`): executes all implementation phases continuously.
 
-### Step 9: Imperative Shell Quality Gates & Auto-Repair Loop (`auto_repair`)
+### Step 9: Imperative Shell Quality Gates & Self-Healing (`bootstrap_env`, `gate_*`, `repair_gates`)
 Once tasks are complete, the workflow engine executes deterministic shell gates in the host OS with `continue_on_error: true`:
 1. **`bootstrap_deps`**: Ensures `node_modules` exists via `vp install` or `npm install`.
-2. **`gate_quality`**: Runs `check-quality-gate.sh` (Vite+ / Oxfmt / Oxlint / Clean Architecture vertical slice boundaries / Vitest regression suite / compilation).
-3. **`gate_bundle`**: Runs `check-bundle-budget.sh` (production asset limits <250KB per chunk, <1000KB total).
-4. **`gate_contracts`** (when `has_ui: true`): Runs `check-contracts.sh` and `verify-stitch-design.sh` with strict `--require-ui`.
-5. **Self-Healing Loop (`auto_repair`)**:
-   - If all gates exit with code `0`, the workflow skips auto-repair and proceeds directly to verification.
-   - If any gate detects failures, the `repair_agent` is activated in an automated repair window. The agent reproduces the failure via terminal, fixes the application code, re-runs the checks, and proceeds to verification without halting the workflow.
+2. **`bootstrap_env`**: Runs `bootstrap-project-env.sh` — deterministic, idempotent `git init` + baseline commit (`node_modules/` and `dist/` ignored) and Playwright config/design-audit materialization. No LLM involved: these were never application bugs.
+3. **`gate_quality`**: Runs `check-quality-gate.sh` (Vite+ / Oxfmt / Oxlint / Clean Architecture boundaries / executed-test count / compilation).
+4. **`gate_bundle`**: Runs `check-bundle-budget.sh` (production asset limits <250KB per chunk, <1000KB total).
+5. **`gate_contracts`** (when `has_ui: true`): Runs `check-contracts.sh --require-ui` (selectors must exist in `src/`) and `verify-stitch-design.sh --require-ui` (full Playwright).
+6. **`gate_tasks`**: Runs `check-tasks-complete.sh`; unchecked items in `tasks.md` fail the gate.
 
-### Step 10: Verification & Delta-Spec Sync (`verify`)
-The workflow executes final empirical certification against raw machine evidence:
-1. **Accessibility & Craft Audit**: When `has_ui: true`, activates `impeccable` to audit WCAG 2.1 AA compliance, keyboard navigation (`:focus-visible`), touch targets (44px), and reduced-motion support (`impeccable audit` + `impeccable animate`).
-2. **Scenario Verification Matrix**: Cross-checks each Given/When/Then scenario against automated test proof.
-3. **Verification Report (`VERIFICATION_REPORT.md`)**: Synthesizes the raw machine-generated evidence in `specs/<feature>/evidence/` (`quality-gate.json`, `bundle-budget.json`, `contracts.json`, `stitch-design.json`) and `.specify/telemetry.jsonl`.
-4. **Delta-Spec Sync**: Documents any architectural refinements or domain clarifications discovered during implementation.
+**Self-healing (`repair_gates`, `do-while`, `max_iterations: 3`)**:
+   - If every gate exits `0`, the loop body never runs and the workflow proceeds to verification.
+   - If any gate fails, `repair_agent` reproduces the failure from the evidence, fixes the **application code**, and all gates are re-run. The loop condition reads the re-executed exit codes, so it exits as soon as everything is genuinely green.
+   - If the three attempts are exhausted, `abort_unrepaired` prints the telemetry summary and stops the run with resume instructions. Silencing a gate (`--allow-no-tests`, `--allow-incomplete`, `--allow-missing`, `--allow-foreign-git`, `--tokens-only`, `--skip-*`) or editing a gate/config/test/evidence artifact is explicitly forbidden inside the repair window.
+
+### Step 10: Independent Verification & Machine Verdict (`verify`, `gate_verdict`, `repair_verdict`)
+The workflow executes final empirical certification against raw machine evidence. The auditor follows `.specify/workflows/viteplus-stitch/AUDITOR.md` (one canonical protocol, shared by the first audit and any re-audit):
+1. **Re-execute the machine**: runs the gates itself and inspects outputs, instead of trusting the dashboard or the agent's summary.
+2. **Evidence audit**: `quality-gate.json` (with `tests_executed > 0`), `bundle-budget.json`, `contracts.json`, `tasks.json`, `stitch-design.json` (with `full_visual_verification: true`), and `.specify/telemetry.jsonl`. Structural-only artifacts (`stitch-design-tokens.json`) never satisfy a UI claim.
+3. **Accessibility & Craft Audit**: When `has_ui: true`, activates `impeccable` to audit WCAG 2.1 AA compliance, keyboard navigation (`:focus-visible`), touch targets (44px), and reduced-motion support (`impeccable audit` + `impeccable animate`).
+4. **Scenario Verification Matrix**: Cross-checks each Given/When/Then scenario against executable proof.
+5. **Machine verdict**: writes `specs/<feature>/evidence/verification.json` with `verdict: "pass" | "reject"`, severity counters, scenario ratio and blocking `reasons`.
+6. **Verification Report (`VERIFICATION_REPORT.md`)**: its `VERDICT:` line must match the JSON.
+
+**Enforcement and repair**:
+- `gate_verdict` reads the JSON. On `reject`, `repair_verdict` (`do-while`, `max_iterations: 2`) dispatches a reason-driven repair agent and then re-audits **from scratch** (`verify_retry`).
+- `gate_verdict_final` is a hard shell step (no `continue_on_error`): the run cannot end "completed" without an approving machine verdict. Prose can no longer approve a feature.
+- **Delta-Spec Sync**: documents any architectural refinements discovered during implementation.
 
 ---
 
@@ -311,6 +358,8 @@ specify workflow run viteplus-stitch \
 All quality gates installed in `.specify/scripts/bash/` can be executed independently in local development or in CI/CD pipelines:
 
 ### 1. `check-quality-gate.sh` (Core Deterministic Gate)
+
+The regression gate counts what actually ran: **zero executed tests fail the gate**, and an unparseable test report fails too. `--allow-no-tests` is a human-owned escape hatch that records `regression_tests: skipped` in evidence instead of faking a pass. The project root must own its git repository; if `git rev-parse --show-toplevel` resolves above it (the `$HOME` trap), the gate stops instead of auditing the ancestor repo.
 Runs formatting (Oxfmt Airbnb), linting (Oxlint with complexity limits), TypeScript strict types, Clean Architecture boundary checks, centralized env guard, regression test suite, and application compilation/build verification.
 
 ```bash
@@ -323,8 +372,15 @@ bash .specify/scripts/bash/check-quality-gate.sh --scope=src/features/billing
 # Automatically format code issues via Oxfmt / Vite+
 bash .specify/scripts/bash/check-quality-gate.sh --fix
 
-# Skip regression tests
+# Skip regression tests (evidence records regression_tests: skipped)
 bash .specify/scripts/bash/check-quality-gate.sh --skip-tests
+
+# Human-approved exemption for a project that intentionally has no test suite
+bash .specify/scripts/bash/check-quality-gate.sh --allow-no-tests
+
+# Require the project root to own its git repository / opt out of that check
+bash .specify/scripts/bash/check-quality-gate.sh --require-git
+bash .specify/scripts/bash/check-quality-gate.sh --allow-foreign-git
 
 # Skip application compilation/build (used during intermediate after_task checks)
 bash .specify/scripts/bash/check-quality-gate.sh --skip-build
@@ -338,6 +394,8 @@ bash .specify/scripts/bash/check-quality-gate.sh --reset-breaker
 
 ### 2. `check-contracts.sh` (Route & Component Contract Gate)
 Validates that routes in `routes-manifest.json` match application screens, fixtures exist, no unconsumed/orphan components exist in `src/`, and Atomic Design (1 component per file) is enforced. Automatically invokes `check-ghost-classes.sh`.
+
+**With `--require-ui`** the gate stops being a manifest self-check: it implies `--check-orphans`, requires renderable sources in `src/`, and verifies that **every declared selector actually exists in the code** (`[data-testid="x"]`, `#id`, `.class` or a tag). A manifest whose selectors are not in `src/` fails as a ghost contract.
 
 ```bash
 # Standard contract verification
@@ -387,12 +445,14 @@ bash .specify/scripts/bash/check-ghost-classes.sh --dry-run
 ```
 
 ### 4. `verify-stitch-design.sh` (Stitch Token & Visual Gate)
-Compares design tokens in `tokens.css` against DOM `:root` computed styles, followed by Playwright visual snapshot regression testing and route contract validation.
+Runs route/component contracts, verifies `tokens.css` against DOM `:root` computed styles, and then Playwright visual snapshot regression.
 
-> **💡 Graceful Degradation / Auto-Bypass:** If `specs/<feature>/designs` does not exist (e.g. backend features run with `has_ui=false` or UI features run with `enable_stitch=false`), this script automatically **skips execution and exits with code 0**, keeping CI/CD pipelines green. If `tokens.css` is present but golden `.png` screenshots are omitted (text-only HTML assets), token verification and WCAG AA accessibility tests run while screenshot diffing is gracefully bypassed.
+> **💡 Graceful Degradation / Auto-Bypass:** If `specs/<feature>/designs` does not exist (e.g. backend features run with `has_ui=false` or UI features run with `enable_stitch=false`), this script automatically **skips execution and exits with code 0**. If `tokens.css` is present but golden `.png` screenshots are omitted (text-only HTML assets), token verification and WCAG AA accessibility tests still run while screenshot diffing is bypassed by design — the artifact then claims tokens/DOM verification, not pixel parity.
+
+> **⚠️ Structural vs visual:** `--tokens-only` only validates `tokens.css` structure. It writes `stitch-design-tokens.json` (never `stitch-design.json`), sets `full_visual_verification: false`, and is **rejected with exit 2 when combined with `--require-ui`**. The Playwright config and design-audit spec are resolved from the project root or `.specify/templates/` (including the `.tmpl` sources); if neither exists the gate exits 2 with the actionable path instead of failing with a cryptic "no tests found".
 
 ```bash
-# Fast token validation only (runs in <1s without starting Playwright)
+# Structural token check only: no Playwright, no rendering claim
 bash .specify/scripts/bash/verify-stitch-design.sh --tokens-only
 
 # Full visual regression comparison against Stitch golden screenshots
@@ -445,11 +505,72 @@ bash .specify/scripts/bash/check-env-config.sh --env-config=src/config/env.ts
 ### 7. `check-blast-radius.sh` (Scope & Circuit Breaker Guard)
 Prevents autonomous agents from modifying protected quality scripts, workflows, or files outside the feature scope.
 
+The project root must own its git repository. If `git rev-parse --show-toplevel` resolves to an ancestor (the `$HOME` trap), the gate **fails** instead of reporting that ancestor's modified files as your blast radius. All `git status` scans are scoped to the project root.
+
 ```bash
 bash .specify/scripts/bash/check-blast-radius.sh --scope=src/features/billing
+
+# Fail when no git repository exists at the project root
+bash .specify/scripts/bash/check-blast-radius.sh --require-git
+
+# Dangerous: audit an ancestor repository instead of this project
+bash .specify/scripts/bash/check-blast-radius.sh --allow-foreign-git
 ```
 
-### 8. `emit-telemetry.sh` (Structured Telemetry & Observability Emitter)
+### 8. `bootstrap-project-env.sh` (Deterministic Project Bootstrap)
+Fixes the two gate failures that were never application bugs, idempotently and without an LLM:
+
+1. Creates `.git` when the project root has none and records a baseline commit so diff-based gates (`anti_tampering`, `blast_radius`) have a `HEAD`. `node_modules/` and `dist/` are added to `.gitignore` first, so dependencies never enter the snapshot.
+2. Copies `playwright.design.config.ts` to the project root and `design-audit.spec.ts` to `tests/design/` from `.specify/templates/` (including the `.tmpl` sources) when the feature declares designs.
+
+Nothing is ever overwritten, and the script always exits 0: the gates remain the authority.
+
+```bash
+# Bootstrap the current project (default root: $PWD)
+bash .specify/scripts/bash/bootstrap-project-env.sh
+
+# Explicit root / designs directory, or opt out of a step
+bash .specify/scripts/bash/bootstrap-project-env.sh --root=. --designs-dir=specs/001-feature/designs
+bash .specify/scripts/bash/bootstrap-project-env.sh --no-git
+bash .specify/scripts/bash/bootstrap-project-env.sh --no-templates
+```
+
+### 9. `check-tasks-complete.sh` (Task Completion Gate)
+Completion cannot be proven by a scaffold. Fails while `tasks.md` still contains unchecked items and prints the first pending tasks.
+
+```bash
+# Fails when any task is unchecked (default: newest feature under specs/)
+bash .specify/scripts/bash/check-tasks-complete.sh
+
+# Human-approved override (never pass this on your own)
+bash .specify/scripts/bash/check-tasks-complete.sh --allow-incomplete
+```
+
+### 10. `check-verification-verdict.sh` (Machine Verdict Gate)
+The final verification step is a prompt, and a prompt cannot fail a workflow. This gate reads the machine-readable verdict the auditor must write and turns it into an exit code. A prose `VERIFICATION_REPORT.md` alone is not evidence.
+
+```bash
+# Fails unless <feature>/evidence/verification.json contains {"verdict":"pass"}
+bash .specify/scripts/bash/check-verification-verdict.sh
+
+# Human-approved override for non-verifiable runs (never pass this on your own)
+bash .specify/scripts/bash/check-verification-verdict.sh --allow-missing
+```
+
+```json
+{
+  "verdict": "reject",
+  "critical": 4,
+  "high": 3,
+  "medium": 3,
+  "scenarios_passed": 0,
+  "scenarios_total": 22,
+  "reasons": ["zero tests executed", "ghost selectors", "no project git repository"],
+  "auditor": "independent-qc"
+}
+```
+
+### 11. `emit-telemetry.sh` (Structured Telemetry & Observability Emitter)
 Logs structured JSONL execution events across all quality gates to `.specify/telemetry.jsonl`. Tracks execution durations in milliseconds, exit codes, feature scopes, circuit breaker trip events, and **provenance**: which workflow step ran, which AI model executed it, and which subagent/integration process was launched (`none` when not applicable).
 
 ```bash
@@ -498,6 +619,8 @@ SPECIFY_SCOPE           →  verify-stitch-design.sh --scope
                                                          └─ check-ghost-classes.sh --src-dir=<scope>
 ```
 
+Strictness applies in **both** modes: a scoped run still fails on zero executed tests, ghost selectors, unchecked tasks, or a missing machine verdict. Scope narrows *what* is audited, never *whether* it is proven — and the `--allow-*` escape hatches are human-owned.
+
 Key brownfield guarantees:
 
 1. **Env guard is scoped**: `check-env-config.sh --path=<scope>` only flags direct `process.env` / `import.meta.env` access inside the slice.
@@ -513,10 +636,10 @@ When building UI features (`has_ui: true`), the workflow integrates the **Impecc
 
 | Impeccable Sub-Command | Workflow Stage | Target Scope | Output Artifact |
 |---|:---:|---|---|
-| **`impeccable critique`** | Step 4 (`critique-design`) | Heuristic visual hierarchy, contrast (WCAG AA), typography rhythm, and cognitive load assessment. | `specs/<feature>/designs/DESIGN_CRITIQUE.md` |
-| **`impeccable harden`** | Step 6 & 7 (Tasks & Implementation) | Production robustness: loading skeletons to prevent CLS, empty states with clear CTAs, error boundaries, and input recovery. | Handled in component tests & UI layer |
-| **`impeccable animate`** | Step 7 (UI Polish Phase) | GPU-accelerated micro-interactions (`transform`, `opacity`), feedback curves (`cubic-bezier(0.16, 1, 0.3, 1)`), and mandatory `@media (prefers-reduced-motion: reduce)`. | Zero layout thrashing verified by `detect.mjs` |
-| **`impeccable audit`** | Step 8 (`verify`) | Accessibility verification (WCAG 2.1 AA), keyboard navigation (`tabIndex`, `:focus-visible`), touch targets (min 44x44px), and responsive layout audit. | Recorded in `VERIFICATION_REPORT.md` |
+| **`impeccable critique`** | `critique-design` | Heuristic visual hierarchy, contrast (WCAG AA), typography rhythm, and cognitive load assessment. | `specs/<feature>/designs/DESIGN_CRITIQUE.md` |
+| **`impeccable harden`** | `tasks` + `implement` | Production robustness: loading skeletons to prevent CLS, empty states with clear CTAs, error boundaries, and input recovery. | Handled in component tests & UI layer |
+| **`impeccable animate`** | `implement` (UI polish phase) | GPU-accelerated micro-interactions (`transform`, `opacity`), feedback curves (`cubic-bezier(0.16, 1, 0.3, 1)`), and mandatory `@media (prefers-reduced-motion: reduce)`. | Zero layout thrashing verified by `detect.mjs` |
+| **`impeccable audit`** | `verify` | Accessibility verification (WCAG 2.1 AA), keyboard navigation (`tabIndex`, `:focus-visible`), touch targets (min 44x44px), and responsive layout audit. | Recorded in `VERIFICATION_REPORT.md` |
 
 ---
 
@@ -536,13 +659,15 @@ The rule strictly forbids modifying:
 - Lint rules, complexity limits, or architecture boundary overrides
 - Suppressions like `eslint-disable`, `oxlint-disable`, `@ts-ignore`, `@ts-expect-error`
 
-When a gate fails, the model must fix the application code. If a gate is genuinely wrong, it must stop and request explicit human approval before changing it.
+An **Evidence Integrity** section is installed alongside it: tasks must be checked, the machine verdict must be `pass`, structural-only checks never count as visual proof, `--allow-*` flags require explicit approval, evidence artifacts are append-only, and the project must own its git repository.
+
+When a gate fails, the model must fix the application code. If a gate is genuinely wrong, it must stop and request explicit human approval before changing it. Inside the repair loops (`repair_gates`, `repair_verdict`) silencing a gate is never an acceptable fix. Final verification follows `.specify/workflows/viteplus-stitch/AUDITOR.md`, which the auditor must read and execute; the workflow, not the prose, decides the outcome.
 
 ---
 
 ## Local Development & CI
 
-The repository ships its own regression suite (Vitest, 90+ specs covering every gate script, the installer, the manifest schema, and the workflow schema).
+The repository ships its own regression suite (Vitest, 140+ specs covering every gate script, the installer, the manifest schema, the workflow schema, and the gate-integrity contract). The suite spawns real bash gates, so `vitest.config.ts` caps `maxWorkers` at 4 to avoid starving workers.
 
 ```bash
 npm ci                # Install dev dependencies
