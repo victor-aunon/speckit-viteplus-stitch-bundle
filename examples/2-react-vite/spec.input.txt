@@ -1,39 +1,39 @@
 # FEATURE: Daily Habit & Streak Tracker SPA
 
-## 1. Contexto y Propósito
-Aplicación web cliente (Single Page Application) en React + Vite+ para registrar hábitos diarios, visualizar rachas activas (streaks), celebrar hitos de constancia y consultar estadísticas semanales de cumplimiento con retroalimentación visual inmediata.
+## 1. Context & Purpose
+A client-side Single Page Application (SPA) built with React + Vite+ to track daily habits, visualize active streaks, celebrate consistency milestones, and display weekly completion analytics with instant visual feedback.
 
-## 2. Entidades de Dominio
+## 2. Domain Entities & Models
 - Habit: id (UUID), title (string), category (health, learning, productivity, mindfulness), targetDaysPerWeek (number), createdAt (Date).
 - HabitCompletion: habitId, date (ISO string YYYY-MM-DD), completed (boolean).
-- StreakMetric: currentStreak (días consecutivos), longestStreak (récord histórico), weeklyCompletionRate (porcentaje 0-100%).
+- StreakMetric: currentStreak (consecutive days), longestStreak (historical record), weeklyCompletionRate (percentage 0-100%).
 
-## 3. Pantallas, Rutas y Componentes UI
-- / (Ruta principal en routes-manifest.json): Dashboard interactivo con lista de hábitos del día y barra de progreso semanal.
-- HabitCard: Tarjeta atómica por hábito con selector circular de completado, indicador visual de racha y badge de categoría.
-- StreakRing: Componente visual SVG circular que representa el porcentaje semanal de cumplimiento.
-- EmptyStateHabits: Vista vacía con mensaje motivador y llamada a la acción (CTA) para crear el primer hábito.
-- Diseño y Tokens: Basado en Google Stitch (`specs/habits/designs/tokens.css`) consumiendo variables CSS semánticas (`--color-primary`, `--color-surface`, `--radius-md`, `--space-4`).
+## 3. UI Screens, Routes & Components
+- / (Root route in routes-manifest.json): Interactive dashboard displaying today's habit list and weekly progress overview.
+- HabitCard: Atomic card component per habit with circular completion toggle, visual streak badge, and category tag.
+- StreakRing: SVG circular progress indicator displaying weekly completion percentage.
+- EmptyStateHabits: Accessible empty state with encouraging copy and a Call to Action (CTA) to create the first habit.
+- Styling & Design Tokens: Powered by Google Stitch (specs/habits/designs/tokens.css) consuming semantic CSS variables (--color-primary, --color-surface, --radius-md, --space-4).
 
-## 4. Criterios de Aceptación Clave (Gherkin)
-- Escenario 1 (Marcar hábito como completado):
-  Given que el usuario visualiza su lista de hábitos pendientes para el día de hoy
-  When pulsa sobre el control de completado de un hábito
-  Then el estado cambia a completado, el contador de racha actual se incrementa en 1 y se anima el anillo de progreso StreakRing.
+## 4. Key Acceptance Criteria (Gherkin Scenarios)
+- Scenario 1 (Mark habit as completed):
+  Given the user is viewing today's pending habit list
+  When they activate the completion control on a habit card
+  Then the status changes to completed, the current streak increments by 1, and the StreakRing animates.
 
-- Escenario 2 (Persistencia y cálculo de racha rota):
-  Given un hábito cuya última fecha de completado fue hace más de 48 horas
-  When el usuario abre la aplicación
-  Then la racha actual se reinicia a 0 manteniendo el récord histórico intacto.
+- Scenario 2 (Streak reset on missed day):
+  Given a habit whose last completion timestamp was more than 48 hours ago
+  When the user opens the application
+  Then the current streak resets to 0 while preserving the all-time longest streak record.
 
-- Escenario 3 (Accesibilidad y navegación por teclado):
-  Given un usuario navegando exclusivamente con teclado
-  When enfoca el botón de completado de HabitCard con 'Tab' y presiona 'Espacio' o 'Enter'
-  Then se muestra un anillo de foco visible (:focus-visible) de al menos 2px y el hábito conmuta su estado de forma accesible (aria-pressed actualizado).
+- Scenario 3 (Keyboard navigation & accessibility):
+  Given a user navigating exclusively via keyboard
+  When they focus the HabitCard completion control with 'Tab' and press 'Space' or 'Enter'
+  Then a visible focus ring (:focus-visible) of at least 2px appears and the habit toggles state accessibly (aria-pressed updated).
 
-## 5. Restricciones Técnicas y Calidad
-- Arquitectura Limpia modular bajo src/features/habits/ (domain, application, ui).
-- Atomic Design estricto: Exactamente un componente React por archivo (HabitCard.tsx, StreakRing.tsx, etc.).
-- Sin clases CSS fantasma: Cada clase en JSX debe existir en tokens.css o en estilos declarados.
-- Presupuesto de producción: Bundle compilado por Rolldown menor a 250KB por chunk.
-- Pruebas unitarias de componentes con Vitest y Testing Library para interacciones y estados vacíos.
+## 5. Technical Constraints & Quality Gates
+- Modular Clean Architecture under src/features/habits/ (domain, application, ui).
+- Strict Atomic Design: Exactly one React component per file (HabitCard.tsx, StreakRing.tsx, etc.).
+- Ghost Classes Gate: Every class name referenced in JSX must exist in tokens.css or declared stylesheets.
+- Production budget: Compiled Rolldown bundle size under 250KB per chunk.
+- Unit tests using Vitest and Testing Library for user interactions and empty states.

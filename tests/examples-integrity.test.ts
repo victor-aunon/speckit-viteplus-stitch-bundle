@@ -15,7 +15,7 @@ describe('Examples Reference Architecture Integrity', () => {
     { id: '4-vanilla-web', hasUi: true },
   ];
 
-  it('should contain all 4 archetypes with required files and high-leverage spec-input', () => {
+  it('should contain all 4 clean archetypes with required files and English spec-input', () => {
     for (const eg of expectedExamples) {
       const dir = path.join(examplesDir, eg.id);
       expect(fs.existsSync(dir), `Directory ${eg.id} should exist`).toBe(true);
@@ -33,9 +33,13 @@ describe('Examples Reference Architecture Integrity', () => {
       expect(fs.existsSync(specInputPath), `${eg.id}/spec.input.txt should exist`).toBe(true);
 
       const specContent = fs.readFileSync(specInputPath, 'utf8');
-      expect(specContent).toContain('Contexto y Propósito');
-      expect(specContent).toContain('Criterios de Aceptación Clave');
-      expect(specContent).toContain('Restricciones Técnicas');
+      expect(specContent).toContain('Context & Purpose');
+      expect(specContent).toContain('Key Acceptance Criteria');
+      expect(specContent).toContain('Technical Constraints');
+
+      // Verify that no leftover pre-implemented feature files pollute the clean example starters
+      expect(fs.existsSync(path.join(dir, 'src/features')), `${eg.id} should start clean without src/features`).toBe(false);
+      expect(fs.existsSync(path.join(dir, 'specs')), `${eg.id} should start clean without specs/`).toBe(false);
     }
   });
 

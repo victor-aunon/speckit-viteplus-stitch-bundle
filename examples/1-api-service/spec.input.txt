@@ -1,37 +1,37 @@
 # FEATURE: JWT Token Verification & Claims Extractor Service
 
-## 1. Contexto y Propósito
-Proveer un servicio de backend robusto, desacoplado y de alto rendimiento para validar tokens JWT, extraer claims de identidad (userId, tenantId, roles, permissions) y verificar firmas criptográficas en microservicios autenticados sin depender de ningún framework web ni bibliotecas de UI.
+## 1. Context & Purpose
+Provide a decoupled, high-performance backend authentication service to validate JWT tokens, extract identity claims (userId, tenantId, roles, permissions), and verify cryptographic signatures in authenticated microservices without relying on UI dependencies or external web frameworks.
 
-## 2. Entidades y Modelos de Dominio
-- TokenPayload: Entidad inmutable con userId (UUID), tenantId (string), roles (array de strings) y permissions (array de strings).
-- TokenExpiry: Value object que valida la ventana temporal del token (issuedAt, expiresAt) y comprueba si ha expirado.
-- VerificationResult: Resultado tipado discriminado (Success con UserClaims vs Failure con AuthErrorReason).
+## 2. Domain Entities & Value Objects
+- TokenPayload: Immutable domain entity containing userId (UUID), tenantId (string), roles (string array), and permissions (string array).
+- TokenExpiry: Value object validating the temporal validity window (issuedAt, expiresAt) and expiration status.
+- VerificationResult: Discriminated union result (Success with UserClaims vs Failure with AuthErrorReason).
 
-## 3. Puertos y Servicios de Aplicación
-- TokenVerifierPort (Puerto de salida): Contrato de abstracción criptográfica para verificar firmas y decodificar payloads.
-- VerifyTokenUseCase (Caso de uso de aplicación): Orquesta la verificación del token, comprueba vigencia temporal y mapea a la entidad de dominio.
-- JwtService (Adaptador de infraestructura): Implementación del puerto utilizando crypto/jsonwebtoken con lectura centralizada de JWT_SECRET.
+## 3. Application Services & Ports
+- TokenVerifierPort (Output Port): Cryptographic abstraction contract for signature verification and payload decoding.
+- VerifyTokenUseCase (Application Service): Orchestrates token verification, validates temporal expiration, and maps to the domain entity.
+- JwtService (Infrastructure Adapter): Implementation of TokenVerifierPort using crypto/jsonwebtoken with centralized JWT_SECRET configuration.
 
-## 4. Criterios de Aceptación Clave (Gherkin)
-- Escenario 1 (Token válido con claims completos):
-  Given un token JWT firmado correctamente con JWT_SECRET y con fecha de expiración futura
-  When VerifyTokenUseCase procesa el token
-  Then retorna VerificationResult con status 'success' y los claims tipados del usuario (userId, tenantId, roles).
+## 4. Key Acceptance Criteria (Gherkin Scenarios)
+- Scenario 1 (Valid token with complete claims):
+  Given a JWT token correctly signed with JWT_SECRET and a future expiration timestamp
+  When VerifyTokenUseCase processes the token
+  Then it returns VerificationResult with status 'success' and typed user claims (userId, tenantId, roles).
 
-- Escenario 2 (Token expirado):
-  Given un token JWT con fecha 'exp' en el pasado
-  When VerifyTokenUseCase evalúa la expiración
-  Then rechaza la operación inmediatamente retornando status 'expired' sin consultar almacenamiento externo.
+- Scenario 2 (Expired token):
+  Given a JWT token with an 'exp' timestamp in the past
+  When VerifyTokenUseCase evaluates token expiration
+  Then it immediately rejects the operation returning status 'expired' without querying external storage.
 
-- Escenario 3 (Firma inválida o token manipulado):
-  Given un token alterado o firmado con una clave secreta incorrecta
-  When VerifyTokenUseCase intenta validar la firma criptográfica
-  Then retorna status 'invalid_signature' y registra un evento de seguridad estructurado.
+- Scenario 3 (Invalid signature or tampered payload):
+  Given a tampered token or one signed with an incorrect secret key
+  When VerifyTokenUseCase attempts cryptographic verification
+  Then it returns status 'invalid_signature' and logs a structured security audit event.
 
-## 5. Restricciones Técnicas y Calidad
-- Arquitectura Limpia estricta con Vertical Slices bajo src/features/auth/ (domain, application, infrastructure).
-- La capa de dominio NO puede importar infraestructura, adaptadores externos ni Node built-ins innecesarios.
-- Lectura de variables de entorno (JWT_SECRET, JWT_ISSUER) centralizada exclusivamente en src/config/env.ts.
-- has_ui=false: Cero dependencias de React, Vite visual gates, Playwright ni Tailwind.
-- 100% de cobertura en tests unitarios para VerifyTokenUseCase y TokenExpiry.
+## 5. Technical Constraints & Quality Gates
+- Strict Clean Architecture with vertical slices under src/features/auth/ (domain, application, infrastructure).
+- The domain layer MUST NOT import infrastructure, third-party libraries, or unnecessary Node built-ins.
+- Centralized environment variable access (JWT_SECRET, JWT_ISSUER) strictly via src/config/env.ts.
+- has_ui=false: Zero dependencies on React, Vite visual gates, Playwright, or Tailwind.
+- 100% unit test coverage for VerifyTokenUseCase and TokenExpiry.
