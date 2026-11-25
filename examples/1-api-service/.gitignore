@@ -1,0 +1,13 @@
+# Ignore all generated files during workflow execution
+*
+
+# Allow directories needed for path traversal
+!src/
+!src/config/
+
+# Preserve only baseline files
+!.gitignore
+!package.json
+!README.md
+!spec.input.txt
+!src/config/env.ts

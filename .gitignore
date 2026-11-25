@@ -3,3 +3,14 @@ dist/
 *.zip
 .specify/
 .DS_Store
+
+# Example subfolder workflow execution artifacts
+examples/*/.git/
+examples/*/.specify/
+examples/*/specs/
+examples/*/node_modules/
+examples/*/dist/
+examples/*/.next/
+examples/*/coverage/
+examples/*/test-results/
+examples/*/playwright-report/

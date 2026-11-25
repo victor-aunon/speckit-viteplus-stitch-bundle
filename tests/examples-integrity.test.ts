@@ -23,6 +23,9 @@ describe('Examples Reference Architecture Integrity', () => {
       const readmePath = path.join(dir, 'README.md');
       expect(fs.existsSync(readmePath), `${eg.id}/README.md should exist`).toBe(true);
 
+      const gitignorePath = path.join(dir, '.gitignore');
+      expect(fs.existsSync(gitignorePath), `${eg.id}/.gitignore should exist`).toBe(true);
+
       const pkgPath = path.join(dir, 'package.json');
       expect(fs.existsSync(pkgPath), `${eg.id}/package.json should exist`).toBe(true);
 
