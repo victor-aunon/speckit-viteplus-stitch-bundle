@@ -24,11 +24,15 @@ BUNDLE_VERSION="$(resolve_bundle_version)"
 RELEASE_TAG=""
 ZIP_FILE=""
 TARGET_DIR="."
+PROFILE=""
 
 for arg in "$@"; do
   case "$arg" in
     --target-dir=*)
       TARGET_DIR="${arg#*=}"
+      ;;
+    --profile=*)
+      PROFILE="${arg#*=}"
       ;;
     --release=*|--version=*)
       RELEASE_TAG="${arg#*=}"
@@ -41,6 +45,7 @@ for arg in "$@"; do
       echo ""
       echo "Options:"
       echo "  --target-dir=<path>    Target directory of the project (default: current directory)"
+      echo "  --profile=<profile>    Project profile: api, react, vanilla, or fullstack (default: auto-detected)"
       echo "  --release=<tag>        Install from a specific GitHub Release tag (e.g. v1.0.0)"
       echo "  --zip=<path>           Install from a locally downloaded release .zip file"
       echo "  --help                 Show this help message"
@@ -404,16 +409,66 @@ if [ -f "$EXTENSIONS_FILE" ]; then
   fi
 fi
 
+detect_project_profile() {
+  local target="$1"
+  local pkg_file="$target/package.json"
+
+  # 1. Framework configs (Next, Nuxt, Astro, Remix, SvelteKit) -> fullstack
+  for candidate in "next.config.*" "nuxt.config.*" "astro.config.*" "remix.config.*" "svelte.config.*"; do
+    if compgen -G "$target/$candidate" >/dev/null 2>&1; then
+      echo "fullstack"
+      return 0
+    fi
+  done
+
+  # 2. Inspect package.json if present
+  if [ -f "$pkg_file" ]; then
+    # React / Vue / Svelte UI libraries
+    if grep -qE '"(react|@vitejs/plugin-react|vue|svelte)"' "$pkg_file" 2>/dev/null; then
+      echo "react"
+      return 0
+    fi
+    # Explicit API / Service / Backend in name or backend dependencies
+    if grep -qE '"name":[[:space:]]*"[^"]*(api|service|server|backend)' "$pkg_file" 2>/dev/null || \
+       grep -qE '"(express|fastify|hono|koa|jsonwebtoken|cors)"' "$pkg_file" 2>/dev/null; then
+      echo "api"
+      return 0
+    fi
+  fi
+
+  # 3. Source structure check
+  if [ -d "$target/src/features" ] && [ ! -d "$target/src/components" ] && [ ! -f "$target/index.html" ]; then
+    echo "api"
+    return 0
+  fi
+
+  if [ -f "$target/index.html" ]; then
+    echo "vanilla"
+    return 0
+  fi
+
+  # Default fallback profile
+  echo "react"
+}
+
 # 6. Provision or augment root AGENTS.md for AI agent guidance (Gemini CLI, Claude Code, Cursor, Copilot)
 AGENTS_FILE="$TARGET_DIR/AGENTS.md"
+TARGET_PROFILE="${PROFILE:-$(detect_project_profile "$TARGET_DIR")}"
+RESOLVED_AGENTS_TMPL="$BUNDLE_ROOT/templates/AGENTS.${TARGET_PROFILE}.md.tmpl"
+if [ ! -f "$RESOLVED_AGENTS_TMPL" ]; then
+  RESOLVED_AGENTS_TMPL="$BUNDLE_ROOT/templates/AGENTS.md.tmpl"
+fi
+
 if [ ! -f "$AGENTS_FILE" ]; then
-  if [ -f "$BUNDLE_ROOT/templates/AGENTS.md.tmpl" ]; then
-    cp "$BUNDLE_ROOT/templates/AGENTS.md.tmpl" "$AGENTS_FILE"
+  if [ -f "$RESOLVED_AGENTS_TMPL" ]; then
+    cp "$RESOLVED_AGENTS_TMPL" "$AGENTS_FILE"
+    echo "✓ Initialized AGENTS.md with $TARGET_PROFILE profile"
   fi
 elif ! grep -q "viteplus-stitch:agents-instructions" "$AGENTS_FILE"; then
-  if [ -f "$BUNDLE_ROOT/templates/AGENTS.md.tmpl" ]; then
+  if [ -f "$RESOLVED_AGENTS_TMPL" ]; then
     echo "" >> "$AGENTS_FILE"
-    cat "$BUNDLE_ROOT/templates/AGENTS.md.tmpl" >> "$AGENTS_FILE"
+    cat "$RESOLVED_AGENTS_TMPL" >> "$AGENTS_FILE"
+    echo "✓ Appended $TARGET_PROFILE profile instructions to existing AGENTS.md"
   fi
 fi
 
@@ -448,9 +503,9 @@ done
 
 VITE_CONFIG_FILE="$TARGET_DIR/vite.config.ts"
 if [ ! -f "$VITE_CONFIG_FILE" ]; then
-  if [ "$FRAMEWORK" != "vite" ] && [ -f "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" ]; then
+  if { [ "$FRAMEWORK" != "vite" ] || [ "$TARGET_PROFILE" = "api" ]; } && [ -f "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" ]; then
     cp "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" "$VITE_CONFIG_FILE"
-    echo "✓ Detected $FRAMEWORK: initialized vite.config.ts (Vite+ lint/fmt/boundaries only, no Vite bundler plugins)"
+    echo "✓ Detected $FRAMEWORK ($TARGET_PROFILE profile): initialized vite.config.ts (Vite+ lint/fmt/boundaries only, no Vite bundler plugins)"
     echo "  Next step: add \`vite-plus\` (or use the global \`vp\` CLI) so \`vp check\` runs here."
   elif [ -f "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" ]; then
     cp "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" "$VITE_CONFIG_FILE"

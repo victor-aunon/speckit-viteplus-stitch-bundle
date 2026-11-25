@@ -148,6 +148,51 @@ describe('Bundle Installer Script E2E', () => {
     removeDir(tempDir);
   });
 
+  it('should support profile-specific AGENTS.md installation and autodetection', () => {
+    // 1. Explicit --profile=api
+    const apiDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-api-test-'));
+    fs.mkdirSync(path.join(apiDir, '.specify'), { recursive: true });
+    runBash(installScript, [`--target-dir=${apiDir}`, '--profile=api']);
+
+    const apiAgents = fs.readFileSync(path.join(apiDir, 'AGENTS.md'), 'utf8');
+    expect(apiAgents).toContain('API & Backend Service Profile');
+    expect(apiAgents).toContain('HTTP Runtime Entrypoint Contract');
+    expect(apiAgents).not.toContain('@shadcn/lint');
+    expect(apiAgents).not.toContain('React presentation components');
+    removeDir(apiDir);
+
+    // 2. Autodetect API service from package.json name
+    const autoApiDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-auto-api-'));
+    fs.mkdirSync(path.join(autoApiDir, '.specify'), { recursive: true });
+    fs.writeFileSync(
+      path.join(autoApiDir, 'package.json'),
+      JSON.stringify({ name: 'example-api-service', version: '1.0.0' }),
+      'utf8'
+    );
+    runBash(installScript, [`--target-dir=${autoApiDir}`]);
+
+    const autoApiAgents = fs.readFileSync(path.join(autoApiDir, 'AGENTS.md'), 'utf8');
+    expect(autoApiAgents).toContain('API & Backend Service Profile');
+    expect(autoApiAgents).not.toContain('React presentation components');
+    removeDir(autoApiDir);
+
+    // 3. Autodetect Vanilla web
+    const vanillaDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-vanilla-test-'));
+    fs.mkdirSync(path.join(vanillaDir, '.specify'), { recursive: true });
+    fs.writeFileSync(
+      path.join(vanillaDir, 'package.json'),
+      JSON.stringify({ name: 'vanilla-app', version: '1.0.0' }),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(vanillaDir, 'index.html'), '<html></html>', 'utf8');
+    runBash(installScript, [`--target-dir=${vanillaDir}`]);
+
+    const vanillaAgents = fs.readFileSync(path.join(vanillaDir, 'AGENTS.md'), 'utf8');
+    expect(vanillaAgents).toContain('Vanilla Web Profile');
+    expect(vanillaAgents).not.toContain('@shadcn/lint');
+    removeDir(vanillaDir);
+  });
+
   it('should merge cleanly into an existing extensions.yml with existing hooks without duplicate YAML keys', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-existing-hooks-test-'));
     const specifyDir = path.join(tempDir, '.specify');

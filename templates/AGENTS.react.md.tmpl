@@ -1,0 +1,118 @@
+<!-- viteplus-stitch:agents-instructions -->
+# Agent Guidelines & Quality Architecture (React & Stitch UI Profile)
+
+This repository enforces strict, deterministic quality gates, Impeccable UI craft standards, and Clean Architecture boundaries for React applications. Every AI agent (Claude Code, Gemini CLI, Cursor, Copilot, or Spec Kit subagents) working in this workspace must adhere to these non-negotiable standards.
+
+---
+
+## 1. Clean Architecture Boundaries (Vertical Slices)
+
+Code is organized into vertical feature slices under `src/features/<slice>/` and shared cross-cutting modules under `src/core/`:
+
+```
+src/features/<slice>/
+├── domain/           # Pure business logic: entities, value objects, domain invariants (zero external dependencies)
+├── application/      # Use cases, application services, repository ports (interfaces)
+├── infrastructure/   # Data adapters, HTTP clients, persistence implementations
+└── ui/               # React presentation components, view-specific hooks, local styling
+```
+
+### Unidirectional Dependency Rule
+- **Domain** cannot import from **Application**, **Infrastructure**, or **UI**.
+- **Application** cannot import from **Infrastructure** or **UI**.
+- **Infrastructure** cannot import from **UI**.
+- **UI** cannot directly import from **Infrastructure** (must depend on application ports).
+- *Violations will trigger fatal errors in `vp check` / Oxlint architectural boundary linting.*
+
+---
+
+## 2. Centralized Typed Environment Configuration
+
+- **Never** access `process.env` or `import.meta.env` directly in feature or UI code.
+- All environment variables must be declared, validated (e.g. Zod), typed, and exported from `src/config/env.ts`.
+- Direct access is strictly blocked by `.specify/scripts/bash/check-env-config.sh`.
+
+---
+
+## 3. Styling & Component Rules (React & Stitch)
+
+- **Zero-Config Styling Freedom**:
+  - **Tailwind CSS**: Use semantic utility classes. Arbitrary brackets (e.g. `p-[13px]`) and raw unsemantic colors are forbidden by `@shadcn/lint`.
+  - **Vanilla CSS**: All class names in JSX `className` must correspond to declared CSS rules in project stylesheets or design tokens (`tokens.css`). Ghost classes will fail `.specify/scripts/bash/check-ghost-classes.sh`.
+- **Atomic Design**: Strictly **one React component per file** (`react/no-multi-comp`).
+- **Function Line Limits**: Business logic functions (`domain`, `application`, `infrastructure`) must not exceed 50 lines or cyclomatic complexity 10. Presentation components under `src/**/ui/**` and test suites (`**/*.test.*`, `tests/**`) are legitimately exempt (`max-lines-per-function: 'off'`) to accommodate accessible JSX and comprehensive `describe`/`it` test suites.
+
+---
+
+## 4. Quality Gate Integrity & Real Execution (NON-NEGOTIABLE)
+
+- **Gate configuration is human-owned.** You MUST NOT modify `vite.config.ts`, `package.json` quality scripts, `.specify/scripts/bash/*`, or `.specify/extensions.yml` to make a failing check pass.
+- **Never suppress violations**: Prohibited from adding `eslint-disable`, `oxlint-disable`, `@ts-ignore`, or skipping tests.
+- **Mandatory Dependencies (`node_modules`)**: You MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
+- **Sandbox Boundary Safety (`node_modules/` and `.git/`)**: NEVER use `read_file`, `list_directory`, or file tools on `node_modules/` or `.git/`. In modern package managers (pnpm, npm, vite-plus), `node_modules` contains symlinks pointing outside the workspace sandbox, which triggers fatal environment errors; `.git/` accesses violate workspace security policies. Manage packages and git exclusively via terminal commands (`npm ls`, `npm install`, `vp check`, `git status`, `git diff`).
+- **Build File Security Policy (`package.json`)**: NEVER use `replace` or `write_file` on `package.json` (blocked by security policy for build configuration files). To update scripts or configuration, use terminal commands: `npm pkg set scripts.<name>="..."`.
+- **Terminal Execution Required**: You MUST execute `.specify/scripts/bash/check-quality-gate.sh` via the terminal after completing each task in `tasks.md`. Marking a task checkbox `- [x]` without executing the gate in the terminal is a fatal violation of Quality Gate Integrity.
+- **Imperative Pipeline Enforcement**: Spec Kit runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`, `gate_tasks`, `gate_verdict`) as non-agent shell steps with an automated self-healing repair window.
+- Resolve every violation by fixing the **application code**.
+
+---
+
+## 4b. Non-UI Features Inside This Project (Backend / Domain / CLI)
+
+`has_ui: false` describes the feature, not the repository. This project keeps React, Vite and its `dev` script.
+
+- Declare the feature runtime in `specs/<feature>/runtime.json`:
+  `{"kind":"http","command":"npm run dev:api","port":3000,"readiness":"/health"}` or `{"kind":"none","reason":"..."}`.
+- Expose the API through a NEW script (`dev:api`, `start:api`) via terminal: `npm pkg set scripts.dev:api="..."`. Never rename, repurpose or delete `dev`.
+- Vite built-ins (`vp dev`, `vite`, `vp preview`) are not a valid runtime: they ignore `package.json` scripts. Only `vp run <script>` delegates.
+- The port comes from `src/config/env.ts`; `spec.md`, `quickstart.md` and the contract must agree.
+- `check-dev-entrypoint.sh --require-contract` starts the declared command itself and fails unless it answers HTTP 2xx.
+
+---
+
+## 5. Subagent-Driven Execution Architecture (Anti-Context Drift)
+
+To prevent cognitive degradation, context drift, sycophancy, and timeouts on large feature sets:
+- **Ephemeral Subagent Delegation**: When executing multi-task phases in `tasks.md`, the orchestrating agent MUST dispatch individual tasks to fresh, isolated worker subagents (e.g. `@generalist`).
+- **Context Isolation**: Each worker subagent receives ONLY the task description, the target file path, and relevant domain contracts. It does NOT inherit the entire 100k+ token conversation history.
+- **Mandatory Quality Gate per Task**: The worker subagent MUST execute `bash .specify/scripts/bash/check-quality-gate.sh` via terminal and verify exit code 0 before concluding.
+- **Single-Turn Lifecycle**: Upon task completion and gate verification, the subagent returns a concise 3-line status to the orchestrator and its context is disposed of immediately.
+
+---
+
+## 6. Verification Commands & Machine-Generated Evidence
+
+Run these deterministic gates before declaring any task complete. Each gate emits structured telemetry to `.specify/telemetry.jsonl` and records machine proof artifacts in `specs/<feature>/evidence/`:
+
+```bash
+# Core gate: formatting (Oxfmt), linting (Oxlint), strict typing, architecture boundaries, and test suite
+bash .specify/scripts/bash/check-quality-gate.sh
+
+# Component & route contract integrity (enforces routes-manifest.json and design fixtures)
+SPECIFY_HAS_UI=true bash .specify/scripts/bash/check-contracts.sh
+
+# Stitch visual tokens & Playwright regression
+SPECIFY_HAS_UI=true bash .specify/scripts/bash/verify-stitch-design.sh --tokens-only
+
+# Performance & bundle budget (max 250KB per chunk, max 1000KB total)
+bash .specify/scripts/bash/check-bundle-budget.sh
+
+# Runtime entrypoint contract (only when has_ui=false in a non-UI slice)
+bash .specify/scripts/bash/check-dev-entrypoint.sh --require-contract
+
+# Deterministic project bootstrap: git init + baseline commit + Playwright assets
+bash .specify/scripts/bash/bootstrap-project-env.sh
+
+# Task completion ledger (fails while tasks.md has unchecked items)
+bash .specify/scripts/bash/check-tasks-complete.sh
+
+# Machine-readable final verdict (fails unless evidence/verification.json says "pass")
+bash .specify/scripts/bash/check-verification-verdict.sh
+
+# Never pass these to make a gate green without explicit human approval:
+#   --allow-no-tests  --allow-incomplete  --allow-missing  --allow-foreign-git
+#   --tokens-only (incompatible with --require-ui)
+
+# Review recorded telemetry: every workflow step, model, subagent and gate outcome
+bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary
+```

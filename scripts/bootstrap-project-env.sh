@@ -50,6 +50,8 @@ DESIGNS_DIR=""
 DO_GIT=true
 DO_TEMPLATES=true
 QUIET=false
+PROFILE=""
+HAS_UI=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -62,6 +64,12 @@ for arg in "$@"; do
       ;;
     --designs-dir=*)
       DESIGNS_DIR="${arg#*=}"
+      ;;
+    --profile=*)
+      PROFILE="${arg#*=}"
+      ;;
+    --has-ui=*)
+      HAS_UI="${arg#*=}"
       ;;
     --no-git)
       DO_GIT=false
@@ -136,7 +144,7 @@ if [ "$DO_GIT" = true ] && command -v git >/dev/null 2>&1; then
 fi
 
 # ------------------------------------------------------------------------------
-# 2. Playwright design assets
+# 2. Template assets (AGENTS.md & Playwright design assets)
 # ------------------------------------------------------------------------------
 if [ "$DO_TEMPLATES" = true ]; then
   TEMPLATES_DIR="$ROOT/.specify/templates"
@@ -154,33 +162,66 @@ if [ "$DO_TEMPLATES" = true ]; then
     return 1
   }
 
-  if [ -z "$DESIGNS_DIR" ] && [ -d "$ROOT/specs" ]; then
-    DESIGNS_DIR="$(find "$ROOT/specs" -mindepth 2 -maxdepth 2 -type d -name designs 2>/dev/null | sort -r | head -n 1 || true)"
+  # A. Profile-tailored AGENTS.md
+  RESOLVED_PROFILE="$PROFILE"
+  if [ -z "$RESOLVED_PROFILE" ]; then
+    if [ "$HAS_UI" = "false" ]; then
+      RESOLVED_PROFILE="api"
+    fi
   fi
 
-  if [ -n "$DESIGNS_DIR" ] && [ -d "$DESIGNS_DIR" ]; then
-    if [ ! -f "$ROOT/playwright.design.config.ts" ]; then
-      if CONFIG_SRC="$(resolve_template "playwright.design.config.ts")"; then
-        cp "$CONFIG_SRC" "$ROOT/playwright.design.config.ts"
-        echo "✓ Materialized playwright.design.config.ts from $(basename "$CONFIG_SRC")"
-        ACTIONS=$((ACTIONS + 1))
-      else
-        echo "⚠️  [BOOTSTRAP WARNING]: no Playwright design config template found in $TEMPLATES_DIR."
-      fi
+  if [ -n "$RESOLVED_PROFILE" ]; then
+    AGENTS_TMPL="AGENTS.${RESOLVED_PROFILE}.md"
+  else
+    AGENTS_TMPL="AGENTS.md"
+  fi
+
+  if [ ! -f "$ROOT/AGENTS.md" ]; then
+    if AGENTS_SRC="$(resolve_template "$AGENTS_TMPL")"; then
+      cp "$AGENTS_SRC" "$ROOT/AGENTS.md"
+      echo "✓ Materialized AGENTS.md (${RESOLVED_PROFILE:-default} profile) from $(basename "$AGENTS_SRC")"
+      ACTIONS=$((ACTIONS + 1))
+    elif AGENTS_SRC="$(resolve_template "AGENTS.md")"; then
+      cp "$AGENTS_SRC" "$ROOT/AGENTS.md"
+      echo "✓ Materialized AGENTS.md from $(basename "$AGENTS_SRC")"
+      ACTIONS=$((ACTIONS + 1))
+    fi
+  fi
+
+  # B. Playwright design assets (UI features only)
+  if [ "$HAS_UI" = "false" ]; then
+    if [ "$QUIET" = false ]; then
+      echo "ℹ️  Non-UI feature/project (has-ui=false); skipping Playwright asset materialization."
+    fi
+  else
+    if [ -z "$DESIGNS_DIR" ] && [ -d "$ROOT/specs" ]; then
+      DESIGNS_DIR="$(find "$ROOT/specs" -mindepth 2 -maxdepth 2 -type d -name designs 2>/dev/null | sort -r | head -n 1 || true)"
     fi
 
-    if [ ! -f "$ROOT/tests/design/design-audit.spec.ts" ]; then
-      if SPEC_SRC="$(resolve_template "design-audit.spec.ts")"; then
-        mkdir -p "$ROOT/tests/design"
-        cp "$SPEC_SRC" "$ROOT/tests/design/design-audit.spec.ts"
-        echo "✓ Materialized tests/design/design-audit.spec.ts from $(basename "$SPEC_SRC")"
-        ACTIONS=$((ACTIONS + 1))
-      else
-        echo "⚠️  [BOOTSTRAP WARNING]: no design-audit spec template found in $TEMPLATES_DIR."
+    if [ -n "$DESIGNS_DIR" ] && [ -d "$DESIGNS_DIR" ]; then
+      if [ ! -f "$ROOT/playwright.design.config.ts" ]; then
+        if CONFIG_SRC="$(resolve_template "playwright.design.config.ts")"; then
+          cp "$CONFIG_SRC" "$ROOT/playwright.design.config.ts"
+          echo "✓ Materialized playwright.design.config.ts from $(basename "$CONFIG_SRC")"
+          ACTIONS=$((ACTIONS + 1))
+        else
+          echo "⚠️  [BOOTSTRAP WARNING]: no Playwright design config template found in $TEMPLATES_DIR."
+        fi
       fi
+
+      if [ ! -f "$ROOT/tests/design/design-audit.spec.ts" ]; then
+        if SPEC_SRC="$(resolve_template "design-audit.spec.ts")"; then
+          mkdir -p "$ROOT/tests/design"
+          cp "$SPEC_SRC" "$ROOT/tests/design/design-audit.spec.ts"
+          echo "✓ Materialized tests/design/design-audit.spec.ts from $(basename "$SPEC_SRC")"
+          ACTIONS=$((ACTIONS + 1))
+        else
+          echo "⚠️  [BOOTSTRAP WARNING]: no design-audit spec template found in $TEMPLATES_DIR."
+        fi
+      fi
+    elif [ "$QUIET" = false ]; then
+      echo "ℹ️  No designs directory found; skipping Playwright asset materialization."
     fi
-  elif [ "$QUIET" = false ]; then
-    echo "ℹ️  No designs directory found; skipping Playwright asset materialization."
   fi
 fi
 

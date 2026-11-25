@@ -79,6 +79,26 @@ describe('bootstrap-project-env.sh', () => {
     expect(git('log', '--oneline').trim().split('\n')).toHaveLength(1);
   });
 
+  it('should support --profile and --has-ui flags to materialize profile-tailored AGENTS.md', () => {
+    const templatesDir = path.join(tempDir, '.specify/templates');
+    fs.mkdirSync(templatesDir, { recursive: true });
+    fs.copyFileSync(
+      path.resolve(__dirname, '../templates/AGENTS.api.md.tmpl'),
+      path.join(templatesDir, 'AGENTS.api.md.tmpl')
+    );
+    fs.copyFileSync(
+      path.resolve(__dirname, '../templates/AGENTS.react.md.tmpl'),
+      path.join(templatesDir, 'AGENTS.react.md.tmpl')
+    );
+
+    // Run with --has-ui=false
+    const output = runBash(scriptPath, [`--root=${tempDir}`, '--has-ui=false', '--no-git']);
+    expect(output).toContain('AGENTS.md');
+    expect(fs.existsSync(path.join(tempDir, 'AGENTS.md'))).toBe(true);
+    const content = fs.readFileSync(path.join(tempDir, 'AGENTS.md'), 'utf8');
+    expect(content).toContain('API & Backend Service Profile');
+  });
+
   it('always leaves a HEAD even when there is nothing to commit', () => {
     // A repository without a HEAD makes `git diff HEAD` fail, blinding the
     // anti-tampering gate.

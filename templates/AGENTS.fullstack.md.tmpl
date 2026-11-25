@@ -1,0 +1,115 @@
+<!-- viteplus-stitch:agents-instructions -->
+# Agent Guidelines & Quality Architecture (Full-Stack Framework Profile)
+
+This repository enforces strict, deterministic quality gates and Clean Architecture boundaries for full-stack framework applications (Next.js, Nuxt, Astro, SvelteKit). Every AI agent (Claude Code, Gemini CLI, Cursor, Copilot, or Spec Kit subagents) working in this workspace must adhere to these non-negotiable standards.
+
+---
+
+## 1. Clean Architecture Boundaries (Full-Stack Applications)
+
+Domain and business logic live in vertical slices under `src/features/<slice>/` (or `src/core/`), cleanly isolated from framework routing and server actions:
+
+```
+src/features/<slice>/
+├── domain/           # Pure business logic: entities, value objects, domain invariants (zero external dependencies)
+├── application/      # Use cases, application services, repository ports (interfaces)
+├── infrastructure/   # Data adapters, database repositories, external clients
+└── ui/               # Presentation components, view models, client hooks
+
+app/ (or pages/)      # Framework routing, server components, API route handlers (thin delivery layer)
+```
+
+### Unidirectional Dependency Rule
+- **Domain** cannot import from **Application**, **Infrastructure**, **UI**, or framework routes.
+- **Application** cannot import from **Infrastructure** or **UI**.
+- Framework route handlers (`app/api/**`) act as infrastructure delivery adapters that invoke **Application** use cases.
+- *Violations will trigger fatal errors in `vp check` / Oxlint architectural boundary linting.*
+
+---
+
+## 2. Centralized Typed Environment Configuration
+
+- **Never** access `process.env` directly across feature or UI components.
+- All environment variables must be declared, validated (e.g. Zod), typed, and exported from `src/config/env.ts`.
+- Direct access is strictly blocked by `.specify/scripts/bash/check-env-config.sh`.
+
+---
+
+## 3. Styling & Component Rules
+
+- **Zero-Config Styling Freedom**:
+  - **Tailwind CSS**: Use semantic utility classes. Raw unsemantic colors and arbitrary brackets are prohibited.
+  - **Vanilla CSS / CSS Modules**: All class names must correspond to declared CSS rules. Ghost classes will fail `.specify/scripts/bash/check-ghost-classes.sh`.
+- **Atomic Design**: Strictly **one component per file**.
+- **Function Line Limits**: Business logic functions (`domain`, `application`, `infrastructure`) must not exceed 50 lines or cyclomatic complexity 10. Max depth: 3. Max parameters: 4.
+
+---
+
+## 4. Quality Gate Integrity & Real Execution (NON-NEGOTIABLE)
+
+- **Gate configuration is human-owned.** You MUST NOT modify framework configs, `package.json` quality scripts, `.specify/scripts/bash/*`, or `.specify/extensions.yml` to make a failing check pass.
+- **Never suppress violations**: Prohibited from adding `eslint-disable`, `oxlint-disable`, `@ts-ignore`, or skipping tests.
+- **Mandatory Dependencies (`node_modules`)**: You MUST install dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified. Checking tasks without a functioning `node_modules/` directory is prohibited.
+- **Sandbox Boundary Safety (`node_modules/` and `.git/`)**: NEVER use `read_file`, `list_directory`, or file tools on `node_modules/` or `.git/`. In modern package managers (pnpm, npm, vite-plus), `node_modules` contains symlinks pointing outside the workspace sandbox, which triggers fatal environment errors; `.git/` accesses violate workspace security policies. Manage packages and git exclusively via terminal commands (`npm ls`, `npm install`, `vp check`, `git status`, `git diff`).
+- **Build File Security Policy (`package.json`)**: NEVER use `replace` or `write_file` on `package.json` (blocked by security policy for build configuration files). To update scripts or configuration, use terminal commands: `npm pkg set scripts.<name>="..."`.
+- **Terminal Execution Required**: You MUST execute `.specify/scripts/bash/check-quality-gate.sh` via the terminal after completing each task in `tasks.md`. Marking a task checkbox `- [x]` without executing the gate in the terminal is a fatal violation of Quality Gate Integrity.
+- **Imperative Pipeline Enforcement**: Spec Kit runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`, `gate_tasks`, `gate_verdict`) as non-agent shell steps with an automated self-healing repair window.
+- Resolve every violation by fixing the **application code**.
+
+---
+
+## 4b. Full-Stack Dev Server & API Runtime Contract
+
+In a full-stack framework (Next/Nuxt/Astro), the framework's own dev server serves both pages and API routes:
+
+- Declare the runtime in `specs/<feature>/runtime.json`:
+  ```json
+  {"kind":"http","command":"npm run dev","port":3000,"readiness":"/api/health"}
+  ```
+- Use a specific readiness path (e.g. `/api/health`), never root `/`. Proving that the root framework template renders does not prove the feature API serves.
+- Do NOT start a separate server process: the framework dev server handles both frontend and API routes.
+
+---
+
+## 5. Subagent-Driven Execution Architecture (Anti-Context Drift)
+
+To prevent cognitive degradation, context drift, sycophancy, and timeouts on large feature sets:
+- **Ephemeral Subagent Delegation**: When executing multi-task phases in `tasks.md`, the orchestrating agent MUST dispatch individual tasks to fresh, isolated worker subagents (e.g. `@generalist`).
+- **Context Isolation**: Each worker subagent receives ONLY the task description, the target file path, and relevant domain contracts. It does NOT inherit the entire conversation history.
+- **Mandatory Quality Gate per Task**: The worker subagent MUST execute `bash .specify/scripts/bash/check-quality-gate.sh` via terminal and verify exit code 0 before concluding.
+- **Single-Turn Lifecycle**: Upon task completion and gate verification, the subagent returns a concise 3-line status to the orchestrator and its context is disposed of immediately.
+
+---
+
+## 6. Verification Commands & Machine-Generated Evidence
+
+Run these deterministic gates before declaring any task complete. Each gate emits structured telemetry to `.specify/telemetry.jsonl` and records machine proof artifacts in `specs/<feature>/evidence/`:
+
+```bash
+# Core gate: formatting (Oxfmt), linting (Oxlint), strict typing, architecture boundaries, and test suite
+bash .specify/scripts/bash/check-quality-gate.sh
+
+# Runtime entrypoint contract (verifies dev server answers HTTP 2xx on /api/health)
+bash .specify/scripts/bash/check-dev-entrypoint.sh --require-contract
+
+# Component & route contract integrity
+SPECIFY_HAS_UI=true bash .specify/scripts/bash/check-contracts.sh
+
+# Performance & bundle budget (validates build output)
+bash .specify/scripts/bash/check-bundle-budget.sh
+
+# Deterministic project bootstrap: git init + baseline commit
+bash .specify/scripts/bash/bootstrap-project-env.sh
+
+# Task completion ledger (fails while tasks.md has unchecked items)
+bash .specify/scripts/bash/check-tasks-complete.sh
+
+# Machine-readable final verdict (fails unless evidence/verification.json says "pass")
+bash .specify/scripts/bash/check-verification-verdict.sh
+
+# Never pass these to make a gate green without explicit human approval:
+#   --allow-no-tests  --allow-incomplete  --allow-missing  --allow-foreign-git
+
+# Review recorded telemetry: every workflow step, model, subagent and gate outcome
+bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary
+```
