@@ -35,6 +35,9 @@ describe('gate integrity contract', () => {
     writeExecutable(
       path.join(binDir, 'vp'),
       `#!/usr/bin/env bash
+# Real vp delegates 'vp run <script>' to the package.json script; mirror that so
+# the fixture is faithful for both the built-in and the declared-script path.
+if [ "$1" = "run" ]; then shift; fi
 case "$1" in
   check) exit 0 ;;
   test)

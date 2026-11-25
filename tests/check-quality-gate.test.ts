@@ -75,7 +75,7 @@ describe('check-quality-gate.sh', () => {
   it('should support --scope and filter regression test execution', () => {
     const content = fs.readFileSync(scriptPath, 'utf8');
     expect(content).toContain('Scoped regression check active');
-    expect(content).toContain('TEST_CMD="$TEST_CMD $SCOPE_DIR"');
+    expect(content).toContain('TEST_CMD_ARGS+=("$SCOPE_DIR")');
     expect(content).toContain('SPECIFY_SCOPE');
     expect(content).toContain('Auto-detected feature scope from git status');
   });
@@ -436,6 +436,98 @@ describe('check-quality-gate.sh', () => {
       expect(output).toContain('vp build');
       expect(calls).toContain('vp test --run');
       expect(calls).not.toContain('vp run build');
+    } finally {
+      removeDir(dir);
+    }
+  });
+
+  /**
+   * The installer provisions `vite.config.ts` as Vite+'s quality-config container
+   * (plus `vitest.config.ts`) for EVERY profile, including API-only projects that
+   * declare plain `vite`/`vitest` and never install `vite-plus`. In that shape the
+   * built-in `vp test` prints "This project does not use vite-plus" and is not the
+   * project's contract: the declared `test` script is (see 1-api-service).
+   */
+  it('runs the declared test script for a plain Vitest project that only uses vite.config.ts as the quality container', () => {
+    const dir = makeGitProject({
+      'package.json': JSON.stringify(
+        {
+          name: 'api-service',
+          scripts: { test: 'vitest run', build: 'tsc -p tsconfig.build.json' },
+          devDependencies: { vite: '^8.3.8', vitest: '^5.1.2', typescript: '^7.0.2' },
+        },
+        null,
+        2
+      ),
+      'vite.config.ts': 'export default { lint: { options: { typeCheck: false } } };\n',
+      'vitest.config.ts':
+        "import { defineConfig } from 'vitest/config';\nexport default defineConfig({ test: { globals: true } });\n",
+    });
+    const { binDir, logFile } = makeFakeVp(dir);
+    const output = runBash(scriptPath, [], {
+      cwd: dir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        VP_LOG: logFile,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      },
+    });
+    const calls = fs.readFileSync(logFile, 'utf8');
+    try {
+      expect(calls).toContain('vp run test');
+      expect(calls).not.toContain('vp test --run');
+      expect(output).toContain('Test suite passed: 3 test(s) executed');
+    } finally {
+      removeDir(dir);
+    }
+  });
+
+  /**
+   * Reporters colourise the summary and often emit it after a bare `\r`:
+   * "\033[2m      Tests \033[22m 15 passed". An anchored grep over the raw log finds
+   * nothing, and the gate used to fail with "could not determine how many tests
+   * were executed" even though the suite ran and passed. Normalise before counting.
+   */
+  it('counts tests from a colourised report whose summary is prefixed by ANSI escapes and glued by carriage returns', () => {
+    const dir = makeGitProject({
+      'package.json': JSON.stringify(
+        { name: 'vite-app', scripts: { test: 'vp test' }, devDependencies: { 'vite-plus': '^1.3.0' } },
+        null,
+        2
+      ),
+      'vite.config.ts': 'export default {};\n',
+    });
+    const binDir = path.join(dir, 'fakebin');
+    const logFile = path.join(dir, 'vp-calls.log');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(binDir, 'vp'),
+      [
+        '#!/usr/bin/env bash',
+        'echo "vp $*" >> "${VP_LOG}"',
+        'case "$*" in',
+        "  *test*) printf ' RUN  v5.0.5 /tmp/project\\r';",
+        "          printf '\\033[2m      Tests \\033[22m \\033[1m\\033[32m7 passed\\033[39m\\033[22m \\033[90m(7)\\033[39m\\n' ;;",
+        'esac',
+        'exit 0',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    fs.chmodSync(path.join(binDir, 'vp'), 0o755);
+
+    const output = runBash(scriptPath, [], {
+      cwd: dir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        VP_LOG: logFile,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      },
+    });
+    try {
+      expect(output).toContain('Test suite passed: 7 test(s) executed');
     } finally {
       removeDir(dir);
     }

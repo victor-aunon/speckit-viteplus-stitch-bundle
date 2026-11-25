@@ -8,6 +8,29 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The installer resolves `bundle.version` from `bundle.yml`, so a release bump is a
 one-file change plus this changelog.
 
+## [Unreleased]
+
+### Fixed
+
+- **The Regression Gate no longer mis-reads colourised or progress-aware test
+  reports.** `count_executed_tests` matched `^[[:space:]]*Tests` against the raw
+  log, so a colourised summary (`\033[2m      Tests \033[22m 15 passed (15)`) or a
+  line glued to the previous one by a bare `\r` produced no match and the gate
+  failed with *"could not determine how many tests were executed"* even though
+  the suite ran and passed. The log is now ANSI-stripped and `\r`-normalised
+  before counting, with an unanchored fallback and `node --test` (`# pass N`)
+  support. The fail-closed contract is unchanged: an unparseable report still
+  fails, it just stops failing for reports that were perfectly parseable.
+- **The Regression Gate picks the right runner for API-only profiles.**
+  `vite-plus` in `package.json` is now the criterion for using the built-in
+  `vp test --run`; a declared `test` script wins otherwise (`vp run test`, or
+  `npm test --` without vp), and `vite.config.ts` is only a last-resort fallback.
+  Previously the installer-provisioned `vite.config.ts` made every project look
+  like a Vite app, so a plain `vite`/`vitest` API (the `has_ui=false` profile)
+  was graded with `vp test`, which warns *"This project does not use vite-plus"*
+  and is not the project's contract. Test runs also export `CI=1`, so a `"test":
+  "vp test"` script (watch mode) can no longer hang the gate.
+
 ## [2.0.0] - 2026-11-24
 
 ### Changed — BREAKING

@@ -523,19 +523,38 @@ echo "✓ Code style, types, complexity, and architectural boundaries passed."
 # 4. Run automated test suite (Regression Gate)
 # A green suite only proves something when it actually executed tests. Zero tests
 # is a FAILURE unless a human explicitly opts in with --allow-no-tests.
+
+# Colourised and progress-aware reporters defeat naive parsing: a summary line can
+# arrive as "\033[2m      Tests \033[22m 15 passed" (escape codes precede the label,
+# so an anchored grep never matches) or be glued to a previous line by a bare "\r"
+# (so the line does not start with the label either). Both are perfectly good
+# summaries; normalise them before counting instead of declaring the report
+# unparseable.
+normalize_test_log() {
+  sed -E $'s/\033\\[[0-9;?]*[a-zA-Z]//g' | tr '\r' '\n'
+}
+
 count_executed_tests() {
   local log="$1"
   if [ ! -f "$log" ]; then
     echo "unknown"
     return 0
   fi
-  if grep -qiE 'No test files found|No tests found|no tests to run' "$log"; then
+
+  local clean
+  clean="$(normalize_test_log < "$log")"
+
+  if printf '%s\n' "$clean" | grep -qiE 'No test files found|No tests found|no tests to run'; then
     echo 0
     return 0
   fi
 
   local summary total
-  summary="$(grep -E '^[[:space:]]*Tests:?[[:space:]]' "$log" | tail -n 1 || true)"
+  summary="$(printf '%s\n' "$clean" | grep -E '^[[:space:]]*Tests:?[[:space:]]' | tail -n 1 || true)"
+  if [ -z "$summary" ]; then
+    # Unanchored fallback for reporters that prefix the summary with other text.
+    summary="$(printf '%s\n' "$clean" | grep -E '(^|[[:space:]])Tests:?[[:space:]]+[0-9]+' | tail -n 1 || true)"
+  fi
   if [ -n "$summary" ]; then
     # vitest: "Tests  12 passed (13)" -> the parenthesised value is the total.
     total="$(printf '%s' "$summary" | sed -nE 's/.*\(([0-9]+)\).*/\1/p')"
@@ -553,7 +572,14 @@ count_executed_tests() {
   fi
 
   # mocha: "  7 passing"
-  total="$(grep -Eo '[0-9]+ passing' "$log" | tail -n 1 | grep -Eo '[0-9]+' || true)"
+  total="$(printf '%s\n' "$clean" | grep -Eo '[0-9]+ passing' | tail -n 1 | grep -Eo '[0-9]+' || true)"
+  if [ -n "$total" ]; then
+    echo "$total"
+    return 0
+  fi
+
+  # node --test: "# pass 15"
+  total="$(printf '%s\n' "$clean" | grep -E '^# pass[[:space:]]+[0-9]+' | tail -n 1 | grep -Eo '[0-9]+' || true)"
   if [ -n "$total" ]; then
     echo "$total"
     return 0
@@ -566,53 +592,65 @@ if [ "$SKIP_TESTS" = false ]; then
   echo ""
   echo "Executing automated test suite (Regression Gate)..."
 
-  TEST_CMD=""
-  # Vite+ owns the config container (`vite.config.ts` holds lint/fmt/check/test),
-  # so its presence does NOT mean "this app is bundled by Vite": the installer
-  # provisions exactly that file for Next/Nuxt/Astro/Remix projects. The built-in
-  # `vp test` (Vitest) is only correct when the project really is a Vite app, so
-  # the framework config decides.
-  IS_VITE_APP=true
-  for FRAMEWORK_CONFIG in next.config nuxt.config astro.config remix.config svelte.config; do
-    if compgen -G "$FRAMEWORK_CONFIG.*" >/dev/null 2>&1; then
-      IS_VITE_APP=false
-      break
-    fi
-  done
-
-  if [ "$IS_VITE_APP" = true ] && { [ -f "vitest.config.ts" ] || [ -f "vitest.config.js" ] || [ -f "vite.config.ts" ]; }; then
-    if command -v vp >/dev/null 2>&1; then
-      TEST_CMD="vp test --run"
-    elif [ -x "./node_modules/.bin/vp" ]; then
-      TEST_CMD="./node_modules/.bin/vp test --run"
-    elif [ -x "./node_modules/.bin/vitest" ]; then
-      TEST_CMD="./node_modules/.bin/vitest run"
-    fi
+  TEST_CMD_ARGS=()
+  TEST_SCOPE_MODE="append"
+  # How the suite is run, in order of authority:
+  #
+  #   1. `vite-plus` declared in package.json -> the project IS a Vite+ project,
+  #      so the built-in `vp test --run` (Vitest) is its native runner.
+  #   2. a declared `test` script -> that is the project's own contract (Jest,
+  #      Mocha, node --test, vitest...). Running it is the only correct choice for
+  #      a project whose runner is not Vitest, so the script wins over the
+  #      built-in (https://viteplus.dev/guide/run).
+  #   3. test config files without a script -> built-in Vitest (`vp test --run`).
+  #   4. a local vitest binary -> `vitest run` (no vp on PATH at all).
+  #
+  # `vite.config.ts` is NEVER proof that "this app is bundled by Vite": the
+  # installer provisions that file as Vite+'s quality-config container for every
+  # profile, including API-only projects that never install vite-plus. Its
+  # presence only selects the fallback in step 3. `vite-plus` in package.json is
+  # vp's own criterion for "this project uses vite-plus" (verified empirically:
+  # without the dependency `vp test` warns and is not the project's contract).
+  PKG_HAS_VITE_PLUS=false
+  PKG_HAS_TEST_SCRIPT=false
+  if [ -f "package.json" ]; then
+    grep -q '"vite-plus"[[:space:]]*:' package.json && PKG_HAS_VITE_PLUS=true
+    grep -q '"test"[[:space:]]*:' package.json && PKG_HAS_TEST_SCRIPT=true
   fi
 
-  if [ -z "$TEST_CMD" ] && [ -f "package.json" ]; then
-    if grep -q '"test":' package.json; then
-      # `vp test` is the BUILT-IN Vitest command and ignores the project's own
-      # runner (Jest, Mocha, ...). `vp run test` executes the declared script,
-      # which is what a non-Vite project needs (https://viteplus.dev/guide/run).
-      if [ -n "$VP_CMD" ]; then
-        TEST_CMD="$VP_CMD run test"
-      else
-        TEST_CMD="npm test"
-      fi
+  if [ "$PKG_HAS_VITE_PLUS" = true ]; then
+    TEST_CMD_ARGS=($VP_CMD test --run)
+  elif [ "$PKG_HAS_TEST_SCRIPT" = true ]; then
+    if [ -n "$VP_CMD" ]; then
+      # `vp run test` executes the declared script (args are forwarded verbatim).
+      TEST_CMD_ARGS=($VP_CMD run test)
+    else
+      # npm needs `--` before forwarded args or it consumes them itself.
+      TEST_CMD_ARGS=(npm test)
+      TEST_SCOPE_MODE="after-double-dash"
     fi
+  elif [ -f "vitest.config.ts" ] || [ -f "vitest.config.js" ] || [ -f "vite.config.ts" ]; then
+    TEST_CMD_ARGS=($VP_CMD test --run)
+  elif [ -x "./node_modules/.bin/vitest" ]; then
+    TEST_CMD_ARGS=(./node_modules/.bin/vitest run)
   fi
 
-  if [ -n "$TEST_CMD" ]; then
+  if [ ${#TEST_CMD_ARGS[@]} -gt 0 ]; then
     if [ -n "$SCOPE_DIR" ]; then
       echo "ℹ️  Scoped regression check active: filtering test execution to '$SCOPE_DIR'"
-      TEST_CMD="$TEST_CMD $SCOPE_DIR"
+      if [ "$TEST_SCOPE_MODE" = "after-double-dash" ]; then
+        TEST_CMD_ARGS+=(-- "$SCOPE_DIR")
+      else
+        TEST_CMD_ARGS+=("$SCOPE_DIR")
+      fi
     fi
-    echo "✓ Test runner detected: $TEST_CMD"
+    echo "✓ Test runner detected: ${TEST_CMD_ARGS[*]}"
 
     TEST_LOG="$(mktemp "${TMPDIR:-/tmp}/speckit-tests-XXXXXX" 2>/dev/null || printf '%s/speckit-tests-%s.log' "${TMPDIR:-/tmp}" "$$")"
     TEST_STATUS=0
-    $TEST_CMD 2>&1 | tee "$TEST_LOG" || TEST_STATUS=${PIPESTATUS[0]}
+    # CI=1 keeps a script that defaults to watch mode from hanging the gate, so a
+    # `"test": "vp test"` / `vitest` script still exits after one run.
+    CI="${CI:-1}" "${TEST_CMD_ARGS[@]}" 2>&1 | tee "$TEST_LOG" || TEST_STATUS=${PIPESTATUS[0]}
 
     TESTS_EXECUTED="$(count_executed_tests "$TEST_LOG")"
 
