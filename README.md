@@ -458,9 +458,12 @@ built by Next or Nuxt, so the bundle works there too — with three rules:
    Vite dev server, Vite build and Vitest. `vp run <name>` / `vpr <name>` run your
    `package.json` scripts ([docs](https://viteplus.dev/guide/run)). The gates therefore
    delegate: `vp run build` when the project declares `build` (so `next build` is what
-   runs), `vp run test` when the runner is not Vitest, and `vp run dev` for the visual
-   gate. The built-in `vp test` is only used when the project really is a Vite app
-   (no `next/nuxt/astro/remix/svelte` config, or a `vitest.config.*` present).
+   runs), the declared `test` script (`vp run test`, or `npm test --` when `vp` is not
+   on PATH) whenever one exists, and `vp run dev` for the visual gate. The built-in
+   `vp test --run` is reserved for projects that declare `vite-plus` in
+   `package.json` — vp's own criterion — with `vite.config.ts` / `vitest.config.*`
+   only as a last-resort fallback; `CI=1` is exported for the run, so a
+   `"test": "vp test"` script cannot hang the gate in watch mode.
 2. **The installer does not inject Vite UI tooling.** When it detects a framework
    config it provisions `vite.config.ts` from
    `templates/vite.config.agnostic.ts.tmpl`: no React plugin, no shadcn/Tailwind
@@ -491,7 +494,7 @@ All quality gates installed in `.specify/scripts/bash/` can be executed independ
 
 ### 1. `check-quality-gate.sh` (Core Deterministic Gate)
 
-The regression gate counts what actually ran: **zero executed tests fail the gate**, and an unparseable test report fails too. `--allow-no-tests` is a human-owned escape hatch that records `regression_tests: skipped` in evidence instead of faking a pass. The project root must own its git repository; if `git rev-parse --show-toplevel` resolves above it (the `$HOME` trap), the gate stops instead of auditing the ancestor repo.
+The regression gate counts what actually ran: **zero executed tests fail the gate**, and an unparseable test report fails too. Colourised and progress-aware reports (`\033[2m      Tests \033[22m 15 passed`, or a summary glued to the previous line by a `\r`) are normalised before counting instead of being declared unparseable. The runner is the one vp recognises as the project's: the built-in `vp test --run` when `vite-plus` is declared in `package.json`, otherwise the declared `test` script (`vp run test` / `npm test --`), with the built-in as a fallback when no script exists. `--allow-no-tests` is a human-owned escape hatch that records `regression_tests: skipped` in evidence instead of faking a pass. The project root must own its git repository; if `git rev-parse --show-toplevel` resolves above it (the `$HOME` trap), the gate stops instead of auditing the ancestor repo.
 Runs formatting (Oxfmt Airbnb), linting (Oxlint with complexity limits), TypeScript strict types, Clean Architecture boundary checks, centralized env guard, regression test suite, and application compilation/build verification.
 
 ```bash
@@ -517,7 +520,7 @@ bash .specify/scripts/bash/check-quality-gate.sh --allow-foreign-git
 # Skip application compilation/build (used during intermediate after_task checks)
 bash .specify/scripts/bash/check-quality-gate.sh --skip-build
 
-# Report violations without exiting with error code
+# Verify tooling availability without running lint, tests or the build
 bash .specify/scripts/bash/check-quality-gate.sh --dry-run
 
 # Reset circuit breaker counter to 0 after repeated failures
@@ -614,7 +617,9 @@ bash .specify/scripts/bash/verify-stitch-design.sh --skip-orphans
 ```
 
 ### 6. `check-bundle-budget.sh` (Production Performance Gate)
-Executes `vp build` (Rolldown engine) and inspects production bundle sizes against defined budgets.
+Executes the project's production build (`vp run build` when `package.json` declares
+`build`, otherwise the built-in `vp build`, Rolldown engine) and inspects the emitted
+bundle sizes against the defined budgets.
 
 ```bash
 # Validate against default budget (max chunk 250KB, total bundle 1000KB)
@@ -846,7 +851,7 @@ When a gate fails, the model must fix the application code. If a gate is genuine
 
 ## Local Development & CI
 
-The repository ships its own regression suite (Vitest, 140+ specs covering every gate script, the installer, the manifest schema, the workflow schema, and the gate-integrity contract). The suite spawns real bash gates, so `vitest.config.ts` caps `maxWorkers` at 4 to avoid starving workers.
+The repository ships its own regression suite (Vitest, 210+ tests covering every gate script, the installer, the manifest schema, the workflow schema, and the gate-integrity contract). The suite spawns real bash gates, so `vitest.config.ts` caps `maxWorkers` at 2 to avoid starving workers.
 
 ```bash
 npm ci                # Install dev dependencies

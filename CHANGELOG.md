@@ -12,7 +12,7 @@ one-file change plus this changelog.
 
 ### Fixed
 
-- **The Regression Gate no longer mis-reads colourised or progress-aware test
+- **The Regression Gate no longer misreads colourised or progress-aware test
   reports.** `count_executed_tests` matched `^[[:space:]]*Tests` against the raw
   log, so a colourised summary (`\033[2m      Tests \033[22m 15 passed (15)`) or a
   line glued to the previous one by a bare `\r` produced no match and the gate
@@ -23,8 +23,10 @@ one-file change plus this changelog.
   fails, it just stops failing for reports that were perfectly parseable.
 - **The Regression Gate picks the right runner for API-only profiles.**
   `vite-plus` in `package.json` is now the criterion for using the built-in
-  `vp test --run`; a declared `test` script wins otherwise (`vp run test`, or
-  `npm test --` without vp), and `vite.config.ts` is only a last-resort fallback.
+  `vp test --run`, superseding the 2.0.0 heuristic that keyed the built-in on the
+  absence of a framework config. A declared `test` script wins otherwise
+  (`vp run test`, or `npm test --` without vp), and `vite.config.ts` is only a
+  last-resort fallback.
   Previously the installer-provisioned `vite.config.ts` made every project look
   like a Vite app, so a plain `vite`/`vitest` API (the `has_ui=false` profile)
   was graded with `vp test`, which warns *"This project does not use vite-plus"*
@@ -95,10 +97,6 @@ one-file change plus this changelog.
   Vitest: the installer provisions that file for non-Vite frameworks too, so the
   Regression Gate keys the built-in `vp test` on the absence of a framework config
   instead. Otherwise a Next + Jest project would have run Vitest after installing.
-
-
-### Fixed
-
 - `bootstrap_env_early` now runs first, right after `guardrails`, instead of
   before `tasks`: until the project owns its repository every diff-based gate
   audits an ancestor repository, so waiting until mid-run left spec/plan/design
