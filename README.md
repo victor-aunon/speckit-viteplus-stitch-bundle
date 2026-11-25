@@ -198,6 +198,8 @@ Trigger the cycle with a prompt describing what you want to build:
 specify workflow run viteplus-stitch --input spec="Create a credit card management module with list, details, and fee calculations"
 ```
 
+> **Pre-existing Specification (`skip_specify`)**: If you have already written your specification (e.g. running `specify` and refining it interactively with `clarify` beforehand), pass `-i skip_specify=true`. The workflow will skip re-running `speckit.specify` and proceed directly to `audit-spec` to audit and validate your existing `spec.md`.
+
 ### Step 2: Specification Audit & Approval (`audit-spec` & `review-spec`)
 Spec Kit generates the functional technical specification (`specs/<feature>/spec.md`):
 1. **Automated Spec Quality Audit (`audit-spec`)**:
@@ -295,6 +297,7 @@ When running `specify workflow run viteplus-stitch`, you can configure the behav
 |---|:---:|:---:|:---:|---|
 | **`spec`** | `string` | — | **Yes** | Natural language description or feature prompt detailing what to build. |
 | **`scope`** | `string` | `""` | No | Restricts all code changes, test executions, and blast radius checks to a specific feature slice (e.g. `src/features/billing`). When empty, auto-detects from git status or targets the full project. |
+| **`skip_specify`** | `boolean` | `false` | No | When `true`, skips specification generation (`speckit.specify`) and starts directly at `audit-spec`. Ideal when you have already run `specify` and `clarify` beforehand. |
 | **`has_ui`** | `boolean` | `true` | No | Controls UI-specific phases. When `false`, skips Google Stitch, Impeccable critique, Playwright visual gates, route contracts and ghost classes, **and** activates the non-UI runtime contract (`gate_runtime` + `runtime.json`, see below). It does **not** remove React/Vite from the project: a backend feature inside a React app keeps its UI tooling and its `dev` script. |
 | **`enable_stitch`** | `boolean` | `true` | No | When `has_ui: true`, toggles whether to use Google Stitch MCP for automated design generation (`true`) or use component wireframes defined directly in `plan.md` (`false`). |
 | **`stitch_project_id`** | `string` | `""` | No | ID of an existing Google Stitch Studio project (e.g. `4044680601076201931`). When provided, imports your authored screens directly via `list_screens` instead of generating new ones with AI. |
@@ -354,6 +357,11 @@ specify workflow run viteplus-stitch \
   -i stitch_project_id="4044680601076201931" \
   -i integration=gemini \
   -i implement_integration=pi
+
+# 10. Pre-existing Specification: Skip specify step when spec was refined via specify + clarify
+specify workflow run viteplus-stitch \
+  -i spec="billing" \
+  -i skip_specify=true
 ```
 
 ---

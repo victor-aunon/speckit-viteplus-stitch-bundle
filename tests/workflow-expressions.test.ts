@@ -95,6 +95,7 @@ describe('workflow expressions', () => {
     const inputs = {
       spec: 'build a billing feature',
       scope: 'src/features/billing',
+      skip_specify: false,
       has_ui: true,
       enable_stitch: true,
       stitch_project_id: 'projects/123456',
@@ -118,7 +119,7 @@ class Ctx:
 
 payload = json.load(sys.stdin)
 failures = []
-for variant in ("with_stitch_id", "without_stitch_id", "stitch_disabled", "no_ui"):
+for variant in ("with_stitch_id", "without_stitch_id", "stitch_disabled", "no_ui", "with_skip_specify"):
     inputs = dict(payload["inputs"])
     if variant == "without_stitch_id":
         inputs["stitch_project_id"] = ""
@@ -126,6 +127,8 @@ for variant in ("with_stitch_id", "without_stitch_id", "stitch_disabled", "no_ui
         inputs["enable_stitch"] = False
     if variant == "no_ui":
         inputs["has_ui"] = False
+    if variant == "with_skip_specify":
+        inputs["skip_specify"] = True
     for item in payload["templates"]:
         try:
             evaluate_expression(item["text"], Ctx(inputs))

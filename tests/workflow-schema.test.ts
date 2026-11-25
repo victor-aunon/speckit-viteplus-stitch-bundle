@@ -262,11 +262,22 @@ describe('Workflow YAML Schema Validation', () => {
     expect(wf.inputs.spec).toBeDefined();
     expect(wf.inputs.scope).toBeDefined();
     expect(wf.inputs.scope.default).toBe('');
+    expect(wf.inputs.skip_specify).toBeDefined();
+    expect(wf.inputs.skip_specify.type).toBe('boolean');
+    expect(wf.inputs.skip_specify.default).toBe(false);
     expect(wf.inputs.has_ui).toBeDefined();
     expect(wf.inputs.has_ui.default).toBe(true);
     expect(wf.inputs.enable_stitch).toBeDefined();
     expect(wf.inputs.stitch_project_id).toBeDefined();
     expect(wf.inputs.stitch_project_id.default).toBe('');
+
+    // Conditional specify step
+    const specifyStep = wf.steps.find((s: any) => s.id === 'specify');
+    expect(specifyStep.type).toBe('if');
+    expect(specifyStep.condition).toContain('inputs.skip_specify');
+    const runSpecifyStep = specifyStep.then.find((s: any) => s.id === 'run-specify');
+    expect(runSpecifyStep.command).toBe('speckit.specify');
+    expect(runSpecifyStep.input.args).toContain('inputs.spec');
 
     // Hierarchical model tiering inputs
     expect(wf.inputs.model).toBeDefined();

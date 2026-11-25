@@ -18,6 +18,10 @@ inputs:
     type: string
     default: ""
     prompt: "Target feature directory slice (e.g. src/features/billing; leave empty for auto-detection)"
+  skip_specify:
+    type: boolean
+    default: false
+    prompt: "Skip the specification step (speckit.specify) and audit an existing spec in specs/? (default: false)"
   has_ui:
     type: boolean
     default: true
@@ -128,11 +132,15 @@ steps:
       bash .specify/scripts/bash/bootstrap-project-env.sh --has-ui={{ inputs.has_ui }} || true
 
   - id: specify
-    command: speckit.specify
-    integration: "{{ inputs.integration }}"
-    model: "{{ inputs.model }}"
-    input:
-      args: "{{ inputs.spec }}"
+    type: if
+    condition: "{{ not inputs.skip_specify }}"
+    then:
+      - id: run-specify
+        command: speckit.specify
+        integration: "{{ inputs.integration }}"
+        model: "{{ inputs.model }}"
+        input:
+          args: "{{ inputs.spec }}"
 
   - id: audit-spec
     type: prompt
@@ -141,9 +149,9 @@ steps:
     timeout: 600
     prompt: |
       ROLE: LEAD REQUIREMENTS & DOMAIN ARCHITECT.
-      Perform an automated Spec Quality & Completeness Audit on the generated specification:
+      Perform an automated Spec Quality & Completeness Audit on the specification (whether generated in this workflow or pre-existing from a prior specify/clarify session):
 
-      1. Inspect `specs/<feature>/spec.md` (or the active feature spec).
+      1. Inspect `specs/<feature>/spec.md` (or the active feature spec). If `skip_specify` was set to true but no specification exists on disk, stop immediately and report that `specs/<feature>/spec.md` was not found.
       2. Verify the specification against deterministic SDD quality criteria:
          - User Stories & Value: Every story defines clear actor, action, and expected business outcome.
          - Acceptance Criteria: Every story includes unambiguous Given/When/Then scenarios.
