@@ -200,6 +200,7 @@ The workflow uses `integration: auto` by default, which reads the integration se
                      - repair_agent (application code only)         │
                      - recheck_quality / bundle / contracts /       │
                        visual / tasks (exit codes propagated)       │
+                     - assess_repair_progress (stall detection)     │
                      - abort_unrepaired (hard exit 1) if red        │
                                     │                               │
                                     └───────────────┬───────────────┘
@@ -217,6 +218,7 @@ The workflow uses `integration: auto` by default, which reads the integration se
                      - verdict_repair_agent (reason-driven)         │
                      - verify_retry (full re-audit)                 │
                      - gate_verdict_retry                           │
+                     - assess_verdict_progress (stall detection)    │
                                     │                               │
                                     └───────────────┬───────────────┘
                                                     ▼
@@ -228,8 +230,8 @@ The workflow uses `integration: auto` by default, which reads the integration se
 ### Self-healing, not just failing
 Two bounded loops fix what they can instead of dumping failures on you:
 
-1. **`repair_gates` (3 attempts)** — covers *every* deterministic gate (quality, bundle, contracts, visual, tasks), not just two. Each iteration starts by resetting the circuit breaker, so an attempt is never consumed by `CIRCUIT BREAKER TRIPPED` and a resumed run does not start blocked. Each attempt dispatches a repair agent with the failing evidence, then re-runs all gates. Recheck steps propagate their real exit codes (the previous loop used `|| true`, so its condition could never fire — it was decorative). If the loop exhausts its attempts, `abort_unrepaired` stops the run with the telemetry summary instead of shipping a broken feature.
-2. **`repair_verdict` (2 attempts)** — if the independent auditor returns `reject`, a repair agent works through the verdict's `reasons`, and the auditor re-audits **from scratch**. `gate_verdict_final` then fails the run unless the fresh verdict is `pass`.
+1. **`repair_gates` (3 attempts)** — covers *every* deterministic gate (quality, bundle, contracts, visual, tasks), not just two. Each iteration starts by resetting the circuit breaker, so an attempt is never consumed by `CIRCUIT BREAKER TRIPPED` and a resumed run does not start blocked. Each attempt dispatches a repair agent with the failing evidence, then re-runs all gates. Recheck steps propagate their real exit codes (the previous loop used `|| true`, so its condition could never fire — it was decorative). If the loop exhausts its attempts, `abort_unrepaired` stops the run with the telemetry summary instead of shipping a broken feature. Each iteration is bracketed by `repair-loop-guard.sh`: `--snapshot` in `reset_breaker` and `--assess` in a final `assess_repair_progress` step. A window that leaves the working tree byte-identical cannot produce a different outcome, so the loop ends there instead of spending its remaining 30-minute attempts — the common case where the offending file is inside the blast-radius protected set and no legal repair exists.
+2. **`repair_verdict` (2 attempts)** — if the independent auditor returns `reject`, a repair agent works through the verdict's `reasons`, and the auditor re-audits **from scratch**. `gate_verdict_final` then fails the run unless the fresh verdict is `pass`. The same `repair-loop-guard.sh` snapshot/assess pair (`assess_verdict_progress`) stops the loop after a repair window that changed nothing, rather than spending the second 45-minute attempt.
 
 Deterministic problems are not delegated to an LLM: `bootstrap_env` runs `bootstrap-project-env.sh`, which does `git init` + a baseline commit (with `node_modules/` ignored) and materializes the Playwright config and design-audit spec when designs exist.
 
@@ -316,7 +318,8 @@ Once tasks are complete, the workflow engine executes deterministic shell gates 
 **Self-healing (`repair_gates`, `do-while`, `max_iterations: 3`)**:
    - If every gate exits `0`, the loop body never runs and the workflow proceeds to verification.
    - If any gate fails, `repair_agent` reproduces the failure from the evidence, fixes the **application code**, and all gates are re-run. The loop condition reads the re-executed exit codes, so it exits as soon as everything is genuinely green.
-   - If the three attempts are exhausted, `abort_unrepaired` prints the telemetry summary and stops the run with resume instructions. Silencing a gate (`--allow-no-tests`, `--allow-incomplete`, `--allow-missing`, `--allow-foreign-git`, `--tokens-only`, `--skip-*`) or editing a gate/config/test/evidence artifact is explicitly forbidden inside the repair window.
+   - **Stall detection.** `reset_breaker` records a working-tree fingerprint (`repair-loop-guard.sh --snapshot`) and a final `assess_repair_progress` step compares it (`--assess`). If the repair window changed nothing, the loop condition turns false and the run stops after that one attempt: repeating an identical window would only reproduce an identical failure. Evidence artifacts (`specs/*/evidence/**`) are excluded from the fingerprint because every gate run rewrites them, while generated designs (`specs/*/designs/**`) count as real progress. Outside a git work tree the guard steps aside, so it can never be what blocks a run.
+   - If the three attempts are exhausted (or the loop stalled), `abort_unrepaired` prints the reason, the telemetry summary and the resume instructions, and stops the run. Silencing a gate (`--allow-no-tests`, `--allow-incomplete`, `--allow-missing`, `--allow-foreign-git`, `--tokens-only`, `--skip-*`) or editing a gate/config/test/evidence artifact is explicitly forbidden inside the repair window.
 
 ### Step 10: Independent Verification & Machine Verdict (`verify`, `gate_verdict`, `repair_verdict`)
 The workflow executes final empirical certification against raw machine evidence. The auditor follows `.specify/workflows/viteplus-stitch/AUDITOR.md` (one canonical protocol, shared by the first audit and any re-audit):

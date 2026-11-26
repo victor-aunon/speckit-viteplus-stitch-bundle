@@ -10,6 +10,28 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
+### Added
+
+- **The self-healing loops now stop when a repair window changes nothing.**
+  `repair_gates` (3 × 30 min) and `repair_verdict` (2 × 45 min) could previously
+  spend their full budget re-proving the same failure: a gate that is genuinely
+  not repairable by the loop — the offending file sits inside the blast-radius
+  protected set, the gate itself is buggy, or the agent stalls — reproduces the
+  identical failure on every attempt. `scripts/repair-loop-guard.sh --snapshot`
+  records a fingerprint of the working tree at the start of each iteration and
+  `--assess` compares it at the end; a new `assess_repair_progress` /
+  `assess_verdict_progress` shell step feeds that verdict into the `do-while`
+  condition, so a no-op window ends the loop instead of consuming the remaining
+  attempts. `specs/*/evidence/**` is excluded from the fingerprint because every
+  gate run rewrites it with a fresh timestamp (counting it would make the guard
+  dead code), while `specs/*/designs/**` is deliberately **not** excluded because
+  generating the design artifacts is a legitimate repair. Outside a git work tree
+  the guard always allows the loop to continue, so it can never be the reason a
+  run is blocked. `abort_unrepaired` reports the stall and the resume
+  instructions instead of claiming three attempts were exhausted.
+  Guarded by `tests/repair-loop-guard.test.ts` (14 cases) and by new assertions in
+  `tests/workflow-schema.test.ts`.
+
 ### Fixed
 
 - **A profile-only gate failure lost its deterministic handling.** The Spec Kit

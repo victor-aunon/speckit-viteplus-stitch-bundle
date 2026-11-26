@@ -175,7 +175,7 @@ print(json.dumps(failures))
     expect(offenders).toEqual([]);
   });
 
-  it.skipIf(!cliAvailable)('evaluates every gate condition for both profiles', () => {
+  it.skipIf(!cliAvailable)('evaluates gate, profile and progress guards correctly', () => {
     const script = `
 import json, sys, yaml
 from specify_cli.workflows.expressions import evaluate_condition
@@ -208,7 +208,7 @@ class Ctx:
 ALL = ["gate_quality", "gate_bundle", "gate_runtime_check", "gate_contracts_check",
        "gate_visual_check", "gate_tasks", "recheck_quality", "recheck_bundle",
        "recheck_runtime_check", "recheck_contracts_check", "recheck_visual_check",
-       "recheck_tasks"]
+       "recheck_tasks", "assess_repair_progress"]
 
 def steps(**overrides):
     base = {key: {"output": {"exit_code": 0}} for key in ALL}
@@ -217,6 +217,7 @@ def steps(**overrides):
     return base
 
 repair_gates = find(wf, "repair_gates")["condition"]
+repair_loop = find(wf, "repair_gates_loop")["condition"]
 fail_after = find(wf, "fail_after_repair")["condition"]
 
 failures = []
@@ -239,7 +240,18 @@ for has_ui in (True, False):
     check("repair_gates:runtime", repair_gates, not has_ui, has_ui, gate_runtime_check=1)
     check("fail_after:runtime", fail_after, not has_ui, has_ui, recheck_runtime_check=1)
 
+    # Progress guard: a failing gate keeps the loop alive only while the last
+    # repair window actually changed the tree.
+    for gate in ("recheck_quality", "recheck_bundle", "recheck_tasks",
+                 "recheck_contracts_check", "recheck_visual_check", "recheck_runtime_check"):
+        owner = gate in ("recheck_quality", "recheck_bundle", "recheck_tasks")
+        owner = owner or (gate == "recheck_runtime_check" and not has_ui)
+        owner = owner or (gate in ("recheck_contracts_check", "recheck_visual_check") and has_ui)
+        check(f"loop:{gate}+progress", repair_loop, owner, has_ui, **{gate: 1})
+        check(f"loop:{gate}+stall", repair_loop, False, has_ui, **{gate: 1, "assess_repair_progress": 1})
+
     # Everything green: neither the loop nor the abort may fire.
+    check("loop:green", repair_loop, False, has_ui)
     check("fail_after:green", fail_after, False, has_ui)
 
 print(json.dumps(failures))

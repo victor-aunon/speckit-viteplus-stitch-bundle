@@ -167,9 +167,33 @@ describe('Workflow YAML Schema Validation', () => {
       'reset_breaker_verdict',
       'verdict_repair_agent',
       'verify_retry',
-      'gate_verdict_retry'
+      'gate_verdict_retry',
+      'assess_verdict_progress'
     ]);
     expect(verdictLoop.steps[0].run).toContain('check-blast-radius.sh --reset');
+
+    // Progress guard: a repair window that changed nothing reproduces the same
+    // failure, so the loop must be able to observe that and stop early instead
+    // of spending its remaining 30/45-minute attempts.
+    expect(repairLoop.condition).toContain('steps.assess_repair_progress.output.exit_code == 0');
+    expect(verdictLoop.condition).toContain('steps.assess_verdict_progress.output.exit_code == 0');
+    expect(repairStepIds[repairStepIds.length - 1]).toBe('assess_repair_progress');
+
+    // The baseline is captured in reset_breaker, AFTER the environment bootstrap,
+    // so the guard measures the agent's work and not the environment's.
+    expect(resetStep.run).toContain('repair-loop-guard.sh --snapshot');
+    expect(resetStep.run.indexOf('bootstrap-project-env.sh'))
+      .toBeLessThan(resetStep.run.indexOf('repair-loop-guard.sh --snapshot'));
+
+    // The guard's exit code IS the loop verdict: swallowing it would make the
+    // condition always true and the detector dead code.
+    for (const guardId of ['assess_repair_progress', 'assess_verdict_progress']) {
+      const guard = [...repairLoop.steps, ...verdictLoop.steps].find((s: any) => s.id === guardId);
+      expect(guard.type).toBe('shell');
+      expect(guard.continue_on_error).toBe(true);
+      expect(guard.run).toContain('repair-loop-guard.sh --assess');
+      expect(guard.run).not.toContain('|| true');
+    }
 
     // Regression guard: an undefined step id evaluates `!= 0` as TRUE, so a
     // non-UI feature would otherwise enter the repair loop and abort a healthy

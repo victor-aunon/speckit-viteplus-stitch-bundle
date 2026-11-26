@@ -122,6 +122,7 @@ cp "$BUNDLE_ROOT/scripts/bootstrap-project-env.sh" "$SPECIFY_DIR/scripts/bash/bo
 cp "$BUNDLE_ROOT/scripts/reconcile-package-manifest.mjs" "$SPECIFY_DIR/scripts/bash/reconcile-package-manifest.mjs"
 cp "$BUNDLE_ROOT/scripts/check-design-artifacts.sh" "$SPECIFY_DIR/scripts/bash/check-design-artifacts.sh"
 cp "$BUNDLE_ROOT/scripts/check-dev-entrypoint.sh" "$SPECIFY_DIR/scripts/bash/check-dev-entrypoint.sh"
+cp "$BUNDLE_ROOT/scripts/repair-loop-guard.sh" "$SPECIFY_DIR/scripts/bash/repair-loop-guard.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-quality-gate.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-env-config.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/verify-stitch-design.sh"
@@ -135,6 +136,7 @@ chmod +x "$SPECIFY_DIR/scripts/bash/check-verification-verdict.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/bootstrap-project-env.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-design-artifacts.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-dev-entrypoint.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/repair-loop-guard.sh"
 
 # 3. Copy templates
 if [ -d "$BUNDLE_ROOT/templates" ]; then
