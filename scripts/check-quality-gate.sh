@@ -480,7 +480,10 @@ if command -v vp >/dev/null 2>&1; then
 elif [ -x "./node_modules/.bin/vp" ]; then
   VP_CMD="./node_modules/.bin/vp"
 elif command -v npx >/dev/null 2>&1; then
-  VP_CMD="npx vite-plus vp"
+  # `vite-plus` ships THREE bins (vp, vpr, vpx), so npx cannot pick one from the
+  # package name alone: `npx vite-plus vp check` dies with "could not determine
+  # executable to run". `-p <pkg>` installs it and then runs the named bin.
+  VP_CMD="npx -p vite-plus vp"
 fi
 
 if [ -z "$VP_CMD" ]; then
