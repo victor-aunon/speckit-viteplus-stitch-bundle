@@ -394,11 +394,12 @@ A fundamental architectural principle of this bundle is the strict separation be
 
 | Architectural Level | Scope & Authority | Handled By | Examples |
 |---|---|---|---|
-| **Repository Profile** | Delivery platform, framework, and application-wide lifecycle (`react`, `fullstack`, `api`, `vanilla`). | `install.sh` & `bootstrap-project-env.sh` | Main `dev` script (`next dev`, `vp dev`), production build (`vp build`, `next build`), test runner. |
+| **Repository Profile** | Delivery platform, framework, and application-wide lifecycle (`react`, `fullstack`, `api`, `vanilla`). | `install.sh` & `bootstrap-project-env.sh` | Main `dev` script (`next dev`, `vp dev`, `npm run dev:api`), production build (`vp build`, `next build`, `vp pack`), test runner. |
 | **Feature Scope** | Target business functionality and requirements of the active specification (`has_ui=true` or `has_ui=false`). | Agent Implementer (`speckit.implement`) | Vertical slice code under `src/features/<slice>`, domain models, API routes, or UI components. |
 | **Feature Runtime Bridge** | When a non-UI feature introduces an HTTP entrypoint inside a UI repository. | `runtime.json` & dedicated scripts | Exposing `"dev:api": "tsx watch src/main.ts"` without mutating the app's primary `"dev": "vp dev"`. |
 
 - **Autonomous Dependency Installation (`bootstrap_deps`)**: You never need to manually install tooling before running the workflow. If `package.json` lacks installed packages, or if a UI feature requires `@playwright/test` in `node_modules/`, `bootstrap_deps` automatically invokes `npm install` (or `vp install`) before gates run.
+- **Mandatory Toolchain Dependencies**: `install.sh` and `bootstrap-project-env.sh` do not only add scripts, they add the packages those scripts execute. A project missing `vite-plus` gets it (plus `typescript`, and `tsx` on the `api` profile); the `@shadcn/lint` and `@vitejs/plugin-react` packages are added wherever the provisioned `vite.config.ts` imports them; a declared `vitest` test script gets `vitest` pinned to the version `vp` bundles. Without this the quality gate aborts with `Neither Vite+ 'vp' command nor 'npx' was found`.
 - **Non-Destructive Script Provisioning**: The workflow and bootstrap scripts never overwrite your custom build or dev commands; they only supply defaults for missing baseline commands (`dev`, `build`, `test`, `check-quality`) required by the quality gates.
 
 `has_ui` describes the **feature**, not the **project**. The common case is a backend,
@@ -468,6 +469,59 @@ Rules worth knowing before you get bitten:
   and crashes the API on boot; reading only `process.env` breaks the browser bundle.
   Server keys (`PORT`, secrets) stay unprefixed on purpose so they never leak into
   the client bundle.
+
+## Toolchain Pins (version alignment)
+
+Vite+ ships as two packages that must move **together**: `vite-plus` (the `vp` CLI and
+the bundled toolchain) and `@voidzero-dev/vite-plus-core` (the Vite engine, published
+under the `vite` name through an npm alias). They version independently, so a caret
+range on both installs **two Vite copies** and `vp` refuses to boot with
+`Expected @voidzero-dev/vite-plus-core@X, but found vite@Y`.
+
+`templates/package.json.tmpl` is the single source of truth for those pins, and the
+installer copies them into every manifest it touches:
+
+```json
+"devDependencies": {
+  "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8001",
+  "vite-plus": "1.8.0"
+},
+"overrides": {
+  "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8001",
+  "vitest": "5.1.1"
+}
+```
+
+Why each line exists ([docs](https://viteplus.dev/guide/local-cli)):
+
+- **`devDependencies.vite` and `overrides.vite` must be byte-identical.** npm aborts
+  with `EOVERRIDE` when a direct dependency and its override disagree.
+- **The alias must be an exact version.** The core version encodes the bundled Vite
+  version (`8.3.8001` → Vite `8.3.8001`, where the patch is the Vite patch ×1000 plus a
+  release counter), so a range silently allows a different engine. The legacy `1.x`
+  core line also fails every plugin peer check.
+- **`overrides.vitest` must be exact.** Without it a dependency can pull a different
+  Vitest than the bundled runner, splitting mocks, `expect` and runner state.
+
+### Bumping the toolchain
+
+Never bump one package alone. After `npm install -D vite-plus@<version>`:
+
+```bash
+vp toolchain vite-plus-core   # → 8.3.8001  (paste into BOTH vite entries)
+vp toolchain vitest           # → 5.1.1     (paste into overrides.vitest)
+```
+
+Then update `templates/package.json.tmpl` and the four `examples/*/package.json`;
+`tests/toolchain-pins.test.ts` fails if they drift apart or if a range creeps back in.
+
+### Which build command per archetype
+
+| Archetype | `build` | Why |
+|---|---|---|
+| React SPA / vanilla | `vp build` | Built-in Vite production build |
+| Next / Nuxt / Astro / Remix / SvelteKit | `<framework> build` | Their bundler is their own; `vp build` would run Vite instead |
+| API service / library | `vp pack src/main.ts` | tsdown packaging for Node; `vp build` expects a web app with `index.html` |
 
 ## Non-Vite Frameworks (Next.js, Nuxt, Astro, Remix, SvelteKit)
 

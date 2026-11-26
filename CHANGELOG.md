@@ -12,6 +12,53 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- **The Vite+ pins no longer install two Vite copies.** `templates/package.json.tmpl`
+  aliased `vite` to `npm:@voidzero-dev/vite-plus-core@^1.3.0` while `vite-plus` floated
+  on `^1.3.0`. Those two packages version independently: `vite-plus@^1.3.0` resolves to
+  1.8.0 (which bundles core `8.3.8001`) while the core caret resolves to the legacy
+  1.6.0, so `npm install` silently added **both**. `vp` then refuses to boot with
+  `Expected @voidzero-dev/vite-plus-core@X, but found vite@Y`, and two Vite instances
+  break runtime identity checks across plugins. Verified with `npm install --dry-run`:
+  the old pins emit `add vite 8.3.8001` *and* `add vite 1.6.0`; the new pins emit one.
+  The template now pins the exact core version, repeats the **identical** spec in
+  `overrides.vite` (npm aborts with `EOVERRIDE` otherwise) and pins
+  `overrides.vitest`, so dependencies and the bundled runner share one Vitest.
+  `@vitejs/plugin-react` moves to `^6.3.0`, whose peer range (`vite ^8.0.0`) actually
+  matches the bundled core. `tests/toolchain-pins.test.ts` guards every rule.
+- **The `npx` fallback for `vp` could never work.** `check-quality-gate.sh` fell back
+  to `npx vite-plus vp`, but `vite-plus` ships three bins (`vp`, `vpr`, `vpx`), so npx
+  fails with `could not determine executable to run` — verified. Any machine without a
+  global `vp` or `node_modules/.bin/vp` therefore aborted the gate with exit 2. It now
+  uses `npx -p vite-plus vp`.
+- **Provisioned `dev`/`build` scripts were wrong outside a Vite SPA.** Both
+  `install.sh` and `bootstrap-project-env.sh` injected `dev: "vp dev"` and
+  `build: "vp build"` whenever the scripts were missing, regardless of the runtime.
+  `vp dev` always starts the built-in Vite dev server and `vp build` always runs the
+  built-in Vite build, both ignoring `package.json`. For a Next/Nuxt/Astro/Remix/
+  SvelteKit project that is a guaranteed failure. Framework detection is now resolved
+  once (config file first, declared framework dependency as the fallback) and drives
+  the scripts: `next dev`/`next build`, `nuxt dev`/`nuxt build`, and so on. The `api`
+  profile gets `dev: "npm run dev:api"` plus `build: "vp pack src/main.ts"` (tsdown,
+  the documented library/executable build) instead of the Vite app build. The previous
+  `vp run dev:api || npm run dev:api` chain is gone: `||` re-runs the script after a
+  real failure and masks the exit code.
+- **The installer provisioned scripts without the packages they run.** Only the React
+  starter manifest shipped dependencies, and the reconcile path never added any, so a
+  project could end up with `dev: "vp dev"` and no `vite-plus` — the quality gate then
+  died with `Neither Vite+ 'vp' command nor 'npx' was found`. `install.sh` and
+  `bootstrap-project-env.sh` now add what the scripts need, reading every version from
+  `templates/package.json.tmpl` (single source of truth): `vite-plus`, `typescript`,
+  `tsx` on the `api` profile, `@shadcn/lint` + `@vitejs/plugin-react` wherever the
+  provisioned `vite.config.ts` imports them, `vitest` (pinned) when the declared test
+  script uses it, and a plain `vite` range is rewritten to the core alias in
+  `devDependencies` (Vite is a build tool, not a runtime dependency). The reconcile is
+  idempotent: a second run rewrites nothing.
+- **The four reference examples were not installable.** `examples/*/package.json`
+  declared only `"test": "vitest run"` with no dependencies, so `npm install` was a
+  no-op and every gate failed at the first tool it needed. Each archetype now declares
+  its own runtime and toolchain: React + `@vitejs/plugin-react` for the SPA, `next` for
+  the full-stack example (which also makes framework detection correct from the
+  manifest alone), `tsx` + `vp pack` for the API, and the shared Vite+ pins everywhere.
 - **Bootstrap and installer now guarantee baseline `package.json` scripts.**
   When running in a project with an existing `package.json` that lacked standard
   scripts (`dev`, `build`, `test`, `check-quality`, `verify-design`), the quality
