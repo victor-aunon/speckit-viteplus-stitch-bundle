@@ -31,6 +31,13 @@ Options:
   --record-failure        Increment failure counter; trip if threshold reached
   --record-success        Reset failure counter to 0
   --reset                 Manually reset the circuit breaker counter
+  --source=<origin>       Who asked for a --reset, recorded in telemetry. Use
+                          `workflow` for a loop iteration, `human` when a person
+                          follows the abort message. Omitting it records
+                          `unspecified`, which is how an agent-driven reset is
+                          distinguished after the fact: all three are the same
+                          shell command in the same work tree, so without this
+                          field they are indistinguishable in the event log.
   --max-failures=<N>      Maximum consecutive failures before tripping (default: 3)
   --state-dir=<path>      Directory for circuit breaker state (default: .specify or /tmp)
   --require-git           Fail when the project root is not its own git repository
@@ -50,6 +57,7 @@ CHECK_BREAKER=false
 RECORD_FAILURE=false
 RECORD_SUCCESS=false
 RESET_BREAKER=false
+RESET_SOURCE=""
 SCOPE_DIR=""
 MAX_FAILURES=3
 STATE_DIR=""
@@ -83,6 +91,9 @@ for arg in "$@"; do
     --reset)
       RESET_BREAKER=true
       ;;
+    --source=*)
+      RESET_SOURCE="${arg#*=}"
+      ;;
     --max-failures=*)
       MAX_FAILURES="${arg#*=}"
       ;;
@@ -99,6 +110,11 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# Sanitize before it reaches the telemetry JSON: an unescaped quote would make
+# `--details` unparseable and the event would silently lose its payload.
+RESET_SOURCE="$(printf '%s' "$RESET_SOURCE" | tr -cd 'A-Za-z0-9_-')"
+[ -n "$RESET_SOURCE" ] || RESET_SOURCE="unspecified"
 
 if [ "$REQUIRE_GIT" = false ] && [ "${SPECIFY_REQUIRE_GIT:-}" = "true" ]; then
   REQUIRE_GIT=true
@@ -153,7 +169,7 @@ if [ "$RESET_BREAKER" = true ] || [ "$RECORD_SUCCESS" = true ]; then
   if [ "$DRY_RUN" = false ]; then
     set_failure_count 0
   fi
-  emit_cb_telemetry "circuit_breaker" "reset" '{"failures":0}'
+  emit_cb_telemetry "circuit_breaker" "reset" "{\"failures\":0,\"source\":\"$RESET_SOURCE\"}"
   echo "✓ Circuit breaker counter reset to 0."
   exit 0
 fi

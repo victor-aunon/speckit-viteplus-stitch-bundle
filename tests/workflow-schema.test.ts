@@ -185,6 +185,23 @@ describe('Workflow YAML Schema Validation', () => {
     expect(resetStep.run.indexOf('bootstrap-project-env.sh'))
       .toBeLessThan(resetStep.run.indexOf('repair-loop-guard.sh --snapshot'));
 
+    // A workflow reset, a human reset and an agent reset are the same command in
+    // the same work tree. The origin must be recorded or a run cannot be audited:
+    // a 31-reset run was unexplained precisely because this was missing.
+    expect(resetStep.run).toContain('check-blast-radius.sh --reset --source=workflow');
+    const verdictResetStep = verdictLoop.steps.find((s: any) => s.id === 'reset_breaker_verdict');
+    expect(verdictResetStep.run).toContain('check-blast-radius.sh --reset --source=workflow');
+    expect(abortStep.run).toContain('--reset --source=human');
+
+    // Each loop's window must be labelled distinctly, or the telemetry merges the
+    // gates loop and the verdict loop into one indistinguishable series.
+    const verdictGuard = verdictLoop.steps.find((s: any) => s.id === 'assess_verdict_progress');
+    expect(resetStep.run).toContain('--snapshot --step=repair_agent');
+    expect(verdictResetStep.run).toContain('--snapshot --step=verdict_repair_agent');
+    const gatesGuard = repairLoop.steps.find((s: any) => s.id === 'assess_repair_progress');
+    expect(gatesGuard.run).toContain('--step=repair_agent');
+    expect(verdictGuard.run).toContain('--step=verdict_repair_agent');
+
     // The guard's exit code IS the loop verdict: swallowing it would make the
     // condition always true and the detector dead code.
     for (const guardId of ['assess_repair_progress', 'assess_verdict_progress']) {

@@ -470,11 +470,14 @@ steps:
             type: shell
             continue_on_error: true
             run: |
-              bash .specify/scripts/bash/check-blast-radius.sh --reset
+              # --source=workflow is what makes the reset auditable: an agent reset
+              # and a human reset are the same command, and without this field all
+              # three look identical in telemetry.
+              bash .specify/scripts/bash/check-blast-radius.sh --reset --source=workflow
               bash .specify/scripts/bash/bootstrap-project-env.sh --has-ui={{ inputs.has_ui }} || true
               # Baseline for the progress guard, captured AFTER bootstrap settles
               # so the loop measures the agent's work, not the environment's.
-              bash .specify/scripts/bash/repair-loop-guard.sh --snapshot || true
+              bash .specify/scripts/bash/repair-loop-guard.sh --snapshot --step=repair_agent || true
           - id: repair_agent
             type: prompt
             integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
@@ -578,9 +581,12 @@ steps:
             continue_on_error: true
             run: |
               bash .specify/scripts/bash/check-tasks-complete.sh
-          # Progress guard. A repair window that changed nothing will reproduce
-          # the same failure, so the loop stops instead of spending its remaining
-          # attempts (up to 30 minutes each) to learn what this one already proved.
+          # Progress guard and window measurement. A repair window that changed
+          # nothing will reproduce the same failure, so the loop stops instead of
+          # spending its remaining attempts (up to 30 minutes each) to learn what
+          # this one already proved. It also emits the `repair_window` telemetry
+          # event: no `repair_agent` step event is ever written, so without this
+          # the window's real duration is invisible.
           # MUST run last so it observes every recheck, and MUST NOT swallow its
           # exit code: the do-while condition reads it.
           - id: assess_repair_progress
@@ -591,7 +597,7 @@ steps:
               # workflow updated without its scripts). Exiting non-zero here would
               # stop the loop and report a stall that never happened.
               if [ -f .specify/scripts/bash/repair-loop-guard.sh ]; then
-                bash .specify/scripts/bash/repair-loop-guard.sh --assess
+                bash .specify/scripts/bash/repair-loop-guard.sh --assess --step=repair_agent
               else
                 echo "ℹ️  [REPAIR LOOP GUARD] repair-loop-guard.sh is not installed; stall detection is off."
               fi
@@ -620,7 +626,10 @@ steps:
               echo "   The workflow stops instead of shipping a broken feature. Inspect the evidence below." >/dev/tty 2>/dev/null || true
               bash .specify/scripts/bash/emit-telemetry.sh --import-state --summary >/dev/tty 2>/dev/null || true
               echo "" >/dev/tty 2>/dev/null || true
-              echo "   Next step: fix the root cause, reset the breaker (bash .specify/scripts/bash/check-blast-radius.sh --reset)," >/dev/tty 2>/dev/null || true
+              echo "   Next step: fix the root cause, reset the breaker:" >/dev/tty 2>/dev/null || true
+              echo "     bash .specify/scripts/bash/check-blast-radius.sh --reset --source=human" >/dev/tty 2>/dev/null || true
+              echo "   Keep --source=human: a workflow reset, a human reset and an agent reset" >/dev/tty 2>/dev/null || true
+              echo "   are the same command, and telemetry cannot tell them apart without it." >/dev/tty 2>/dev/null || true
               echo "   then resume the run with 'specify workflow resume'." >/dev/tty 2>/dev/null || true
               exit 1
 
@@ -670,11 +679,11 @@ steps:
             type: shell
             continue_on_error: true
             run: |
-              bash .specify/scripts/bash/check-blast-radius.sh --reset
+              bash .specify/scripts/bash/check-blast-radius.sh --reset --source=workflow
               # Same progress guard as the gates loop. A rejecting audit whose
               # repair window changed nothing will be rejected identically, so
               # the second (45-minute) window is not worth spending.
-              bash .specify/scripts/bash/repair-loop-guard.sh --snapshot || true
+              bash .specify/scripts/bash/repair-loop-guard.sh --snapshot --step=verdict_repair_agent || true
           - id: verdict_repair_agent
             type: prompt
             integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
@@ -723,7 +732,7 @@ steps:
             continue_on_error: true
             run: |
               if [ -f .specify/scripts/bash/repair-loop-guard.sh ]; then
-                bash .specify/scripts/bash/repair-loop-guard.sh --assess
+                bash .specify/scripts/bash/repair-loop-guard.sh --assess --step=verdict_repair_agent
               else
                 echo "ℹ️  [REPAIR LOOP GUARD] repair-loop-guard.sh is not installed; stall detection is off."
               fi

@@ -82,6 +82,53 @@ describe('check-blast-radius.sh', () => {
     // is too tight when the rest of the suite runs in parallel.
   }, 60000);
 
+  it('records who asked for the reset, and defaults to unspecified', () => {
+    // A workflow reset, a human reset and an agent reset are the same shell
+    // command in the same work tree. Without this field a run cannot be audited
+    // afterwards -- which is exactly why a 31-reset run could not be explained.
+    const readEvents = (): any[] => {
+      // emit-telemetry resolves its destination from the cwd, not from --state-dir.
+      const file = path.join(tempStateDir, 'proj', '.specify', 'telemetry.jsonl');
+      if (!fs.existsSync(file)) return [];
+      return fs
+        .readFileSync(file, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line));
+    };
+
+    fs.mkdirSync(tempStateDir, { recursive: true });
+    fs.mkdirSync(path.join(tempStateDir, 'proj', '.specify'), { recursive: true });
+
+    runBash(scriptPath, [`--state-dir=${tempStateDir}`, '--reset', '--source=human'], {
+      cwd: path.join(tempStateDir, 'proj'),
+    });
+    const human = readEvents().filter((entry) => entry.event === 'circuit_breaker');
+    expect(human.at(-1).details.source).toBe('human');
+
+    runBash(scriptPath, [`--state-dir=${tempStateDir}`, '--reset'], {
+      cwd: path.join(tempStateDir, 'proj'),
+    });
+    const bare = readEvents().filter((entry) => entry.event === 'circuit_breaker');
+    expect(bare.at(-1).details.source).toBe('unspecified');
+  }, 60000);
+
+  it('sanitizes a hostile --source so the telemetry payload stays parseable', () => {
+    fs.mkdirSync(path.join(tempStateDir, 'proj2', '.specify'), { recursive: true });
+    runBash(scriptPath, [`--state-dir=${tempStateDir}`, '--reset', '--source=a"b,c'], {
+      cwd: path.join(tempStateDir, 'proj2'),
+    });
+    const file = path.join(tempStateDir, 'proj2', '.specify', 'telemetry.jsonl');
+    const events = fs
+      .readFileSync(file, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    expect(events.at(-1).details.source).toBe('abc');
+  }, 60000);
+
   it('should reset failure counter on --record-success', () => {
     runBash(scriptPath, [`--state-dir=${tempStateDir}`, '--record-failure']);
     const stateFile = path.join(tempStateDir, '.circuit-breaker-state');

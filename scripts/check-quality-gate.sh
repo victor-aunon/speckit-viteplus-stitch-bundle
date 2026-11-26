@@ -349,7 +349,7 @@ record_success() {
 
 # 1. Circuit Breaker pre-flight and Reset
 if [ "$RESET_BREAKER" = true ] && [ -f "$BLAST_CHECK" ]; then
-  bash "$BLAST_CHECK" --reset
+  bash "$BLAST_CHECK" --reset --source=quality-gate-flag
 fi
 
 if [ "$DRY_RUN" = false ] && [ -f "$BLAST_CHECK" ]; then

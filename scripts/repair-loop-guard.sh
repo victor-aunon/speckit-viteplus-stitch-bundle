@@ -21,6 +21,8 @@
 #   --assess     Compare against the snapshot. Exit 1 when nothing changed, so the
 #                do-while condition that reads this step stops the loop.
 #   --reset      Delete the stored snapshot and reason.
+#
+# It also measures the iteration, because nothing else did: see `--help`.
 # ==============================================================================
 
 set -euo pipefail
@@ -31,6 +33,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
 # and never pollutes the working tree it is measuring.
 STATE_DIR=".specify/.repair-loop"
 VERB=""
+WINDOW_STEP="repair_agent"
 
 show_help() {
   cat << 'EOF'
@@ -49,7 +52,19 @@ Verbs:
 
 Options:
   --state-dir=<path>     Directory for the snapshot (default: .specify/.repair-loop)
+  --step=<name>          Step name recorded on the `repair_window` telemetry event
+                         (default: repair_agent). The verdict loop passes
+                         verdict_repair_agent so the two windows stay distinct.
   --help                 Show this message.
+
+The guard also measures the iteration: `--snapshot` records when the repair
+window opened and `--assess` emits a `repair_window` telemetry event carrying
+the elapsed time. Measuring HERE rather than reading it back from the engine is
+deliberate: a real run wrote no `repair_agent` step event at all, so a repair
+phase lasting nearly three hours was entirely unattributed and the cost model
+had to be guessed. The span covers snapshot -> assess, i.e. the agent window
+plus the gate rechecks; the rechecks are seconds, so it is effectively the
+agent's own wall clock.
 
 Exit Codes:
   0                Progress detected, or no baseline to compare against.
@@ -65,6 +80,7 @@ for arg in "$@"; do
     --assess) VERB="assess" ;;
     --reset) VERB="reset" ;;
     --state-dir=*) STATE_DIR="${arg#--state-dir=}" ;;
+    --step=*) WINDOW_STEP="${arg#--step=}" ;;
     *)
       echo "Unknown option: $arg" >&2
       echo "Run 'repair-loop-guard.sh --help' for usage." >&2
@@ -75,6 +91,8 @@ done
 
 SNAPSHOT_FILE="$STATE_DIR/fingerprint"
 REASON_FILE="$STATE_DIR/reason.txt"
+WINDOW_START_FILE="$STATE_DIR/window-start"
+WINDOW_STEP_FILE="$STATE_DIR/window-step"
 
 if [ -z "$VERB" ]; then
   show_help
@@ -82,7 +100,7 @@ if [ -z "$VERB" ]; then
 fi
 
 if [ "$VERB" = "reset" ]; then
-  rm -f "$SNAPSHOT_FILE" "$REASON_FILE" 2>/dev/null || true
+  rm -f "$SNAPSHOT_FILE" "$REASON_FILE" "$WINDOW_START_FILE" "$WINDOW_STEP_FILE" 2>/dev/null || true
   echo "✓ [REPAIR LOOP GUARD] Stored loop state cleared."
   exit 0
 fi
@@ -101,10 +119,15 @@ fi
 # `specs/*/designs/` is deliberately NOT excluded: generating the design
 # artifacts is a legitimate repair for the contracts/visual gates.
 EXCLUDES=(
-  # This script's own state directory. It is normally covered by the `.specify`
-  # ignore rule, but excluding it explicitly keeps the guard correct in a project
-  # where `.specify/` happened to be tracked.
-  ':(exclude).specify/.repair-loop/**'
+  # All Spec Kit tooling. Normally covered by the `.specify` gitignore rule, but
+  # excluded explicitly because a tracked `.specify/` would otherwise make this
+  # guard compare its OWN output: the telemetry and state files are rewritten on
+  # every run, so the tree would always look changed and the detector would be
+  # dead code. No legitimate application repair lives here either — the blast
+  # radius protects `.specify/scripts`, `.specify/workflows`, `.specify/memory`
+  # and `.specify/templates`, so an agent edit under `.specify/` is a violation,
+  # not progress.
+  ':(exclude).specify/**'
   # Rewritten by every gate run (fresh timestamp + append-only history), so
   # counting it as progress would make this detector never fire.
   ':(exclude)specs/*/evidence/**'
@@ -160,22 +183,63 @@ hash_fingerprint() {
   fi
 }
 
+# Emit the measured window. Best-effort on purpose: telemetry must never decide
+# whether the loop continues, so every failure path here returns 0 and the caller
+# still exits with the stall verdict.
+emit_window_telemetry() {
+  local started step now elapsed_ms
+  started="$(cat "$WINDOW_START_FILE" 2>/dev/null || true)"
+  # Reject anything that is not a plain epoch, including an empty file: arithmetic
+  # on it inside `$(( ))` under `set -u`/`set -e` would abort the step.
+  case "$started" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+
+  step="$(cat "$WINDOW_STEP_FILE" 2>/dev/null || true)"
+  [ -n "$step" ] || step="$WINDOW_STEP"
+
+  now="$(date +%s)"
+  elapsed_ms=$(( (now - started) * 1000 ))
+  [ "$elapsed_ms" -ge 0 ] 2>/dev/null || elapsed_ms=0
+
+  if [ -f "$SCRIPT_DIR/emit-telemetry.sh" ]; then
+    bash "$SCRIPT_DIR/emit-telemetry.sh" \
+      --event=repair_window \
+      --step="$step" \
+      --status=end \
+      --duration-ms="$elapsed_ms" \
+      >/dev/null 2>&1 || true
+  fi
+
+  echo "⏱️  [REPAIR LOOP GUARD] Repair window ($step) lasted $(( elapsed_ms / 1000 ))s."
+  return 0
+}
+
 cmd_snapshot() {
   local raw
+  # Start the clock before any early return, so a non-git project still reports
+  # how long the iteration took.
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
+  date +%s > "$WINDOW_START_FILE" 2>/dev/null || true
+  printf '%s' "$WINDOW_STEP" > "$WINDOW_STEP_FILE" 2>/dev/null || true
+
   if ! raw="$(build_fingerprint)"; then
     rm -f "$SNAPSHOT_FILE" "$REASON_FILE" 2>/dev/null || true
     echo "ℹ️  [REPAIR LOOP GUARD] Not a git work tree; progress detection disabled for this iteration."
     return 0
   fi
 
-  mkdir -p "$STATE_DIR" 2>/dev/null || true
   printf '%s' "$raw" | hash_fingerprint > "$SNAPSHOT_FILE" 2>/dev/null || true
   rm -f "$REASON_FILE" 2>/dev/null || true
-  echo "✓ [REPAIR LOOP GUARD] Captured the iteration baseline."
+  echo "✓ [REPAIR LOOP GUARD] Captured the iteration baseline and opened the window."
   return 0
 }
 
 cmd_assess() {
+  # Measure first, so the window is recorded for every outcome (stall, progress
+  # or no baseline) instead of only for the cases that would have been logged.
+  emit_window_telemetry
+
   if [ ! -s "$SNAPSHOT_FILE" ]; then
     echo "ℹ️  [REPAIR LOOP GUARD] No baseline captured; letting the loop continue."
     return 0

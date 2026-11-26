@@ -12,6 +12,38 @@ one-file change plus this changelog.
 
 ### Added
 
+- **Repair windows and breaker resets are now measurable.** A real run needed
+  three hours of triage because the two numbers that mattered were never written
+  down. First, no `repair_agent` step event was ever recorded, so a repair phase
+  of nearly three hours had no attribution at all — the decision between "the
+  window is too long" and "there are too many windows" could not be made.
+  Second, a circuit-breaker reset was logged as a bare `status: "reset"` with no
+  origin, and a workflow iteration, a human following the abort message and an
+  agent retrying are all the same `check-blast-radius.sh --reset` in the same
+  work tree. A run showing 31 resets against a budget of 5 could not be
+  explained, and any explanation was guesswork.
+
+  Now `repair-loop-guard.sh --snapshot` records when the window opened and
+  `--assess` emits a `repair_window` event with the elapsed time, labelled
+  `--step=repair_agent` or `--step=verdict_repair_agent` so the two loops stay
+  distinct. It is measured inside the guard rather than read back from the
+  engine, because the engine never emitted the step event. Emission is
+  best-effort: it cannot change the stall verdict or the step's exit code, which
+  the `do-while` condition reads. And `check-blast-radius.sh --reset` takes
+  `--source=` (`workflow` | `human` | anything else, sanitized), recorded in the
+  event's `details` and defaulting to `unspecified` — which is how an
+  agent-driven reset becomes visible after the fact. The abort message now tells
+  the operator to pass `--source=human`, so the three origins separate
+  themselves. The guard's own state and telemetry are excluded from the progress
+  fingerprint, otherwise a tracked `.specify/` would make the detector compare
+  its own output and never fire.
+
+  Behaviour is deliberately unchanged: nothing forbids a reset yet. Prohibiting
+  it before measuring would remove the baseline this instrumentation exists to
+  capture. Guarded by 6 new cases in `tests/repair-loop-guard.test.ts`, 2 in
+  `tests/check-blast-radius.test.ts` and new assertions in
+  `tests/workflow-schema.test.ts`.
+
 - **The self-healing loops now stop when a repair window changes nothing.**
   `repair_gates` (3 × 30 min) and `repair_verdict` (2 × 45 min) could previously
   spend their full budget re-proving the same failure: a gate that is genuinely

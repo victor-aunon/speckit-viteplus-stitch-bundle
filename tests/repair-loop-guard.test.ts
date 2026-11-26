@@ -8,13 +8,14 @@ import { removeDir } from './helpers/fs';
 
 const scriptPath = path.resolve(__dirname, '../scripts/repair-loop-guard.sh');
 
-/** Run the guard and return `{ status, stdout, stderr }` without throwing. */
-function runGuard(
+/** Run a script and return `{ status, stdout, stderr }` without throwing. */
+function runScript(
+  script: string,
   args: string[],
   cwd: string
 ): { status: number; stdout: string; stderr: string } {
   try {
-    const stdout = runBash(scriptPath, args, { cwd, stdio: 'pipe' }) as string;
+    const stdout = runBash(script, args, { cwd, stdio: 'pipe' }) as string;
     return { status: 0, stdout, stderr: '' };
   } catch (error: any) {
     return {
@@ -56,6 +57,14 @@ describe('repair-loop-guard.sh', () => {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, content, 'utf8');
   };
+
+  /** Run the shipped guard from `scripts/`. */
+  const runGuard = (args: string[], cwd: string = tempDir) =>
+    runScript(scriptPath, args, cwd);
+
+  /** Run an arbitrary guard copy (used to simulate a partial install). */
+  const runGuardWith = (script: string, args: string[]) =>
+    runScript(script, args, tempDir);
 
   it('exists and is executable', () => {
     expect(fs.existsSync(scriptPath)).toBe(true);
@@ -170,6 +179,86 @@ describe('repair-loop-guard.sh', () => {
     const custom = path.join(tempDir, 'custom-state');
     expect(runGuard(['--snapshot', `--state-dir=${custom}`], tempDir).status).toBe(0);
     expect(fs.existsSync(path.join(custom, 'fingerprint'))).toBe(true);
+  });
+
+  const readTelemetry = (): any[] => {
+    const file = path.join(tempDir, '.specify/telemetry.jsonl');
+    if (!fs.existsSync(file)) return [];
+    return fs
+      .readFileSync(file, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  };
+
+  it('emits a repair_window event with the measured duration', () => {
+    // Nothing else measures this span: a real run wrote no `repair_agent` step
+    // event at all, so nearly three hours of repair were unattributed.
+    initRepo();
+    expect(runGuard(['--snapshot', '--step=repair_agent'], tempDir).status).toBe(0);
+    write('tracked.txt', 'a\nb\n');
+    expect(runGuard(['--assess', '--step=repair_agent'], tempDir).status).toBe(0);
+
+    const event = readTelemetry().find((entry) => entry.event === 'repair_window');
+    expect(event).toBeDefined();
+    expect(event.step).toBe('repair_agent');
+    expect(event.status).toBe('end');
+    expect(typeof event.duration_ms).toBe('number');
+    expect(event.duration_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it('emits the window even when the iteration stalled', () => {
+    // A stalled window is exactly the one worth measuring, so the emission must
+    // not sit behind the progress verdict.
+    initRepo();
+    runGuard(['--snapshot'], tempDir);
+    expect(runGuard(['--assess'], tempDir).status).toBe(1);
+
+    const events = readTelemetry().filter((entry) => entry.event === 'repair_window');
+    expect(events).toHaveLength(1);
+  });
+
+  it('keeps the two loops distinguishable by --step', () => {
+    initRepo();
+    runGuard(['--snapshot', '--step=verdict_repair_agent'], tempDir);
+    write('tracked.txt', 'a\nb\n');
+    runGuard(['--assess', '--step=verdict_repair_agent'], tempDir);
+
+    const event = readTelemetry().find((entry) => entry.event === 'repair_window');
+    expect(event.step).toBe('verdict_repair_agent');
+  });
+
+  it('still measures the window outside a git work tree', () => {
+    expect(runGuard(['--snapshot'], tempDir).status).toBe(0);
+    expect(runGuard(['--assess'], tempDir).status).toBe(0);
+
+    const event = readTelemetry().find((entry) => entry.event === 'repair_window');
+    expect(event).toBeDefined();
+  });
+
+  it('never lets telemetry change the verdict or the exit code', () => {
+    // Point SCRIPT_DIR at a guard copy with no emit-telemetry.sh beside it: the
+    // step must still return the stall verdict instead of failing.
+    const isolated = path.join(tempDir, 'isolated');
+    fs.mkdirSync(isolated, { recursive: true });
+    fs.copyFileSync(scriptPath, path.join(isolated, 'repair-loop-guard.sh'));
+    initRepo();
+
+    const snapshot = runGuardWith(path.join(isolated, 'repair-loop-guard.sh'), ['--snapshot']);
+    expect(snapshot.status).toBe(0);
+    const assessed = runGuardWith(path.join(isolated, 'repair-loop-guard.sh'), ['--assess']);
+    expect(assessed.status).toBe(1);
+    expect(assessed.stdout).toContain('REPAIR LOOP STALLED');
+  });
+
+  it('--reset clears the window state too', () => {
+    initRepo();
+    runGuard(['--snapshot'], tempDir);
+    expect(fs.existsSync(path.join(tempDir, '.specify/.repair-loop/window-start'))).toBe(true);
+    runGuard(['--reset'], tempDir);
+    expect(fs.existsSync(path.join(tempDir, '.specify/.repair-loop/window-start'))).toBe(false);
+    expect(fs.existsSync(path.join(tempDir, '.specify/.repair-loop/window-step'))).toBe(false);
   });
 
   it('treats a repository with no commits as a valid baseline', () => {
