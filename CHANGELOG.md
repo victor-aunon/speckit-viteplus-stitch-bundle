@@ -59,6 +59,15 @@ one-file change plus this changelog.
   its own runtime and toolchain: React + `@vitejs/plugin-react` for the SPA, `next` for
   the full-stack example (which also makes framework detection correct from the
   manifest alone), `tsx` + `vp pack` for the API, and the shared Vite+ pins everywhere.
+- **The bundler-agnostic `vite.config.ts` did not parse.** Its header comment
+  documented the absent UI boundary as `` `src/**/ui` ``, and the `**/` inside a
+  `/** ... */` block comment closed it early. Every `vp` command on the `api` and
+  `fullstack` profiles therefore died with
+  `failed to load config from vite.config.ts` — before lint, types or tests ran.
+  Reworded, plus `tests/template-config-syntax.test.ts` now parses every
+  `vite.config*.ts.tmpl` with the TypeScript compiler and rejects a glob inside a
+  comment. Verified end to end on the API profile: `vp pack src/main.ts` emits
+  `dist/main.mjs`, which Node imports.
 - **The vanilla profile no longer gets a React configuration.** `install.sh`
   provisioned `vite.config.ts.tmpl` for every non-framework Vite project, so a plain
   HTML/CSS/JS project imported `@vitejs/plugin-react` and enabled the shadcn component
