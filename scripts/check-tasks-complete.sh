@@ -218,6 +218,9 @@ if [ -n "$TASKS_FILE" ] && [ -f "$TASKS_FILE" ]; then
     echo "   Declaring the feature complete with a partial implementation is not allowed."
     grep -nE '^[[:space:]]*[-*][[:space:]]+\[ \]' "$TASKS_FILE" 2>/dev/null | head -n 10 | sed 's/^/   /' || true
     echo "   Finish the tasks, or get explicit human approval and pass --allow-incomplete."
+    echo "   If they ARE implemented, the ledger was never reconciled: ticking is only"
+    echo "   legal on a green 'check-quality-gate.sh', which mid-feature cannot happen."
+    echo "   Tick them in one justified pass once that gate passes (see AGENTS.md)."
     write_evidence "failed" "$TOTAL" "$COMPLETED" "$PENDING" "unchecked_tasks"
     emit_gate_telemetry "failed" 1 "{\"tasks_pending\":$PENDING,\"tasks_total\":$TOTAL}"
     exit 1

@@ -870,6 +870,8 @@ bash .specify/scripts/bash/check-design-artifacts.sh --allow-missing
 ### 11. `check-tasks-complete.sh` (Task Completion Gate)
 Completion cannot be proven by a scaffold. Fails while `tasks.md` still contains unchecked items and prints the first pending tasks.
 
+> **The tick is gated on a green `check-quality-gate.sh`, which cannot be green mid-feature.** The gate runs the whole test suite and the build, so tasks not yet written guarantee a red result. That makes the per-task "verify it passes" rule a progress signal, not a tick trigger: a compliant agent cannot mark anything until the feature is finished. The protocol therefore requires **one reconciliation pass on the first full-gate success** — tick every demonstrably done task, print `task id -> justification` for each, and leave the rest unchecked with a reason. Polish and verification tasks are ticked only when the gate they describe actually passed. Without that pass a finished feature reaches this gate with an empty ledger and is reported as incomplete. The full protocol lives in `guardrails.md` and the `AGENTS.md` templates; `tests/task-ledger-protocol.test.ts` keeps every copy in sync.
+
 ```bash
 # Fails when any task is unchecked (default: newest feature under specs/)
 bash .specify/scripts/bash/check-tasks-complete.sh

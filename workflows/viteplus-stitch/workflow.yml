@@ -84,8 +84,20 @@ steps:
       - You MUST install real dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified.
       - NEVER use `read_file`, `list_directory`, or file-reading tools on `node_modules/` (symlinks trigger sandbox boundary errors) or `.git/` (violates workspace security sandbox). Diagnose packages via terminal: `npm ls`, `npm install`, or `vp check`. Inspect git state exclusively via terminal: `git status`, `git diff`.
       - NEVER use `replace` or `write_file` on `package.json` (blocked by CLI security policy for build configuration files). To add or update scripts, use terminal commands: `npm pkg set scripts.<name>="..."`.
-      - After completing each task in `tasks.md`, you MUST run `bash .specify/scripts/bash/check-quality-gate.sh` via the terminal and verify it passes (exit code 0).
-      - Marking a task `- [x]` without executing the quality gate in the terminal is strictly forbidden.
+      - After completing each task in `tasks.md`, you MUST run `bash .specify/scripts/bash/check-quality-gate.sh`
+        via the terminal. Mid-feature it is EXPECTED to exit non-zero: it runs the
+        whole test suite and the build, so tasks you have not written yet guarantee a
+        red gate. That red gate is your progress signal, not a reason to stop or to
+        skip the check.
+      - Marking a task `- [x]` while the gate exits non-zero is strictly forbidden.
+        That rule also means no checkbox CAN be ticked mid-feature, so on the first
+        full-gate success you MUST reconcile `tasks.md` in ONE pass: tick every task
+        that is now demonstrably done and print `task id -> justification` for each
+        (the file, test or gate result that makes it true). Leave unchecked, with a
+        one-line reason, any task you cannot justify — a human decides. `Polish` /
+        verification tasks are ticked only when the gate they describe actually
+        passed in this run. A finished feature with an empty ledger fails
+        `gate_tasks` and spends a repair window on bookkeeping.
       - Spec Kit runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`) as non-agent shell steps with an automated self-healing repair window.
       {% if not inputs.has_ui %}
       RUNTIME ENTRYPOINT CONTRACT (has_ui=false):
@@ -534,8 +546,16 @@ steps:
                 wire `tokens.css` into the app stylesheet so the DOM exposes the
                 tokens. Never skip the contracts/visual gates and never pass
                 `--tokens-only` to make them disappear.
-              - UNCHECKED TASKS: implement them. Never tick a checkbox without running
-                `check-quality-gate.sh` and seeing exit code 0.
+              - UNCHECKED TASKS: implement them, and RECONCILE THE LEDGER before this
+                window ends. Ticking `- [x]` is legal only while
+                `check-quality-gate.sh` exits 0, which also means nothing can be ticked
+                until the feature is finished — so once you get that gate green, walk
+                `tasks.md` and tick every completed task in ONE pass, printing
+                `task id -> justification` for each. A finished feature with an empty
+                ledger fails `gate_tasks`, re-enters this loop, and burns another window
+                on bookkeeping. Tasks you cannot justify stay unchecked with a one-line
+                reason. Polish/verification tasks are ticked only when the gate they
+                describe actually passed in this run.
               - RUNTIME ENTRYPOINT (non-UI features): when the declared runtime does not
                 serve, fix the API or the declaration itself. Declaring the Vite dev
                 server as the API runtime, editing `specs/<active-feature>/runtime.json` to a

@@ -10,6 +10,41 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A finished feature could never be reported as finished.** The task-ledger rules
+  formed a deadlock by construction. `check-tasks-complete.sh` fails on any
+  unchecked box. Both the guardrails and the repair prompt forbade ticking a box
+  unless `check-quality-gate.sh` exits 0. That gate runs formatting, types,
+  complexity, architecture, env config, the **whole** test suite and the build, so
+  mid-feature it cannot pass: later tasks are not written yet. A compliant agent
+  therefore ticked **nothing**, and by the time the work was done nobody went back.
+  The run ended with every task implemented and the ledger empty, which drove
+  `gate_tasks` to fail, re-entered the repair loop, and spent windows on
+  bookkeeping. Polish and verification tasks were the worst case: their content
+  *is* the gates, so they were only markable after the gates passed — the exact
+  opposite of the order the workflow demanded.
+
+  The per-task rule stays (a red gate is still your progress signal, and ticking
+  on a red gate is still a fatal violation), but it is now stated together with
+  what it implies: mid-feature the gate is **expected** to be red, so on the first
+  full-gate success the agent must reconcile the ledger in one pass, printing
+  `task id -> justification` for each tick and leaving unjustifiable ones
+  unchecked with a reason. Polish/verification tasks are ticked only when the gate
+  they describe actually passed.
+
+  The rule was duplicated across the workflow prompt and six templates, none of
+  which said the crucial part; `tests/task-ledger-protocol.test.ts` now pins the
+  whole protocol in all seven copies so one edit cannot desynchronize the rest.
+  `check-tasks-complete.sh` also names the missing reconciliation in its failure
+  output, which is where the agent actually reads it.
+
+  This is a prompt-level fix (option A). It unblocks runs and removes the
+  deadlock, but the checkbox is still a hand-maintained mirror of gate state, and
+  a lazy agent can over-tick. The structural fix is planned: implementation tasks
+  verified against the scoped gate, and polish/verification tasks ticked
+  deterministically by the workflow from gate evidence.
+
 ### Added
 
 - **The visual gate actually compares the implementation against the design master.**
