@@ -611,8 +611,8 @@ elif command -v node >/dev/null 2>&1; then
 
       if (profile === "api") {
         ensureDev("tsx", tsxVersion, "dev:api runtime");
-      } else if (framework === "vite") {
-        // vite.config.ts here imports the React plugin and the shadcn lint plugin.
+      } else if (framework === "vite" && profile === "react") {
+        // Only the React config imports these two; the vanilla config does not.
         ensureDev("@vitejs/plugin-react", pluginReactVersion, "vite.config.ts imports it");
         ensureDev("@shadcn/lint", shadcnLintVersion, "vite.config.ts lint plugin");
       }
@@ -683,7 +683,10 @@ fi
 #     fact, with a declared framework dependency as the fallback.
 VITE_CONFIG_FILE="$TARGET_DIR/vite.config.ts"
 if [ ! -f "$VITE_CONFIG_FILE" ]; then
-  if { [ "$FRAMEWORK" != "vite" ] || [ "$TARGET_PROFILE" = "api" ]; } && [ -f "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" ]; then
+  if [ "$TARGET_PROFILE" = "vanilla" ] && [ -f "$BUNDLE_ROOT/templates/vite.config.vanilla.ts.tmpl" ]; then
+    cp "$BUNDLE_ROOT/templates/vite.config.vanilla.ts.tmpl" "$VITE_CONFIG_FILE"
+    echo "✓ Initialized vite.config.ts (vanilla web profile: no React plugin, no shadcn component contract)"
+  elif { [ "$FRAMEWORK" != "vite" ] || [ "$TARGET_PROFILE" = "api" ]; } && [ -f "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" ]; then
     cp "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" "$VITE_CONFIG_FILE"
     echo "✓ Detected $FRAMEWORK ($TARGET_PROFILE profile): initialized vite.config.ts (Vite+ lint/fmt/boundaries only, no Vite bundler plugins)"
     echo "  \`vite-plus\` is added to devDependencies above, so \`npm install\` brings the \`vp\` CLI in."

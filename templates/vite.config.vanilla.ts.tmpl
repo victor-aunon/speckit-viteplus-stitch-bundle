@@ -1,0 +1,97 @@
+/**
+ * Vite+ configuration for a VANILLA web project: raw HTML, CSS and JavaScript,
+ * bundled by Vite (so `vp dev` / `vp build` are the right commands here).
+ *
+ * Why a dedicated file instead of `vite.config.ts.tmpl`: that template imports
+ * `@vitejs/plugin-react` and enables the shadcn/Tailwind lint contract. A vanilla
+ * project has neither a React runtime nor a shadcn component library, so it would
+ * pay for two dependencies it never uses and inherit a component contract that
+ * does not apply to it.
+ *
+ * Exported as a PLAIN OBJECT on purpose, mirroring the bundler-agnostic template:
+ * `vp check` must still load this file when `node_modules/` has not been
+ * installed yet. Importing `defineConfig` from a package that may not exist turns
+ * a lint run into a crash.
+ */
+export default {
+  lint: {
+    options: {
+      // Type checking still applies: env config and DOM helpers are TypeScript.
+      typeAware: true,
+      typeCheck: true,
+    },
+    rules: {
+      // 1. Cyclomatic Complexity and Structure Rules
+      complexity: ['error', 10],
+      'max-lines-per-function': ['error', { max: 50, skipBlankLines: true, skipComments: true }],
+      'max-depth': ['error', 3],
+      'max-params': ['error', 4],
+    },
+
+    // 2. Clean Architecture Layer Boundaries (vertical slices)
+    //
+    // Same dependency rules as every other profile, scoped to `src/` because a
+    // vanilla entrypoint lives at the project root (index.html + main.ts).
+    overrides: [
+      {
+        files: ['**/src/**/domain/**', '**/src/core/domain/**'],
+        rules: {
+          'no-restricted-imports': [
+            'error',
+            {
+              patterns: [
+                {
+                  group: [
+                    '**/application/**',
+                    '**/infrastructure/**',
+                    '**/src/**/application/**',
+                    '**/src/**/infrastructure/**',
+                  ],
+                  message:
+                    'Clean Architecture Violation: Domain cannot depend on Application or Infrastructure (vertical slice rule).',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        files: ['**/src/**/application/**', '**/src/core/application/**'],
+        rules: {
+          'no-restricted-imports': [
+            'error',
+            {
+              patterns: [
+                {
+                  group: ['**/infrastructure/**', '**/src/**/infrastructure/**'],
+                  message:
+                    'Clean Architecture Violation: Application cannot depend on Infrastructure (vertical slice rule).',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      // Test suites: omit function length limits for describe/it blocks
+      {
+        files: [
+          '**/*.test.{ts,tsx,js,jsx}',
+          '**/*.spec.{ts,tsx,js,jsx}',
+          '**/tests/**',
+          '**/test/**',
+        ],
+        rules: {
+          'max-lines-per-function': 'off',
+        },
+      },
+    ],
+  },
+  fmt: {
+    // Airbnb / VoidZero style guide standard
+    singleQuote: true,
+    semi: true,
+    trailingComma: 'all',
+    tabWidth: 2,
+    printWidth: 100,
+  },
+};

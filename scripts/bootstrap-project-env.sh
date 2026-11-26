@@ -357,7 +357,9 @@ if [ -f "$ROOT/package.json" ] && command -v node >/dev/null 2>&1; then
 
       if (profile === "api") {
         ensureDev("tsx", tsxVersion, "dev:api runtime");
-      } else if (framework === "vite") {
+      } else if (framework === "vite" && (profile === "react" || profile === "")) {
+        // An empty profile is the react default used by install.sh; the vanilla
+        // config imports neither of these.
         ensureDev("@vitejs/plugin-react", pluginReactVersion, "vite.config.ts imports it");
         ensureDev("@shadcn/lint", shadcnLintVersion, "vite.config.ts lint plugin");
       }

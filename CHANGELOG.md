@@ -59,6 +59,16 @@ one-file change plus this changelog.
   its own runtime and toolchain: React + `@vitejs/plugin-react` for the SPA, `next` for
   the full-stack example (which also makes framework detection correct from the
   manifest alone), `tsx` + `vp pack` for the API, and the shared Vite+ pins everywhere.
+- **The vanilla profile no longer gets a React configuration.** `install.sh`
+  provisioned `vite.config.ts.tmpl` for every non-framework Vite project, so a plain
+  HTML/CSS/JS project imported `@vitejs/plugin-react` and enabled the shadcn component
+  contract — two dependencies and a lint contract it never uses. The new
+  `templates/vite.config.vanilla.ts.tmpl` keeps `typeCheck`, the complexity limits and
+  the Clean Architecture boundaries, and is exported as a plain object so `vp check`
+  still loads when `node_modules/` is absent. The reconcile step now adds
+  `@vitejs/plugin-react` / `@shadcn/lint` only to the `react` profile. Verified end to
+  end on `examples/4-vanilla-web`: 81 packages instead of 97, `vp v1.8.0`, `vp check`
+  green after `--fix`.
 - **The installer no longer plants `.npmrc` with `legacy-peer-deps=true`.** That flag
   is not a Vite+ requirement. It was compensating for `@vitejs/plugin-react@4`, whose
   peer range (`vite ^4 || ^5 || ^6`) could not match a core aliased to 8.x. With the

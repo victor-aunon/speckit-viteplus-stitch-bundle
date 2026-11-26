@@ -173,6 +173,42 @@ describe('Bundle Installer Script E2E', () => {
     removeDir(tempDir);
   });
 
+  it('gives a vanilla web project a React-free config and no React dependencies', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-vanilla-profile-test-'));
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'landing-page', scripts: {} }, null, 2),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(tempDir, 'index.html'), '<!doctype html><title>x</title>', 'utf8');
+
+    runBash(installScript, [`--target-dir=${tempDir}`, '--profile=vanilla']);
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+
+    // A vanilla project is bundled by Vite, so the built-ins are correct here.
+    expect(pkg.scripts.dev).toBe('vp dev');
+    expect(pkg.scripts.build).toBe('vp build');
+
+    // ...but it has no React runtime and no shadcn component library, so paying
+    // for those dependencies (and their peer surface) would be pure waste.
+    expect(pkg.devDependencies['@vitejs/plugin-react']).toBeUndefined();
+    expect(pkg.devDependencies['@shadcn/lint']).toBeUndefined();
+    expect(pkg.devDependencies['vite-plus']).toBeDefined();
+
+    const viteConfig = fs.readFileSync(path.join(tempDir, 'vite.config.ts'), 'utf8');
+    // The template's header comment names both plugins to explain their absence;
+    // what must not exist is the import and the jsPlugins entry.
+    expect(viteConfig).not.toContain("from '@vitejs/plugin-react'");
+    expect(viteConfig).not.toContain("from '@shadcn/lint'");
+    expect(viteConfig).not.toContain('jsPlugins');
+    // Still enforces the architecture and complexity contract.
+    expect(viteConfig).toContain('complexity:');
+    expect(viteConfig).toContain('typeCheck: true');
+
+    removeDir(tempDir);
+  });
+
   it('gives a full-stack framework its own dev/build commands', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-fullstack-test-'));
     // Detection must work from the declared dependency alone: a clean starter may

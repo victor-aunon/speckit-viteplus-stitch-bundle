@@ -523,6 +523,23 @@ Then update `templates/package.json.tmpl` and the four `examples/*/package.json`
 | Next / Nuxt / Astro / Remix / SvelteKit | `<framework> build` | Their bundler is their own; `vp build` would run Vite instead |
 | API service / library | `vp pack src/main.ts` | tsdown packaging for Node; `vp build` expects a web app with `index.html` |
 
+### Which `vite.config.ts` per profile
+
+The installer provisions exactly one shape, and adds only the dependencies that
+shape imports:
+
+| Profile | Template | Loads without `node_modules` | Bundler plugins |
+|---|---|:---:|---|
+| `react` | `vite.config.ts.tmpl` | no (`defineConfig` from `vite`) | `@vitejs/plugin-react`, `@shadcn/lint` |
+| `vanilla` | `vite.config.vanilla.ts.tmpl` | yes (plain object) | none |
+| `api` | `vite.config.agnostic.ts.tmpl` | yes (plain object) | none |
+| `fullstack` (Next/Nuxt/Astro/Remix/SvelteKit) | `vite.config.agnostic.ts.tmpl` | yes (plain object) | none |
+
+A vanilla project is bundled by Vite, so `vp dev` / `vp build` are correct there, but it
+has no React runtime and no shadcn component library: the dedicated template keeps the
+complexity limits, `typeCheck` and the Clean Architecture boundaries while dropping the
+React plugin and the component contract that do not apply.
+
 ## Non-Vite Frameworks (Next.js, Nuxt, Astro, Remix, SvelteKit)
 
 Vite+ is a **toolchain**, not a bundler requirement. `vite.config.ts` is its single
