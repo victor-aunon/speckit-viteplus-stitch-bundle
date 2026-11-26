@@ -126,6 +126,9 @@ cp "$BUNDLE_ROOT/scripts/reconcile-package-manifest.mjs" "$SPECIFY_DIR/scripts/b
 cp "$BUNDLE_ROOT/scripts/render-design-goldens.mjs" "$SPECIFY_DIR/scripts/bash/render-design-goldens.mjs"
 cp "$BUNDLE_ROOT/scripts/check-design-artifacts.sh" "$SPECIFY_DIR/scripts/bash/check-design-artifacts.sh"
 cp "$BUNDLE_ROOT/scripts/check-dev-entrypoint.sh" "$SPECIFY_DIR/scripts/bash/check-dev-entrypoint.sh"
+# Derives the tagged half of tasks.md from gate evidence instead of trusting a
+# hand-maintained checkbox.
+cp "$BUNDLE_ROOT/scripts/reconcile-task-ledger.sh" "$SPECIFY_DIR/scripts/bash/reconcile-task-ledger.sh"
 cp "$BUNDLE_ROOT/scripts/repair-loop-guard.sh" "$SPECIFY_DIR/scripts/bash/repair-loop-guard.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-quality-gate.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-env-config.sh"
@@ -140,6 +143,7 @@ chmod +x "$SPECIFY_DIR/scripts/bash/check-verification-verdict.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/bootstrap-project-env.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-design-artifacts.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-dev-entrypoint.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/reconcile-task-ledger.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/repair-loop-guard.sh"
 
 # 3. Copy templates

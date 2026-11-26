@@ -6,15 +6,17 @@ import yaml from 'yaml';
 const root = path.resolve(__dirname, '..');
 
 /**
- * The task-ledger protocol is prose, and prose is where this bundle keeps
- * losing. It was duplicated across the workflow prompt and six templates, none
- * of which said the one thing that matters: the gate cannot pass mid-feature, so
- * a compliant agent can never tick a box and a finished feature arrives with an
- * empty ledger. `gate_tasks` then reports it as incomplete and spends a repair
- * window on bookkeeping.
+ * The task ledger has two owners, and the split is the whole point:
  *
- * This test pins the whole protocol in every copy, so a future edit to one file
- * cannot silently reintroduce the deadlock in the other five.
+ *  - untagged tasks are implementation work, ticked by the agent after the
+ *    (scoped) quality gate it can actually run mid-feature;
+ *  - `[verify:<gate>]` tasks are gate results, ticked AND un-ticked by
+ *    `reconcile-task-ledger.sh` from the evidence those gates wrote.
+ *
+ * Before this split, the checkbox was a hand-maintained mirror of gate state
+ * that the agent could not keep accurate, so a finished feature arrived with an
+ * empty ledger and `gate_tasks` failed. The prose lives in seven copies; this
+ * test keeps them from drifting apart again.
  */
 const GUARDRAIL_FILES = [
   'templates/guardrails.md',
@@ -27,64 +29,90 @@ const GUARDRAIL_FILES = [
 
 const read = (rel: string): string => fs.readFileSync(path.join(root, rel), 'utf8');
 
-describe('task ledger protocol', () => {
+describe('task ledger ownership', () => {
   const workflow = yaml.parse(read('workflows/viteplus-stitch/workflow.yml'));
+  const stepIds = workflow.steps.map((step: any) => step.id);
   const guardrailsStep = workflow.steps.find((step: any) => step.id === 'guardrails');
   const repairLoop = workflow.steps
     .find((step: any) => step.id === 'repair_gates')
     .then.find((step: any) => step.id === 'repair_gates_loop');
-  const repairAgent = repairLoop.steps.find((step: any) => step.id === 'repair_agent');
 
-  it('tells the agent the per-task gate is expected to fail mid-feature', () => {
-    // Without this, the instruction "verify it passes after each task" reads as
-    // a precondition the agent must satisfy, and it cannot.
+  it('names both owners in every copy of the rules', () => {
     for (const rel of GUARDRAIL_FILES) {
-      expect(read(rel), rel).toMatch(/EXPECTED to exit non-zero/i);
+      const text = read(rel);
+      expect(text, rel).toMatch(/TWO KINDS OF TASK, TWO OWNERS/i);
+      expect(text, rel).toMatch(/IMPLEMENTATION TASKS \(untagged\) are yours/i);
+      expect(text, rel).toMatch(/VERIFICATION TASKS \(`\[verify:<gate>\]`\) are NOT yours/i);
     }
-    expect(guardrailsStep.prompt).toMatch(/EXPECTED to exit non-zero/i);
+    expect(guardrailsStep.prompt).toMatch(/TWO KINDS OF TASK, TWO OWNERS/i);
   });
 
-  it('requires reconciling the ledger once the gate is green', () => {
+  it('forbids hand-editing a gate-derived checkbox', () => {
     for (const rel of GUARDRAIL_FILES) {
-      expect(read(rel), rel).toContain('reconcile');
+      expect(read(rel), rel).toMatch(/never tick and never un-tick/i);
     }
-    expect(guardrailsStep.prompt).toContain('reconcile');
-    expect(repairAgent.prompt).toMatch(/RECONCILE THE LEDGER/i);
+    const repairAgent = repairLoop.steps.find((step: any) => step.id === 'repair_agent');
+    expect(repairAgent.prompt).toMatch(/NEVER TOUCH `\[verify:/);
   });
 
-  it('keeps ticking legal only on a green gate', () => {
-    // The anti-fraud property is the reason the deadlock exists; it must not be
-    // relaxed to fix the deadlock.
+  it('points implementation tasks at the scoped gate that can be green mid-feature', () => {
     for (const rel of GUARDRAIL_FILES) {
-      expect(read(rel), rel).toMatch(/while the gate exits non-zero is a fatal violation/i);
-    }
-    expect(guardrailsStep.prompt).toMatch(/while the gate exits non-zero is strictly forbidden/i);
-    expect(repairAgent.prompt).toMatch(/exits 0/i);
-  });
-
-  it('demands a justification per tick instead of a blind batch pass', () => {
-    for (const rel of GUARDRAIL_FILES) {
-      expect(read(rel), rel).toMatch(/justification/);
-    }
-    expect(repairAgent.prompt).toMatch(/justification/);
-  });
-
-  it('ties polish and verification tasks to the gate that proves them', () => {
-    for (const rel of GUARDRAIL_FILES) {
-      expect(read(rel), rel).toMatch(/verification tasks are ticked only when the gate/i);
+      expect(read(rel), rel).toContain('--scope');
     }
   });
 
-  it('points the tasks gate failure at the missing reconciliation', () => {
-    // The agent reads this output inside the repair window; it is the cheapest
-    // possible place to name the actual problem.
+  it('keeps ticking an untagged task illegal on a red gate', () => {
+    for (const rel of GUARDRAIL_FILES) {
+      expect(read(rel), rel).toMatch(/Never tick on a red gate|Ticking on a red gate/i);
+    }
+  });
+
+  it('tells the agent to tag the verification tasks it writes', () => {
+    for (const rel of GUARDRAIL_FILES) {
+      expect(read(rel), rel).toMatch(/TAG NEW VERIFICATION TASKS/i);
+    }
+    expect(guardrailsStep.prompt).toMatch(/TAG NEW VERIFICATION TASKS/i);
+  });
+
+  it('reconciles the ledger BEFORE the completion gate judges it', () => {
+    // Judging a ledger that has not been reconciled is what made a finished
+    // feature report as incomplete.
+    expect(stepIds.indexOf('reconcile_tasks')).toBeGreaterThan(-1);
+    expect(stepIds.indexOf('reconcile_tasks')).toBeLessThan(stepIds.indexOf('gate_tasks'));
+
+    const repairIds = repairLoop.steps.map((step: any) => step.id);
+    expect(repairIds).toContain('reconcile_tasks_recheck');
+    expect(repairIds.indexOf('reconcile_tasks_recheck')).toBeLessThan(
+      repairIds.indexOf('recheck_tasks')
+    );
+  });
+
+  it('runs the reconciler with no swallowed exit code', () => {
+    // continue_on_error already keeps the workflow alive; `|| true` would also
+    // hide the exit-2 that flags an unknown tag.
+    for (const id of ['reconcile_tasks']) {
+      const step = workflow.steps.find((candidate: any) => candidate.id === id);
+      expect(step.type).toBe('shell');
+      expect(step.continue_on_error).toBe(true);
+      expect(step.run).not.toContain('|| true');
+      expect(step.run).toContain('reconcile-task-ledger.sh');
+    }
+  });
+
+  it('reports pending work by owner, not as one number', () => {
     const gate = read('scripts/check-tasks-complete.sh');
-    expect(gate).toMatch(/ledger was never reconciled/i);
-    expect(gate).toContain('AGENTS.md');
+    expect(gate).toContain('implementation: $PENDING_UNTAGGED, gate-derived: $PENDING_TAGGED');
+    expect(gate).toMatch(/\[verify:\*\] tasks: the gate each one names is RED/i);
   });
 
-  it('no copy still states the unimplementable absolute rule', () => {
-    const stale = /Marking a task `- \[x\]` without executing the quality gate in the terminal is strictly forbidden/;
-    expect(guardrailsStep.prompt).not.toMatch(stale);
+  it('ships the reconciler through the installer', () => {
+    expect(fs.existsSync(path.join(root, 'scripts/reconcile-task-ledger.sh'))).toBe(true);
+    expect(read('scripts/install.sh')).toContain('reconcile-task-ledger.sh');
+  });
+
+  it('documents the tag vocabulary where the agent reads it', () => {
+    for (const tag of ['quality', 'contracts', 'design', 'bundle', 'runtime']) {
+      expect(read('templates/guardrails.md')).toContain(tag);
+    }
   });
 });

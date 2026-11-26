@@ -84,20 +84,27 @@ steps:
       - You MUST install real dependencies (`vp install` or `npm install`) via terminal whenever `package.json` is created or modified.
       - NEVER use `read_file`, `list_directory`, or file-reading tools on `node_modules/` (symlinks trigger sandbox boundary errors) or `.git/` (violates workspace security sandbox). Diagnose packages via terminal: `npm ls`, `npm install`, or `vp check`. Inspect git state exclusively via terminal: `git status`, `git diff`.
       - NEVER use `replace` or `write_file` on `package.json` (blocked by CLI security policy for build configuration files). To add or update scripts, use terminal commands: `npm pkg set scripts.<name>="..."`.
-      - After completing each task in `tasks.md`, you MUST run `bash .specify/scripts/bash/check-quality-gate.sh`
-        via the terminal. Mid-feature it is EXPECTED to exit non-zero: it runs the
-        whole test suite and the build, so tasks you have not written yet guarantee a
-        red gate. That red gate is your progress signal, not a reason to stop or to
-        skip the check.
-      - Marking a task `- [x]` while the gate exits non-zero is strictly forbidden.
-        That rule also means no checkbox CAN be ticked mid-feature, so on the first
-        full-gate success you MUST reconcile `tasks.md` in ONE pass: tick every task
-        that is now demonstrably done and print `task id -> justification` for each
-        (the file, test or gate result that makes it true). Leave unchecked, with a
-        one-line reason, any task you cannot justify — a human decides. `Polish` /
-        verification tasks are ticked only when the gate they describe actually
-        passed in this run. A finished feature with an empty ledger fails
-        `gate_tasks` and spends a repair window on bookkeeping.
+      - TWO KINDS OF TASK, TWO OWNERS. `tasks.md` mixes implementation work with
+        verification work; do not treat them the same.
+      - IMPLEMENTATION TASKS (untagged) are yours. After finishing one, run
+        `bash .specify/scripts/bash/check-quality-gate.sh` (pass `--scope=<slice>`
+        when the run declares a scope: the scoped run is the one that can genuinely
+        be green mid-feature). Tick `- [x]` only when the gate you just ran exits 0.
+        Ticking on a red gate is a fatal violation of Quality Gate Integrity.
+      - VERIFICATION TASKS (`[verify:<gate>]`) are NOT yours. Never tick and never
+        un-tick them, by hand or in bulk. Their checkbox is derived by the workflow
+        from the evidence the gate itself wrote: `reconcile-task-ledger.sh` ticks
+        `[verify:quality|contracts|design|bundle|runtime]` when that gate reports
+        `status: "passed"`, and un-ticks it when it regresses. Editing one by hand
+        only makes the ledger disagree with the gates it mirrors.
+      - TAG NEW VERIFICATION TASKS when you write or refine `tasks.md`. Any task
+        whose completion IS a gate result must carry the tag, or it degrades into
+        agent-asserted work. An unknown tag is a hard error, not a silent no-op.
+      - EXPECT THE FULL GATE TO BE RED UNTIL THE END: it runs the whole suite and
+        the build, so unimplemented tasks guarantee failure. That is your progress
+        signal, not a reason to stop. If you reach `gate_tasks` with untagged work
+        genuinely done but unmarked, tick what is demonstrably done and print
+        `task id -> justification` for each.
       - Spec Kit runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`) as non-agent shell steps with an automated self-healing repair window.
       {% if not inputs.has_ui %}
       RUNTIME ENTRYPOINT CONTRACT (has_ui=false):
@@ -420,6 +427,17 @@ steps:
             exit $err
           }
 
+  # The tagged half of the ledger is derived, not asserted. Tasks carrying
+  # [verify:<gate>] are ticked (or un-ticked) from the evidence those gates just
+  # wrote, so the checkbox cannot claim a verification that regressed. It runs
+  # BEFORE gate_tasks: the completion gate must judge a ledger that already
+  # reflects reality, not one waiting for an agent to catch up.
+  - id: reconcile_tasks
+    type: shell
+    continue_on_error: true
+    run: |
+      bash .specify/scripts/bash/reconcile-task-ledger.sh
+
   - id: gate_tasks
     type: shell
     continue_on_error: true
@@ -546,16 +564,18 @@ steps:
                 wire `tokens.css` into the app stylesheet so the DOM exposes the
                 tokens. Never skip the contracts/visual gates and never pass
                 `--tokens-only` to make them disappear.
-              - UNCHECKED TASKS: implement them, and RECONCILE THE LEDGER before this
-                window ends. Ticking `- [x]` is legal only while
-                `check-quality-gate.sh` exits 0, which also means nothing can be ticked
-                until the feature is finished — so once you get that gate green, walk
-                `tasks.md` and tick every completed task in ONE pass, printing
-                `task id -> justification` for each. A finished feature with an empty
-                ledger fails `gate_tasks`, re-enters this loop, and burns another window
-                on bookkeeping. Tasks you cannot justify stay unchecked with a one-line
-                reason. Polish/verification tasks are ticked only when the gate they
-                describe actually passed in this run.
+              - UNCHECKED TASKS: implement the untagged ones. Tick an untagged task
+                `- [x]` only while `check-quality-gate.sh` exits 0 (pass `--scope`
+                when the run declares one). A finished feature with an empty ledger
+                still fails `gate_tasks`, so before this window ends, tick every
+                untagged task that is demonstrably done and print
+                `task id -> justification` for each; leave the rest unchecked with a
+                one-line reason.
+              - NEVER TOUCH `[verify:<gate>]` TASKS. They are not yours to tick or
+                un-tick: the workflow re-derives them from the gate evidence on every
+                iteration. If one is unchecked, the gate it names is red — fix the
+                gate, not the checkbox. Editing it by hand is tampering with a mirror
+                of the gates.
               - RUNTIME ENTRYPOINT (non-UI features): when the declared runtime does not
                 serve, fix the API or the declaration itself. Declaring the Vite dev
                 server as the API runtime, editing `specs/<active-feature>/runtime.json` to a
@@ -600,6 +620,14 @@ steps:
                 continue_on_error: true
                 run: |
                   bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}
+          # Re-derive the tagged tasks before judging them: a gate that went green
+          # in this iteration must show up in the ledger, and one that regressed
+          # must not.
+          - id: reconcile_tasks_recheck
+            type: shell
+            continue_on_error: true
+            run: |
+              bash .specify/scripts/bash/reconcile-task-ledger.sh
           - id: recheck_tasks
             type: shell
             continue_on_error: true

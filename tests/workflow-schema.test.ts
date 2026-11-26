@@ -31,6 +31,7 @@ describe('Workflow YAML Schema Validation', () => {
       'gate_bundle',
       'gate_runtime',
       'gate_contracts',
+      'reconcile_tasks',
       'gate_tasks',
       'repair_gates',
       'verify',

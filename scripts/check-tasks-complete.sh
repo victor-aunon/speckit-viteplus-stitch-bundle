@@ -184,6 +184,14 @@ if [ -n "$TASKS_FILE" ] && [ -f "$TASKS_FILE" ]; then
   COMPLETED="${COMPLETED:-0}"
   PENDING=$(( TOTAL - COMPLETED ))
   if [ "$PENDING" -lt 0 ]; then PENDING=0; fi
+  # Split the pending work by owner. A pending `[verify:*]` task is not missing
+  # implementation: its gate is red, and no amount of ticking will fix it. A
+  # pending untagged task is real work. Reporting one number for both sends the
+  # reader looking in the wrong place.
+  PENDING_TAGGED=$(grep -cE '^[[:space:]]*[-*][[:space:]]+\[ \][[:space:]].*\[verify:[A-Za-z0-9_-]+\]' "$TASKS_FILE" 2>/dev/null || true)
+  PENDING_TAGGED="${PENDING_TAGGED:-0}"
+  PENDING_UNTAGGED=$(( PENDING - PENDING_TAGGED ))
+  if [ "$PENDING_UNTAGGED" -lt 0 ]; then PENDING_UNTAGGED=0; fi
 
   if [ "$QUIET" = false ]; then
     echo "======================================================================"
@@ -192,7 +200,7 @@ if [ -n "$TASKS_FILE" ] && [ -f "$TASKS_FILE" ]; then
     echo "   File      : $TASKS_FILE"
     echo "   Total     : $TOTAL"
     echo "   Completed : $COMPLETED"
-    echo "   Pending   : $PENDING"
+    echo "   Pending   : $PENDING (implementation: $PENDING_UNTAGGED, gate-derived: $PENDING_TAGGED)"
   fi
 
   if [ "$TOTAL" -eq 0 ]; then
@@ -218,9 +226,15 @@ if [ -n "$TASKS_FILE" ] && [ -f "$TASKS_FILE" ]; then
     echo "   Declaring the feature complete with a partial implementation is not allowed."
     grep -nE '^[[:space:]]*[-*][[:space:]]+\[ \]' "$TASKS_FILE" 2>/dev/null | head -n 10 | sed 's/^/   /' || true
     echo "   Finish the tasks, or get explicit human approval and pass --allow-incomplete."
-    echo "   If they ARE implemented, the ledger was never reconciled: ticking is only"
-    echo "   legal on a green 'check-quality-gate.sh', which mid-feature cannot happen."
-    echo "   Tick them in one justified pass once that gate passes (see AGENTS.md)."
+    if [ "$PENDING_TAGGED" -gt 0 ]; then
+      echo "   $PENDING_TAGGED of them are [verify:*] tasks: the gate each one names is RED."
+      echo "   Do not tick them by hand — run reconcile-task-ledger.sh (the workflow does)"
+      echo "   and fix the gate. The checkbox is derived from that gate's evidence."
+    fi
+    if [ "$PENDING_UNTAGGED" -gt 0 ]; then
+      echo "   $PENDING_UNTAGGED are implementation tasks. Ticking is legal only on a green"
+      echo "   'check-quality-gate.sh' (--scope makes that reachable mid-feature)."
+    fi
     write_evidence "failed" "$TOTAL" "$COMPLETED" "$PENDING" "unchecked_tasks"
     emit_gate_telemetry "failed" 1 "{\"tasks_pending\":$PENDING,\"tasks_total\":$TOTAL}"
     exit 1

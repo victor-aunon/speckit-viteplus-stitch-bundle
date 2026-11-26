@@ -39,11 +39,24 @@ one-file change plus this changelog.
   `check-tasks-complete.sh` also names the missing reconciliation in its failure
   output, which is where the agent actually reads it.
 
-  This is a prompt-level fix (option A). It unblocks runs and removes the
-  deadlock, but the checkbox is still a hand-maintained mirror of gate state, and
-  a lazy agent can over-tick. The structural fix is planned: implementation tasks
-  verified against the scoped gate, and polish/verification tasks ticked
-  deterministically by the workflow from gate evidence.
+  `tasks.md` now has **two owners**, which is the actual fix. Untagged tasks are
+  implementation work: the agent ticks them after the **scoped** gate
+  (`check-quality-gate.sh --scope=<slice>`), which is the only form that can be
+  green mid-feature. Tasks tagged `[verify:<gate>]` are not the agent's at all —
+  `scripts/reconcile-task-ledger.sh` ticks and **un-ticks** them from the evidence
+  that gate wrote (`status: "passed"`), so a checkbox cannot keep claiming a
+  verification that has since regressed. It runs before `gate_tasks` and before
+  `recheck_tasks`, because judging an unreconciled ledger is what made a finished
+  feature report as incomplete. An unknown tag is a hard error: a typo would
+  otherwise disable a check while looking like coverage. `skipped` evidence counts
+  as not passed, and untagged tasks are never modified.
+
+  `check-tasks-complete.sh` now reports pending work split by owner
+  (`implementation: N, gate-derived: M`) and names the red gate when a `[verify:*]`
+  task is unchecked, instead of sending the reader to write code that already
+  exists. Unticking from a removed gate is a separate concern from the prompt-level
+  reconciliation kept for untagged work: that path stays as the fallback for a
+  finished feature whose ledger was never touched.
 
 ### Added
 
