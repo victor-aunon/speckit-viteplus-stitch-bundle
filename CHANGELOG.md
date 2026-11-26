@@ -85,6 +85,37 @@ one-file change plus this changelog.
   `vite.config*.ts.tmpl` with the TypeScript compiler and rejects a glob inside a
   comment. Verified end to end on the API profile: `vp pack src/main.ts` emits
   `dist/main.mjs`, which Node imports.
+- **Starting from scratch ignored `--profile`.** With no `package.json`, the
+  installer copied `templates/package.json.tmpl` — a React manifest — and skipped
+  reconciliation entirely, so `--profile=api` produced an agnostic `vite.config.ts`
+  next to `dev: "vp dev"`, `build: "vp build"`, React dependencies, Playwright and
+  no `tsx`. `vp dev` starts the Vite dev server (it looks for a nonexistent
+  `index.html`) and `vp build` builds a web app. The seed is now passed to the
+  reconciler in `--seed` mode, which may retarget the scripts and prune the React
+  surface (`react`, `react-dom`, `@types/react*`, `@vitejs/plugin-react`,
+  `@shadcn/lint`) for any non-`react` profile, plus Playwright when the profile has
+  no visual gate. Verified: empty directory + `--profile=api` now yields
+  `dev:api`, `npm run dev:api`, `vp pack src/main.ts`, `tsx` and zero React.
+- **A React seed survived a later framework change.** The reconciler refused to
+  touch any script that already existed, but `vp dev` there was written by the
+  bundle, not by a human. A script still holding a bundle default (`vp dev`,
+  `vp build`, `npm run dev:api`, `vp pack …`, `vp test`) is now retargeted when the
+  detected technology changes, and reported as
+  `~ script dev "vp dev" -> "next dev" (bundle default, technology changed)`.
+  Anything else is still untouchable. This is the common path for this bundle:
+  install first, agent scaffolds Next/Nuxt afterwards.
+- **`bootstrap-project-env.sh` no longer reports a cheerful "Nothing to do" from
+  the wrong directory.** `ROOT` defaults to `$PWD`, so launching it from outside
+  the project silently bootstrapped nothing. It now warns when `ROOT` has neither a
+  `package.json` nor a `.specify/` directory.
+- **`--profile=fullstack` seeded a React config after pruning React.** With no
+  framework detected yet, the config selection fell through to the React template
+  while the seed had just removed `@vitejs/plugin-react` and `@shadcn/lint` — a
+  config importing packages that no longer exist. `fullstack` now always receives
+  the agnostic config, which is what the README already promised.
+- **`--profile` is documented.** It existed only in `install.sh --help`; the README
+  now has an installer-options table and a "Starting from scratch" matrix showing
+  the scripts, React surface and config each profile receives.
 - **The vanilla profile no longer gets a React configuration.** `install.sh`
   provisioned `vite.config.ts.tmpl` for every non-framework Vite project, so a plain
   HTML/CSS/JS project imported `@vitejs/plugin-react` and enabled the shadcn component

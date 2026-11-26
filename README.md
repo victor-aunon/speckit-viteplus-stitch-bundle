@@ -87,6 +87,48 @@ curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitc
 
 > **Note on `specify bundle install`:** Use the standalone `install.sh` script for this bundle. It installs the workflow and its supporting scripts directly into `.specify/`, without requiring the bundle to be published in a Spec Kit catalog. If you later publish this bundle to a catalog, `specify bundle install` can also be used.
 
+### Installer options
+
+| Flag | What it does |
+|---|---|
+| `--target-dir=<path>` | Project root to install into (default: current directory) |
+| `--profile=<name>` | `react` \| `vanilla` \| `api` \| `fullstack`. Declares the project archetype **before** any file exists. Default: auto-detected from the framework config, the framework dependency, or a `src/features` + `index.html` heuristic; falls back to `react`. |
+| `--release=<tag>` | Install from a specific GitHub Release tag (e.g. `v2.0.0`) |
+| `--zip=<path>` | Install from a locally downloaded release `.zip` |
+| `--help` | Usage |
+
+`--profile` matters most when the project does not exist yet (see below): it decides
+which manifest seed, which `vite.config.ts` and which `AGENTS.md` you get.
+
+```bash
+# Starting from scratch: say what you are building, not what exists.
+bash scripts/install.sh --target-dir=. --profile=api
+bash scripts/install.sh --target-dir=. --profile=fullstack
+```
+
+### Starting from scratch (no `package.json` yet)
+
+The starter manifest in `templates/package.json.tmpl` is React-shaped, so the installer
+treats a freshly seeded `package.json` as **bundle-owned** and rewrites it to match the
+declared profile instead of leaving you a React manifest with non-React config:
+
+| You ask for | Scripts you get | React surface | `vite.config.ts` |
+|---|---|---|---|
+| `--profile=react` (or nothing) | `dev: vp dev`, `build: vp build`, `test: vp test` | React + plugin-react + shadcn + Playwright | React plugin |
+| `--profile=vanilla` | `dev: vp dev`, `build: vp build`, `test: vp test` | **pruned**, Playwright kept (it has a UI) | vanilla (no plugin) |
+| `--profile=api` | `dev: npm run dev:api`, `dev:api: tsx watch src/main.ts`, `build: vp pack src/main.ts` | **pruned**, Playwright pruned, `tsx` added | agnostic |
+| `--profile=fullstack` | `<framework> dev` / `<framework> build` once the framework is detected | depends on the framework | agnostic |
+
+A spec that turns out to be Next.js **after** the install is handled too: a script still
+holding a bundle default (`vp dev`, `vp build`, `npm run dev:api`, `vp pack …`, `vp test`)
+is corrected when the detected technology changes, because the bundle wrote it. A script
+**you** wrote is never touched.
+
+```text
+~ script dev "vp dev" -> "next dev" (bundle default, technology changed)
++ script dev = vp dev                          ← your own script? never rewritten
+```
+
 ### What gets installed
 
 This is a **Spec Kit workflow**, not a slash-command extension. It does not add `/speckit.*` commands to your agent; it adds a workflow that dispatches the existing `speckit.specify`, `speckit.plan`, `speckit.tasks`, and `speckit.implement` commands to the AI integration already configured in your project.
@@ -775,7 +817,7 @@ Resolves environment, tooling, and configuration prerequisites deterministically
    - In pre-existing git repositories, commits untracked tooling assets (`.specify/scripts/**`, `extensions.yml`, `memory/`, `templates/`) into a tooling baseline snapshot (`chore: baseline specify tooling snapshot`), ensuring `check-blast-radius.sh` starts clean and avoids false-positive scope violations.
 2. **`package.json` Quality Scripts & UI Dependencies**:
    - Provisions a starter `package.json` if absent.
-   - If `package.json` exists, non-destructively guarantees missing baseline scripts (`dev`, `build`, `test`, `check-quality`, `verify-design`) based on the detected project profile (`react`, `fullstack`, `api`, `vanilla`). Existing user-defined scripts are never overwritten.
+   - If `package.json` exists, non-destructively guarantees missing baseline scripts (`dev`, `build`, `test`, `check-quality`, `verify-design`) based on the detected project profile (`react`, `fullstack`, `api`, `vanilla`). User-defined scripts are never overwritten; only a value the bundle itself wrote (a bundle default) is retargeted when the detected technology changes or the manifest is a fresh seed.
    - For UI projects (`has_ui != false`), ensures `@playwright/test` and `@axe-core/playwright` are declared in `devDependencies` so visual gates can run.
 3. **Playwright Asset Materialization**:
    - Copies `playwright.design.config.ts` to the project root and `design-audit.spec.ts` to `tests/design/` from `.specify/templates/` when the feature declares designs.

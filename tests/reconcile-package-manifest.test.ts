@@ -94,7 +94,8 @@ describe('reconcile-package-manifest (pure)', () => {
       { profile: 'react', framework: 'vite' }
     );
 
-    expect(manifest.dependencies.vite).toBeUndefined();
+    // The section is dropped entirely rather than left as `"dependencies": {}`.
+    expect(manifest.dependencies).toBeUndefined();
     expect(manifest.devDependencies.vite).toBe(template.devDependencies.vite);
     expect(manifest.overrides.vite).toBe(template.overrides.vite);
     expect(manifest.overrides.vitest).toBe(template.overrides.vitest);
@@ -112,6 +113,82 @@ describe('reconcile-package-manifest (pure)', () => {
     expect(manifest.devDependencies['@vitejs/plugin-react']).toBe(
       template.devDependencies['@vitejs/plugin-react']
     );
+  });
+
+  it('seeds an api profile without any React surface', () => {
+    const { manifest } = reconcileWith(template as unknown as Record<string, unknown>, {
+      profile: 'api',
+      framework: 'vite',
+      designScript: false,
+      seed: true,
+    });
+
+    // Scripts are retargeted: vp built-ins cannot serve a Node service.
+    expect(manifest.scripts['dev:api']).toBe('tsx watch src/main.ts');
+    expect(manifest.scripts.dev).toBe('npm run dev:api');
+    expect(manifest.scripts.build).toBe('vp pack src/main.ts');
+    // No visual gate on this profile, so neither the script nor its dependencies.
+    expect(manifest.scripts['verify-design']).toBeUndefined();
+    expect(manifest.devDependencies['@playwright/test']).toBeUndefined();
+    expect(manifest.devDependencies['@axe-core/playwright']).toBeUndefined();
+    // No React anywhere: the section disappears instead of becoming {}.
+    expect(manifest.dependencies).toBeUndefined();
+    expect(manifest.devDependencies['@vitejs/plugin-react']).toBeUndefined();
+    expect(manifest.devDependencies['@shadcn/lint']).toBeUndefined();
+    expect(manifest.overrides['@vitejs/plugin-react']).toBeUndefined();
+    expect(manifest.devDependencies.tsx).toBeDefined();
+  });
+
+  it('seeds a vanilla profile without React but keeps the visual gate', () => {
+    const { manifest } = reconcileWith(template as unknown as Record<string, unknown>, {
+      profile: 'vanilla',
+      framework: 'vite',
+      seed: true,
+    });
+
+    expect(manifest.dependencies).toBeUndefined();
+    expect(manifest.devDependencies['@vitejs/plugin-react']).toBeUndefined();
+    // A vanilla web project is a Vite app: the built-ins are correct here.
+    expect(manifest.scripts.dev).toBe('vp dev');
+    expect(manifest.scripts.build).toBe('vp build');
+    // It does have a UI, so the visual gate and its tooling stay.
+    expect(manifest.scripts['verify-design']).toBeDefined();
+    expect(manifest.devDependencies['@playwright/test']).toBeDefined();
+  });
+
+  it('leaves a react seed untouched', () => {
+    const { changed } = reconcileWith(template as unknown as Record<string, unknown>, {
+      profile: 'react',
+      framework: 'vite',
+      seed: true,
+    });
+
+    expect(changed).toBe(false);
+  });
+
+  it('retargets a bundle default when the project turns out to be another framework', () => {
+    // The React seed installed before the agent scaffolded Next.js: `dev: vp dev`
+    // was written by the bundle, so it is not a human decision and must follow
+    // the framework. `vp dev` would always start the Vite dev server.
+    const { manifest, notes } = reconcileWith(
+      { name: 'fixture', scripts: { dev: 'vp dev', build: 'vp build' }, dependencies: { next: '^16' } },
+      { profile: '', framework: 'next' }
+    );
+
+    expect(manifest.scripts.dev).toBe('next dev');
+    expect(manifest.scripts.build).toBe('next build');
+    expect(notes.join('\n')).toContain('bundle default, technology changed');
+  });
+
+  it('never retargets a script a human wrote', () => {
+    const { manifest, notes } = reconcileWith(
+      { name: 'fixture', scripts: { dev: 'custom dev --port 4000', build: 'make build' } },
+      { profile: '', framework: 'next' }
+    );
+
+    expect(manifest.scripts.dev).toBe('custom dev --port 4000');
+    expect(manifest.scripts.build).toBe('make build');
+    expect(notes.join('\n')).not.toMatch(/~ script (dev|build)/);
   });
 
   it('is idempotent', () => {

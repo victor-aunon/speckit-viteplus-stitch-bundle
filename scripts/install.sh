@@ -517,16 +517,24 @@ fi
 
 # 7. Provision starter package.json if the project root does not have one
 PACKAGE_FILE="$TARGET_DIR/package.json"
+PKG_SEEDED=false
 if [ ! -f "$PACKAGE_FILE" ]; then
   if [ -f "$BUNDLE_ROOT/templates/package.json.tmpl" ]; then
     cp "$BUNDLE_ROOT/templates/package.json.tmpl" "$PACKAGE_FILE"
-    echo "✓ Initialized starter package.json with scripts and dependencies"
+    PKG_SEEDED=true
+    echo "✓ Initialized starter package.json from the $TARGET_PROFILE seed"
   fi
-elif command -v node >/dev/null 2>&1; then
-  # Reconciles an EXISTING manifest: scripts the project is missing, plus the
-  # toolchain packages those scripts need. Versions come from the shipped
-  # template so there is exactly one source of truth for the pins. The logic
-  # lives in scripts/reconcile-package-manifest.mjs, not in a bash heredoc.
+fi
+
+if [ -f "$PACKAGE_FILE" ] && command -v node >/dev/null 2>&1; then
+  # Reconciles the manifest: scripts the project is missing, plus the toolchain
+  # packages those scripts need. Versions come from the shipped template so there
+  # is exactly one source of truth for the pins. The logic lives in
+  # scripts/reconcile-package-manifest.mjs, not in a bash heredoc.
+  #
+  # --seed tells the reconciler the file is ours from top to bottom: the template
+  # is React-shaped, so a project started with `--profile=api` or `--profile=
+  # vanilla` must have its scripts retargeted and the React surface pruned.
   DESIGN_SCRIPT=true
   if [ "$TARGET_PROFILE" = "api" ]; then
     DESIGN_SCRIPT=false
@@ -537,7 +545,8 @@ elif command -v node >/dev/null 2>&1; then
     --profile="$TARGET_PROFILE" \
     --framework="$FRAMEWORK" \
     --design-script="$DESIGN_SCRIPT" \
-    --playwright-deps=false 2>/dev/null || true)"
+    --playwright-deps=false \
+    --seed="$PKG_SEEDED" 2>/dev/null || true)"
   PKG_STATUS="$(printf '%s' "$PKG_OUT" | head -n 1)"
   if [ "$PKG_STATUS" = "updated" ]; then
     echo "✓ Ensured baseline scripts and toolchain dependencies in existing package.json"
@@ -562,7 +571,10 @@ if [ ! -f "$VITE_CONFIG_FILE" ]; then
   if [ "$TARGET_PROFILE" = "vanilla" ] && [ -f "$BUNDLE_ROOT/templates/vite.config.vanilla.ts.tmpl" ]; then
     cp "$BUNDLE_ROOT/templates/vite.config.vanilla.ts.tmpl" "$VITE_CONFIG_FILE"
     echo "✓ Initialized vite.config.ts (vanilla web profile: no React plugin, no shadcn component contract)"
-  elif { [ "$FRAMEWORK" != "vite" ] || [ "$TARGET_PROFILE" = "api" ]; } && [ -f "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" ]; then
+  # api has no UI, and fullstack means "a framework owns the bundler": even when
+  # the framework is not detected yet, assuming React would contradict the seed,
+  # which prunes the React surface for both profiles.
+  elif { [ "$FRAMEWORK" != "vite" ] || [ "$TARGET_PROFILE" = "api" ] || [ "$TARGET_PROFILE" = "fullstack" ]; } && [ -f "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" ]; then
     cp "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" "$VITE_CONFIG_FILE"
     echo "✓ Detected $FRAMEWORK ($TARGET_PROFILE profile): initialized vite.config.ts (Vite+ lint/fmt/boundaries only, no Vite bundler plugins)"
     echo "  \`vite-plus\` is added to devDependencies above, so \`npm install\` brings the \`vp\` CLI in."

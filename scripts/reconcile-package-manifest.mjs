@@ -62,6 +62,37 @@ const BUILD_BY_FRAMEWORK = {
 const API_DEV_ENTRY = 'tsx watch src/main.ts';
 const API_BUILD = 'vp pack src/main.ts';
 
+const DESIGN_SCRIPT = 'bash .specify/scripts/bash/verify-stitch-design.sh';
+const QUALITY_SCRIPT = 'bash .specify/scripts/bash/check-quality-gate.sh';
+
+/**
+ * Values THIS bundle writes into package.json.
+ *
+ * A script still holding one of these has no human behind it: the installer or
+ * the bootstrap put it there. It may therefore be corrected when the detected
+ * technology changes (a React seed in a project that turned out to be Next.js
+ * must not keep `dev: "vp dev"`, because that built-in always starts the Vite
+ * dev server and ignores package.json). Any other value was typed by a person
+ * and is never touched.
+ */
+const BUNDLE_DEFAULT_SCRIPTS = {
+  dev: ['vp dev', 'npm run dev:api'],
+  'dev:api': [API_DEV_ENTRY],
+  build: ['vp build', 'vp pack', API_BUILD],
+  test: ['vp test'],
+  'check-quality': [QUALITY_SCRIPT],
+  'verify-design': [DESIGN_SCRIPT],
+};
+
+// React surface of the starter template. Only pruned in seed mode, i.e. when the
+// manifest is ours from top to bottom and the profile says it does not belong.
+const REACT_SURFACE = {
+  dependencies: ['react', 'react-dom', '@types/react', '@types/react-dom'],
+  devDependencies: ['@vitejs/plugin-react', '@shadcn/lint'],
+};
+
+const VISUAL_GATE_DEPS = ['@playwright/test', '@axe-core/playwright'];
+
 /** Reads the pins from the shipped template. Missing file/keys degrade to empty. */
 export function readTemplate(templatePath) {
   if (!templatePath) return {};
@@ -85,6 +116,9 @@ export function reconcile(pkg, options = {}) {
     // bootstrap passes this explicitly because it keys off has_ui instead.
     designScript = profile !== 'api',
     playwrightDeps = false,
+    // Seed mode: the manifest was just copied from the template, so the whole
+    // file is bundle-owned and may be corrected (scripts AND dependencies).
+    seed = false,
   } = options;
 
   const tplDev = template.devDependencies || {};
@@ -117,47 +151,78 @@ export function reconcile(pkg, options = {}) {
   // ---------------------------------------------------------------------------
   // 1. Scripts. The framework runtime owns dev/build; vp built-ins cannot.
   // ---------------------------------------------------------------------------
-  if (profile === 'api' && !next.scripts['dev:api']) {
-    next.scripts['dev:api'] = API_DEV_ENTRY;
-    notes.push(`+ script dev:api = ${API_DEV_ENTRY}`);
+  const scriptOrigin = seed ? 'bundle seed' : 'bundle default, technology changed';
+
+  const setScript = (name, target) => {
+    const current = next.scripts[name];
+
+    if (current === target) return;
+
+    if (current === undefined) {
+      next.scripts[name] = target;
+      notes.push(`+ script ${name} = ${target}`);
+      changed = true;
+      return;
+    }
+
+    // A value a human typed is their decision, even if we disagree with it.
+    const ownedByBundle = (BUNDLE_DEFAULT_SCRIPTS[name] || []).includes(current);
+    if (!seed && !ownedByBundle) return;
+
+    next.scripts[name] = target;
+    notes.push(`~ script ${name} "${current}" -> "${target}" (${scriptOrigin})`);
     changed = true;
+  };
+
+  if (profile === 'api') {
+    setScript('dev:api', API_DEV_ENTRY);
   }
 
-  if (!next.scripts.dev) {
-    next.scripts.dev =
-      profile === 'api' ? 'npm run dev:api' : DEV_BY_FRAMEWORK[framework] || 'vp dev';
-    notes.push(`+ script dev = ${next.scripts.dev}`);
-    changed = true;
-  }
+  setScript('dev', profile === 'api' ? 'npm run dev:api' : DEV_BY_FRAMEWORK[framework] || 'vp dev');
+  setScript(
+    'build',
+    profile === 'api' ? API_BUILD : BUILD_BY_FRAMEWORK[framework] || 'vp build'
+  );
+  setScript('test', 'vp test');
+  setScript('check-quality', QUALITY_SCRIPT);
 
-  if (!next.scripts.build) {
-    next.scripts.build =
-      profile === 'api' ? API_BUILD : BUILD_BY_FRAMEWORK[framework] || 'vp build';
-    notes.push(`+ script build = ${next.scripts.build}`);
-    changed = true;
-  }
-
-  if (!next.scripts.test) {
-    next.scripts.test = 'vp test';
-    notes.push(`+ script test = ${next.scripts.test}`);
-    changed = true;
-  }
-
-  if (!next.scripts['check-quality']) {
-    next.scripts['check-quality'] = 'bash .specify/scripts/bash/check-quality-gate.sh';
-    notes.push('+ script check-quality');
-    changed = true;
-  }
-
-  if (designScript && !next.scripts['verify-design']) {
-    next.scripts['verify-design'] = 'bash .specify/scripts/bash/verify-stitch-design.sh';
-    notes.push('+ script verify-design');
+  if (designScript) {
+    setScript('verify-design', DESIGN_SCRIPT);
+  } else if (seed && (BUNDLE_DEFAULT_SCRIPTS['verify-design'] || []).includes(next.scripts['verify-design'])) {
+    // The profile has no visual gate, so shipping the script that runs it would
+    // only advertise a gate that is not part of this project.
+    delete next.scripts['verify-design'];
+    notes.push('- script verify-design (no visual gate on this profile)');
     changed = true;
   }
 
   // ---------------------------------------------------------------------------
   // 2. Dependencies the scripts above actually execute.
   // ---------------------------------------------------------------------------
+  const removeDep = (section, name, reason) => {
+    if (!next[section] || next[section][name] === undefined) return;
+    delete next[section][name];
+    notes.push(`- ${section}.${name}${reason ? ` (${reason})` : ''}`);
+    changed = true;
+  };
+
+  if (seed && profile !== 'react') {
+    // Starting from scratch with `--profile=api` must not leave React in the
+    // manifest: nothing in an API service renders components.
+    for (const name of REACT_SURFACE.dependencies) removeDep('dependencies', name, `${profile || 'non-react'} seed`);
+    for (const name of REACT_SURFACE.devDependencies)
+      removeDep('devDependencies', name, `${profile || 'non-react'} seed`);
+    if (next.overrides && next.overrides['@vitejs/plugin-react'] !== undefined) {
+      delete next.overrides['@vitejs/plugin-react'];
+      notes.push('- overrides[@vitejs/plugin-react] (no React plugin to align)');
+      changed = true;
+    }
+  }
+
+  if (seed && !designScript) {
+    for (const name of VISUAL_GATE_DEPS) removeDep('devDependencies', name, 'no visual gate');
+  }
+
   ensureDev('vite-plus', vitePlusVersion, 'vp CLI is the quality engine');
   ensureDev('typescript', typescriptVersion, 'vp check type-checks');
 
@@ -215,11 +280,25 @@ export function reconcile(pkg, options = {}) {
     changed = true;
   }
 
+  // A pruned seed can leave shells behind (`"dependencies": {}`); drop them so
+  // the generated manifest stays readable.
+  for (const section of ['dependencies', 'devDependencies', 'overrides', 'scripts']) {
+    if (next[section] && Object.keys(next[section]).length === 0) delete next[section];
+  }
+
   return { changed, manifest: next, notes };
 }
 
 function parseArgs(argv) {
-  const args = { playwrightDeps: false, profile: '', framework: 'vite' };
+  const args = { playwrightDeps: false, profile: '', framework: 'vite', seed: false };
+  const VALUE_FLAGS = new Set([
+    '--manifest',
+    '--template',
+    '--profile',
+    '--framework',
+    '--design-script',
+    '--playwright-deps',
+  ]);
 
   for (let i = 0; i < argv.length; i += 1) {
     const raw = argv[i];
@@ -229,6 +308,14 @@ function parseArgs(argv) {
     // `--flag value`, so a caller can never be silently ignored.
     const separator = raw.indexOf('=');
     const flag = separator === -1 ? raw : raw.slice(0, separator);
+
+    if (!VALUE_FLAGS.has(flag)) {
+      // Boolean flag: never consumes the next argument, so `--seed --profile=api`
+      // cannot swallow `--profile`.
+      if (flag === '--seed') args.seed = separator === -1 ? true : raw.slice(separator + 1) !== 'false';
+      continue;
+    }
+
     const value = separator === -1 ? argv[i + 1] : raw.slice(separator + 1);
     if (separator === -1) i += 1;
 
@@ -281,6 +368,7 @@ function main(argv) {
     template: readTemplate(args.templatePath),
     designScript: args.designScript,
     playwrightDeps: args.playwrightDeps,
+    seed: args.seed,
   });
 
   if (!result.changed) {

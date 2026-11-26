@@ -127,7 +127,8 @@ describe('Bundle Installer Script E2E', () => {
     // The plain range is replaced by the official alias (docs: npm fails with
     // EOVERRIDE when the direct dependency and the override disagree).
     expect(pkg.devDependencies.vite).toBe(referenceTemplate.devDependencies.vite);
-    expect(pkg.dependencies.vite).toBeUndefined();
+    // The section disappears instead of lingering as `"dependencies": {}`.
+    expect(pkg.dependencies).toBeUndefined();
     expect(pkg.overrides.vite).toBe(referenceTemplate.overrides.vite);
     expect(pkg.overrides.vitest).toBe(referenceTemplate.overrides.vitest);
 
@@ -169,6 +170,85 @@ describe('Bundle Installer Script E2E', () => {
     const viteConfig = fs.readFileSync(path.join(tempDir, 'vite.config.ts'), 'utf8');
     expect(viteConfig).not.toContain("from 'vite-plus'");
     expect(viteConfig).not.toContain('@vitejs/plugin-react');
+
+    removeDir(tempDir);
+  });
+
+  it('seeds an API project from an empty directory, with no React left behind', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-empty-api-test-'));
+
+    // No package.json at all: the template is the seed, and it is React-shaped.
+    runBash(installScript, [`--target-dir=${tempDir}`, '--profile=api']);
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+
+    expect(pkg.scripts['dev:api']).toBe('tsx watch src/main.ts');
+    expect(pkg.scripts.dev).toBe('npm run dev:api');
+    expect(pkg.scripts.build).toBe('vp pack src/main.ts');
+    expect(pkg.scripts['verify-design']).toBeUndefined();
+    expect(pkg.dependencies).toBeUndefined();
+    expect(pkg.devDependencies['@vitejs/plugin-react']).toBeUndefined();
+    expect(pkg.devDependencies['@shadcn/lint']).toBeUndefined();
+    expect(pkg.devDependencies['@playwright/test']).toBeUndefined();
+    expect(pkg.devDependencies.tsx).toBeDefined();
+    expect(pkg.devDependencies['vite-plus']).toBeDefined();
+
+    // The config must match the seed: agnostic, no React plugin.
+    const viteConfig = fs.readFileSync(path.join(tempDir, 'vite.config.ts'), 'utf8');
+    expect(viteConfig).not.toContain("from '@vitejs/plugin-react'");
+
+    removeDir(tempDir);
+  });
+
+  it('seeds a fullstack project without assuming React', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-empty-fullstack-test-'));
+
+    // No framework detected yet: the seed must not contradict itself by pruning
+    // the React surface and then provisioning a config that imports it.
+    runBash(installScript, [`--target-dir=${tempDir}`, '--profile=fullstack']);
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+    expect(pkg.dependencies).toBeUndefined();
+    expect(pkg.devDependencies['@vitejs/plugin-react']).toBeUndefined();
+
+    const viteConfig = fs.readFileSync(path.join(tempDir, 'vite.config.ts'), 'utf8');
+    expect(viteConfig).not.toContain("from '@vitejs/plugin-react'");
+    expect(viteConfig).not.toContain('jsPlugins');
+    // The architecture and complexity contract still applies.
+    expect(viteConfig).toContain('complexity:');
+
+    removeDir(tempDir);
+  });
+
+  it('retargets the seed scripts when the project turns out to be Next.js', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-seed-then-next-'));
+
+    // 1. Install into an empty directory: the React seed, as usual.
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+    const seeded = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+    expect(seeded.scripts.dev).toBe('vp dev');
+
+    // 2. The agent then scaffolds Next.js after the install, as the workflow does.
+    seeded.dependencies = { ...seeded.dependencies, next: '^16.4.6' };
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify(seeded, null, 2),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(tempDir, 'next.config.ts'), 'export default {};\n', 'utf8');
+
+    // 3. The per-task bootstrap must follow the framework, not the old seed.
+    const output = runBash(
+      path.join(tempDir, '.specify/scripts/bash/bootstrap-project-env.sh'),
+      ['--no-git', '--no-templates'],
+      { cwd: tempDir }
+    );
+    expect(output).toContain('bundle default, technology changed');
+
+    const reconciled = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+    expect(reconciled.scripts.dev).toBe('next dev');
+    expect(reconciled.scripts.build).toBe('next build');
+    expect(reconciled.scripts.test).toBe('vp test');
 
     removeDir(tempDir);
   });

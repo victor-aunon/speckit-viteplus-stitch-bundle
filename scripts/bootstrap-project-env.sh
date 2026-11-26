@@ -98,6 +98,14 @@ echo "   Root: $ROOT"
 
 ACTIONS=0
 
+# A wrong --root (or being launched from the wrong cwd, since ROOT defaults to
+# PWD) used to produce a cheerful "Nothing to do" while bootstrapping a directory
+# that is not the project. Say it out loud instead.
+if [ ! -f "$ROOT/package.json" ] && [ ! -d "$ROOT/.specify" ]; then
+  echo "⚠️  [BOOTSTRAP WARNING]: $ROOT does not look like a project root (no package.json, no .specify/)."
+  echo "    Nothing will be bootstrapped. Run this from the project root or pass --root=<path>."
+fi
+
 # ------------------------------------------------------------------------------
 # 1. Git ownership + baseline commit
 # ------------------------------------------------------------------------------
@@ -229,9 +237,11 @@ fi
 # ------------------------------------------------------------------------------
 # 3. Baseline package.json scripts (quality gate contracts)
 # ------------------------------------------------------------------------------
+PKG_SEEDED=false
 if [ ! -f "$ROOT/package.json" ]; then
   if PKG_TMPL="$(resolve_template "package.json" 2>/dev/null)"; then
     cp "$PKG_TMPL" "$ROOT/package.json"
+    PKG_SEEDED=true
     echo "✓ Materialized starter package.json from $(basename "$PKG_TMPL")"
     ACTIONS=$((ACTIONS + 1))
   fi
@@ -287,7 +297,8 @@ if [ -f "$ROOT/package.json" ] && command -v node >/dev/null 2>&1; then
       --profile="$RESOLVED_PROFILE" \
       --framework="$BOOTSTRAP_FRAMEWORK" \
       --design-script="$DESIGN_SCRIPT" \
-      --playwright-deps="$DESIGN_SCRIPT" 2>/dev/null || true)"
+      --playwright-deps="$DESIGN_SCRIPT" \
+      --seed="$PKG_SEEDED" 2>/dev/null || true)"
     PKG_STATUS="$(printf '%s' "$PKG_OUT" | head -n 1)"
     if [ "$PKG_STATUS" = "updated" ]; then
       echo "✓ Ensured baseline scripts and toolchain dependencies in package.json"
