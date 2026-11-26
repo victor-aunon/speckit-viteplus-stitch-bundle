@@ -46,6 +46,48 @@ describe('Examples Reference Architecture Integrity', () => {
     }
   });
 
+  it('keeps every example .gitignore an explicit deny-list, never a catch-all', () => {
+    // A `*` + `!negation` whitelist hides everything the agent creates from
+    // `git status` and `git ls-files --others`, which blinds check-blast-radius.sh
+    // and the anti-tampering scan (an untracked @ts-ignore becomes invisible) and
+    // makes `git add .specify` a no-op, so the tooling baseline commit silently
+    // never happens. Both were measured, not assumed.
+    for (const eg of expectedExamples) {
+      const ignorePath = path.join(examplesDir, eg.id, '.gitignore');
+      const rules = fs
+        .readFileSync(ignorePath, 'utf8')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('#'));
+
+      expect(rules, `${eg.id}/.gitignore must not use a catch-all`).not.toContain('*');
+      expect(
+        rules.filter((rule) => rule.startsWith('!')),
+        `${eg.id}/.gitignore must not rely on negation whitelisting`
+      ).toEqual([]);
+
+      // Artifacts that must never reach a baseline commit.
+      for (const required of [
+        'node_modules/',
+        'dist/',
+        '.specify/workflows/runs/',
+        '.specify/telemetry.jsonl',
+        'playwright-report/',
+        'test-results/',
+      ]) {
+        expect(rules, `${eg.id}/.gitignore must ignore ${required}`).toContain(required);
+      }
+
+      // Work the gates must be able to see. Ignoring these would make every diff
+      // look clean no matter what the agent did.
+      for (const forbidden of ['src/', 'specs/', 'tests/', 'src/config/']) {
+        expect(rules, `${eg.id}/.gitignore must not ignore ${forbidden}`).not.toContain(
+          forbidden
+        );
+      }
+    }
+  });
+
   it('should pass check-env-config.sh for all 4 example archetypes', () => {
     for (const eg of expectedExamples) {
       const egDir = path.join(examplesDir, eg.id);

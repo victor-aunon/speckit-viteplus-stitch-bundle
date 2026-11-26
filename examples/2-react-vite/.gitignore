@@ -1,13 +1,33 @@
-# Ignore all generated files during workflow execution
-*
+# Workflow execution artifacts — deliberately a DENY-list, never a catch-all.
+#
+# A `*` + negations whitelist hides every file the agent creates from
+# `git status` and `git ls-files --others --exclude-standard`. Verified
+# consequences: an untracked file adding `@ts-ignore` becomes invisible to the
+# anti-tampering scan and to check-blast-radius.sh, and `git add .specify` fails
+# with "paths are ignored", so the tooling baseline commit never happens and the
+# gates grade an empty diff. Keep this list explicit.
+node_modules/
+dist/
+build/
+out/
+coverage/
 
-# Allow directories needed for path traversal
-!src/
-!src/config/
+# Framework build output
+.next/
+.nuxt/
+.astro/
+.svelte-kit/
+.output/
 
-# Preserve only baseline files
-!.gitignore
-!package.json
-!README.md
-!spec.input.txt
-!src/config/env.ts
+# Visual-audit artifacts. Screenshots under tests/design/__snapshots__ ARE
+# evidence and stay tracked; only the runner's scratch output is ignored.
+playwright-report/
+test-results/
+.vite/
+
+# Workflow run state and machine telemetry (they store agent transcripts)
+.specify/workflows/runs/
+.specify/telemetry.jsonl
+
+*.local
+.DS_Store
