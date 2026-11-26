@@ -693,24 +693,14 @@ if [ ! -f "$VITE_CONFIG_FILE" ]; then
   fi
 fi
 
-# 8. Provision .npmrc. `legacy-peer-deps=true` is a compatibility shim for
-#    brownfield trees with genuine peer conflicts, NOT a Vite+ requirement: a
-#    freshly provisioned manifest (aligned core alias + plugin-react 6 + the
-#    vitest pin) resolves with zero ERESOLVE without it. It is kept because an
-#    inherited dependency tree may still conflict, but it is worth revisiting:
-#    it also silences conflicts that deserve a human's attention.
-NPMRC_FILE="$TARGET_DIR/.npmrc"
-if [ ! -f "$NPMRC_FILE" ]; then
-  if [ -f "$BUNDLE_ROOT/templates/.npmrc.tmpl" ]; then
-    cp "$BUNDLE_ROOT/templates/.npmrc.tmpl" "$NPMRC_FILE"
-  else
-    echo "legacy-peer-deps=true" > "$NPMRC_FILE"
-  fi
-  echo "✓ Initialized .npmrc (legacy-peer-deps=true) for Vite+ compatibility"
-elif ! grep -q "legacy-peer-deps" "$NPMRC_FILE"; then
-  echo "legacy-peer-deps=true" >> "$NPMRC_FILE"
-  echo "✓ Added legacy-peer-deps=true to existing .npmrc"
-fi
+# 8. Deliberately NOT provisioning `.npmrc` with `legacy-peer-deps=true`.
+#    That flag is not a Vite+ requirement: with the aligned core alias, the vitest
+#    pin and @vitejs/plugin-react 6 (peer `vite ^8.0.0`), a freshly provisioned
+#    manifest resolves with zero ERESOLVE. It was only ever needed because
+#    plugin-react@4 advertised `^4 || ^5 || ^6` against a core aliased to 8.x, and
+#    writing it into every project also silenced conflicts that deserve a human.
+#    A brownfield tree with genuine peer conflicts should say so out loud; the
+#    human can opt in with `npm install --legacy-peer-deps` for that one run.
 
 # 9. Register in workflow-registry.json if present
 REGISTRY_FILE="$SPECIFY_DIR/workflows/workflow-registry.json"

@@ -66,9 +66,9 @@ describe('Bundle Installer Script E2E', () => {
     expect(packageJson.overrides).toBeDefined();
     expect(packageJson.overrides['@vitejs/plugin-react']).toEqual({ vite: '$vite' });
 
-    const npmrcPath = path.join(tempDir, '.npmrc');
-    expect(fs.existsSync(npmrcPath)).toBe(true);
-    expect(fs.readFileSync(npmrcPath, 'utf8')).toContain('legacy-peer-deps=true');
+    // No `.npmrc` is planted: the aligned pins resolve with zero ERESOLVE on
+    // their own, and a global legacy-peer-deps would mask real conflicts.
+    expect(fs.existsSync(path.join(tempDir, '.npmrc'))).toBe(false);
 
     const constitutionPath = path.join(tempDir, '.specify/memory/constitution.md');
     expect(fs.existsSync(constitutionPath)).toBe(true);

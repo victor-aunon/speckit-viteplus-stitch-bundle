@@ -59,6 +59,15 @@ one-file change plus this changelog.
   its own runtime and toolchain: React + `@vitejs/plugin-react` for the SPA, `next` for
   the full-stack example (which also makes framework detection correct from the
   manifest alone), `tsx` + `vp pack` for the API, and the shared Vite+ pins everywhere.
+- **The installer no longer plants `.npmrc` with `legacy-peer-deps=true`.** That flag
+  is not a Vite+ requirement. It was compensating for `@vitejs/plugin-react@4`, whose
+  peer range (`vite ^4 || ^5 || ^6`) could not match a core aliased to 8.x. With the
+  aligned alias, `plugin-react@6` and the `vitest` pin, a freshly provisioned manifest
+  resolves with **zero ERESOLVE** without it — verified by a real `npm install`
+  (97 packages, `vp v1.8.0`, a single `@voidzero-dev/vite-plus-core@8.3.8001`).
+  Writing that flag into every project also silenced genuine conflicts that deserve a
+  human's attention; a brownfield tree that really conflicts should fail loudly and
+  opt in per run with `npm install --legacy-peer-deps`.
 - **Bootstrap and installer now guarantee baseline `package.json` scripts.**
   When running in a project with an existing `package.json` that lacked standard
   scripts (`dev`, `build`, `test`, `check-quality`, `verify-design`), the quality
