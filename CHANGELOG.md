@@ -12,6 +12,28 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- **Bootstrap and installer now guarantee baseline `package.json` scripts.**
+  When running in a project with an existing `package.json` that lacked standard
+  scripts (`dev`, `build`, `test`, `check-quality`, `verify-design`), the quality
+  gates previously failed with missing script errors (e.g. Playwright failing to launch
+  local dev server, or bundle check failing to build). `bootstrap-project-env.sh` and
+  `install.sh` now safely inject missing baseline scripts and required UI devDependencies
+  (`@playwright/test`, `@axe-core/playwright`) without overwriting user-defined scripts.
+- **Untracked `.specify/` tooling files no longer trip blast radius violations.**
+  When the bundle was installed into a repository that already had commits, untracked
+  tooling assets (`.specify/scripts/**`, `extensions.yml`, `memory/`, `templates/`) were
+  reported as unauthorized scope modifications by `check-blast-radius.sh`.
+  `bootstrap-project-env.sh` now commits untracked tooling into a baseline snapshot
+  commit (`chore: baseline specify tooling snapshot`) so diff-based gates start clean.
+- **Repair loop resiliency and sandbox safety for telemetry logs.**
+  `workflows/viteplus-stitch/workflow.yml` now runs `bootstrap-project-env.sh` during
+  the `reset_breaker` phase of `repair_gates_loop`. The `repair_agent` prompt was hardened
+  to direct agents to inspect telemetry via terminal (`emit-telemetry.sh --summary`) rather
+  than attempting `read_file` on git-ignored `.specify/telemetry.jsonl` or run logs.
+- **Reference example `examples/2-react-vite` now ships full starter dependencies.**
+  `examples/2-react-vite/package.json` was upgraded from a bare skeleton to declare its
+  full React, Vite+, and Playwright dependency tree and scripts.
+
 - **The Regression Gate no longer misreads colourised or progress-aware test
   reports.** `count_executed_tests` matched `^[[:space:]]*Tests` against the raw
   log, so a colourised summary (`\033[2m      Tests \033[22m 15 passed (15)`) or a

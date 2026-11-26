@@ -324,9 +324,11 @@ steps:
     type: shell
     continue_on_error: true
     run: |
-      if [ -f package.json ] && [ ! -d node_modules ]; then
-        echo "Installing dependencies..." >/dev/tty 2>/dev/null || true
-        npm install --no-audit --no-fund || vp install || pnpm install || true
+      if [ -f package.json ]; then
+        if [ ! -d node_modules ] || { [ "{{ inputs.has_ui }}" = "true" ] && [ ! -d node_modules/@playwright/test ]; }; then
+          echo "Installing dependencies..." >/dev/tty 2>/dev/null || true
+          npm install --no-audit --no-fund || vp install || pnpm install || true
+        fi
       fi
 
   - id: bootstrap_env
@@ -435,6 +437,7 @@ steps:
             continue_on_error: true
             run: |
               bash .specify/scripts/bash/check-blast-radius.sh --reset
+              bash .specify/scripts/bash/bootstrap-project-env.sh --has-ui={{ inputs.has_ui }} || true
           - id: repair_agent
             type: prompt
             integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
@@ -446,9 +449,9 @@ steps:
               APPLICATION CODE and the PRODUCT BEHAVIOR, never the checks.
 
               EVIDENCE FIRST:
-              - First, discover the active feature directory under `specs/` (e.g. `specs/001-*`, or inspect `feature_dir` in `.specify/telemetry.jsonl`). Do NOT look for a literal directory named `<feature>`.
+              - First, discover the active feature directory under `specs/` (e.g. `specs/001-*`, or inspect `feature_dir` via `bash .specify/scripts/bash/emit-telemetry.sh --summary`). Do NOT look for a literal directory named `<feature>`.
               - Read `specs/<active-feature>/evidence/quality-gate.json`, `bundle-budget.json`,
-                `tasks.json` and `.specify/telemetry.jsonl` (and `contracts.json` only if this is a UI feature).
+                `tasks.json` (and `contracts.json` only if this is a UI feature). To view telemetry events and run logs, execute `bash .specify/scripts/bash/emit-telemetry.sh --summary` in the terminal.
               - Reproduce each failure by running the real gate in the terminal before
                 changing anything.
               - STALE EVIDENCE: `*.json` is only the latest snapshot; check
@@ -457,7 +460,7 @@ steps:
                 to satisfy a stale red artifact, and never edit evidence by hand.
 
               SANDBOX & POLICY MANDATES (CRITICAL):
-              - NEVER call `list_directory`, `read_file`, or file tools on `.git/` or `node_modules/` (violates sandbox boundaries). Inspect git state exclusively via terminal: `git status`, `git diff`.
+              - NEVER call `list_directory`, `read_file`, or file tools on `.git/`, `node_modules/`, or git-ignored files like `.specify/telemetry.jsonl` or `.specify/workflows/runs/*` (violates sandbox / tool ignore boundaries). Inspect git state via `git status`, `git diff` and telemetry via `bash .specify/scripts/bash/emit-telemetry.sh --summary`.
               - NEVER use `replace` or `write_file` on `package.json` (blocked by CLI security policy for build configuration files).
                 To add scripts or configure `package.json`, use terminal commands:
                 * For scripts: `npm pkg set scripts.dev:api="tsx watch src/main.ts"` or `npm pkg set scripts.build="vite build"`.

@@ -225,6 +225,110 @@ if [ "$DO_TEMPLATES" = true ]; then
   fi
 fi
 
+# ------------------------------------------------------------------------------
+# 3. Baseline package.json scripts (quality gate contracts)
+# ------------------------------------------------------------------------------
+if [ ! -f "$ROOT/package.json" ]; then
+  if PKG_TMPL="$(resolve_template "package.json" 2>/dev/null)"; then
+    cp "$PKG_TMPL" "$ROOT/package.json"
+    echo "✓ Materialized starter package.json from $(basename "$PKG_TMPL")"
+    ACTIONS=$((ACTIONS + 1))
+  fi
+fi
+
+if [ -f "$ROOT/package.json" ] && command -v node >/dev/null 2>&1; then
+  NODE_PKG_SCRIPT='
+    const fs = require("fs");
+    const file = process.argv[1];
+    const hasUi = process.argv[2] !== "false";
+    const profile = process.argv[3] || "";
+    try {
+      const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+      pkg.scripts = pkg.scripts || {};
+      let changed = false;
+
+      if (!pkg.scripts.dev) {
+        if (hasUi) {
+          pkg.scripts.dev = "vp dev";
+        } else {
+          pkg.scripts["dev:api"] = pkg.scripts["dev:api"] || "tsx watch src/main.ts";
+          pkg.scripts.dev = "vp run dev:api || npm run dev:api";
+        }
+        changed = true;
+      }
+
+      if (!pkg.scripts.build) {
+        pkg.scripts.build = "vp build";
+        changed = true;
+      }
+
+      if (!pkg.scripts.test) {
+        pkg.scripts.test = "vp test";
+        changed = true;
+      }
+
+      if (!pkg.scripts["check-quality"]) {
+        pkg.scripts["check-quality"] = "bash .specify/scripts/bash/check-quality-gate.sh";
+        changed = true;
+      }
+
+      if (hasUi && !pkg.scripts["verify-design"]) {
+        pkg.scripts["verify-design"] = "bash .specify/scripts/bash/verify-stitch-design.sh";
+        changed = true;
+      }
+
+      if (hasUi) {
+        pkg.devDependencies = pkg.devDependencies || {};
+        if (!pkg.devDependencies["@playwright/test"]) {
+          pkg.devDependencies["@playwright/test"] = "^1.65.1";
+          changed = true;
+        }
+        if (!pkg.devDependencies["@axe-core/playwright"]) {
+          pkg.devDependencies["@axe-core/playwright"] = "^4.14.0";
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n", "utf8");
+        process.stdout.write("updated");
+      }
+    } catch (e) {
+      // invalid JSON, ignore
+    }
+  '
+  PKG_UPDATED="$(node -e "$NODE_PKG_SCRIPT" "$ROOT/package.json" "$HAS_UI" "$RESOLVED_PROFILE" 2>/dev/null || true)"
+  if [ "$PKG_UPDATED" = "updated" ]; then
+    echo "✓ Ensured baseline scripts (dev, build, test) in package.json"
+    ACTIONS=$((ACTIONS + 1))
+  fi
+fi
+
+# ------------------------------------------------------------------------------
+# 4. Commit untracked tooling baseline if repo already has HEAD
+# ------------------------------------------------------------------------------
+if [ "$DO_GIT" = true ] && command -v git >/dev/null 2>&1 && [ -e "$ROOT/.git" ]; then
+  if git -C "$ROOT" rev-parse --verify HEAD >/dev/null 2>&1; then
+    # When .specify/ was freshly installed or templates were materialized in an existing git repo,
+    # uncommitted tooling files trigger false-positive scope violations in check-blast-radius.sh.
+    if [ -d "$ROOT/.specify" ] && git -C "$ROOT" status --porcelain -- .specify 2>/dev/null | grep -q .; then
+      git -C "$ROOT" add .specify 2>/dev/null || true
+      for extra_tooling in ".gitignore" "AGENTS.md" "playwright.design.config.ts" "tests/design"; do
+        if [ -e "$ROOT/$extra_tooling" ]; then
+          git -C "$ROOT" add "$extra_tooling" 2>/dev/null || true
+        fi
+      done
+      if git -C "$ROOT" \
+        -c user.name="spec-kit bootstrap" \
+        -c user.email="spec-kit@localhost" \
+        commit -q -m "chore: baseline specify tooling snapshot" 2>/dev/null; then
+        echo "✓ Committed baseline specify tooling (diff-based gates now see a clean tooling baseline)"
+        ACTIONS=$((ACTIONS + 1))
+      fi
+    fi
+  fi
+fi
+
 echo ""
 if [ "$ACTIONS" -eq 0 ]; then
   echo "✓ [BOOTSTRAP] Nothing to do; the environment is already in place."

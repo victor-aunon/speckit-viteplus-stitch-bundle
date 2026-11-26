@@ -170,4 +170,43 @@ describe('bootstrap-project-env.sh', () => {
     expect(output).toContain('No designs directory found');
     expect(fs.existsSync(path.join(tempDir, 'playwright.design.config.ts'))).toBe(false);
   });
+
+  it('ensures baseline scripts (dev, build, test, check-quality) in an existing package.json', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'incomplete-app', scripts: { test: 'vitest run' } }),
+      'utf8'
+    );
+
+    const output = runBash(scriptPath, [`--root=${tempDir}`, '--no-git', '--no-templates']);
+
+    expect(output).toContain('Ensured baseline scripts');
+    const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+    expect(pkg.scripts.test).toBe('vitest run'); // preserves existing test script
+    expect(pkg.scripts.dev).toBe('vp dev');
+    expect(pkg.scripts.build).toBe('vp build');
+    expect(pkg.scripts['check-quality']).toBeDefined();
+    expect(pkg.scripts['verify-design']).toBeDefined();
+    expect(pkg.devDependencies['@playwright/test']).toBeDefined();
+  });
+
+  it('commits untracked .specify/ tooling files when a git repository already has HEAD', () => {
+    git('init', '-q');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'Test');
+    fs.writeFileSync(path.join(tempDir, 'README.md'), '# existing project', 'utf8');
+    git('add', '.');
+    git('commit', '-qm', 'initial commit');
+
+    // Tooling is installed/copied into .specify/
+    fs.mkdirSync(path.join(tempDir, '.specify/scripts/bash'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.specify/scripts/bash/gate.sh'), '#!/bin/bash\nexit 0', 'utf8');
+
+    const output = runBash(scriptPath, [`--root=${tempDir}`, '--no-templates']);
+
+    expect(output).toContain('Committed baseline specify tooling');
+    expect(git('log', '--oneline').trim().split('\n')).toHaveLength(2);
+    // Git status should be completely clean
+    expect(git('status', '--porcelain').trim()).toBe('');
+  });
 });

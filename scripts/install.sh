@@ -479,6 +479,56 @@ if [ ! -f "$PACKAGE_FILE" ]; then
     cp "$BUNDLE_ROOT/templates/package.json.tmpl" "$PACKAGE_FILE"
     echo "✓ Initialized starter package.json with scripts and dependencies"
   fi
+elif command -v node >/dev/null 2>&1; then
+  NODE_PKG_SCRIPT='
+    const fs = require("fs");
+    const file = process.argv[1];
+    const profile = process.argv[2] || "";
+    try {
+      const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+      pkg.scripts = pkg.scripts || {};
+      let changed = false;
+
+      if (!pkg.scripts.dev) {
+        if (profile === "api") {
+          pkg.scripts["dev:api"] = pkg.scripts["dev:api"] || "tsx watch src/main.ts";
+          pkg.scripts.dev = "vp run dev:api || npm run dev:api";
+        } else {
+          pkg.scripts.dev = "vp dev";
+        }
+        changed = true;
+      }
+
+      if (!pkg.scripts.build) {
+        pkg.scripts.build = "vp build";
+        changed = true;
+      }
+
+      if (!pkg.scripts.test) {
+        pkg.scripts.test = "vp test";
+        changed = true;
+      }
+
+      if (!pkg.scripts["check-quality"]) {
+        pkg.scripts["check-quality"] = "bash .specify/scripts/bash/check-quality-gate.sh";
+        changed = true;
+      }
+
+      if (profile !== "api" && !pkg.scripts["verify-design"]) {
+        pkg.scripts["verify-design"] = "bash .specify/scripts/bash/verify-stitch-design.sh";
+        changed = true;
+      }
+
+      if (changed) {
+        fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n", "utf8");
+        process.stdout.write("updated");
+      }
+    } catch (e) {}
+  '
+  PKG_UPDATED="$(node -e "$NODE_PKG_SCRIPT" "$PACKAGE_FILE" "$TARGET_PROFILE" 2>/dev/null || true)"
+  if [ "$PKG_UPDATED" = "updated" ]; then
+    echo "✓ Ensured baseline scripts (dev, build, test) in existing package.json"
+  fi
 fi
 
 # 7b. Provision the Vite+ config when absent.

@@ -388,6 +388,19 @@ Each example contains a pre-engineered `spec.input.txt` following the 5-block SD
 
 ## Non-UI Features (`has_ui: false`) — The Runtime Contract
 
+### Architectural Distinction: Repository Profile vs. Feature Scope
+
+A fundamental architectural principle of this bundle is the strict separation between **Repository Architecture** and **Feature Scope**:
+
+| Architectural Level | Scope & Authority | Handled By | Examples |
+|---|---|---|---|
+| **Repository Profile** | Delivery platform, framework, and application-wide lifecycle (`react`, `fullstack`, `api`, `vanilla`). | `install.sh` & `bootstrap-project-env.sh` | Main `dev` script (`next dev`, `vp dev`), production build (`vp build`, `next build`), test runner. |
+| **Feature Scope** | Target business functionality and requirements of the active specification (`has_ui=true` or `has_ui=false`). | Agent Implementer (`speckit.implement`) | Vertical slice code under `src/features/<slice>`, domain models, API routes, or UI components. |
+| **Feature Runtime Bridge** | When a non-UI feature introduces an HTTP entrypoint inside a UI repository. | `runtime.json` & dedicated scripts | Exposing `"dev:api": "tsx watch src/main.ts"` without mutating the app's primary `"dev": "vp dev"`. |
+
+- **Autonomous Dependency Installation (`bootstrap_deps`)**: You never need to manually install tooling before running the workflow. If `package.json` lacks installed packages, or if a UI feature requires `@playwright/test` in `node_modules/`, `bootstrap_deps` automatically invokes `npm install` (or `vp install`) before gates run.
+- **Non-Destructive Script Provisioning**: The workflow and bootstrap scripts never overwrite your custom build or dev commands; they only supply defaults for missing baseline commands (`dev`, `build`, `test`, `check-quality`) required by the quality gates.
+
 `has_ui` describes the **feature**, not the **project**. The common case is a backend,
 domain or CLI feature living inside an existing React/Vite repository, so the bundle
 **never** removes React, `vite.config.ts`, or the project's own `dev` script.
@@ -682,12 +695,22 @@ bash .specify/scripts/bash/check-blast-radius.sh --allow-foreign-git
 ```
 
 ### 9. `bootstrap-project-env.sh` (Deterministic Project Bootstrap)
-Fixes the two gate failures that were never application bugs, idempotently and without an LLM:
+Resolves environment, tooling, and configuration prerequisites deterministically and idempotently, eliminating issues that were never application bugs:
 
-1. Creates `.git` when the project root has none and records a baseline commit so diff-based gates (`anti_tampering`, `blast_radius`) have a `HEAD`. `.gitignore` is updated first with `node_modules/`, `dist/`, `.specify/workflows/runs/` and `.specify/telemetry.jsonl`: run state stores the stdout/stderr of every step (agent transcripts), so it must never enter the snapshot.
-2. Copies `playwright.design.config.ts` to the project root and `design-audit.spec.ts` to `tests/design/` from `.specify/templates/` (including the `.tmpl` sources) when the feature declares designs.
+1. **Git Repository Ownership & Clean Baseline Snapshot**:
+   - Creates `.git` when the project root has none and records an initial baseline commit so diff-based gates (`anti_tampering`, `blast_radius`) have a `HEAD`.
+   - `.gitignore` is populated with `node_modules/`, `dist/`, `.specify/workflows/runs/` and `.specify/telemetry.jsonl` (run state contains prompt transcripts, so it must never enter the snapshot).
+   - In pre-existing git repositories, commits untracked tooling assets (`.specify/scripts/**`, `extensions.yml`, `memory/`, `templates/`) into a tooling baseline snapshot (`chore: baseline specify tooling snapshot`), ensuring `check-blast-radius.sh` starts clean and avoids false-positive scope violations.
+2. **`package.json` Quality Scripts & UI Dependencies**:
+   - Provisions a starter `package.json` if absent.
+   - If `package.json` exists, non-destructively guarantees missing baseline scripts (`dev`, `build`, `test`, `check-quality`, `verify-design`) based on the detected project profile (`react`, `fullstack`, `api`, `vanilla`). Existing user-defined scripts are never overwritten.
+   - For UI projects (`has_ui != false`), ensures `@playwright/test` and `@axe-core/playwright` are declared in `devDependencies` so visual gates can run.
+3. **Playwright Asset Materialization**:
+   - Copies `playwright.design.config.ts` to the project root and `design-audit.spec.ts` to `tests/design/` from `.specify/templates/` when the feature declares designs.
+4. **Profile-Tailored `AGENTS.md`**:
+   - Materializes the appropriate `AGENTS.md` profile guidelines (`AGENTS.api.md`, `AGENTS.react.md`, etc.) for LLM agent instruction.
 
-Nothing is ever overwritten, and the script always exits 0: the gates remain the authority.
+Nothing in existing application code or custom scripts is ever overwritten, and the script always exits 0: the gates remain the authority.
 
 ```bash
 # Bootstrap the current project (default root: $PWD)
