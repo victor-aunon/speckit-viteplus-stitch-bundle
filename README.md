@@ -140,6 +140,9 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/check-quality-gate.sh` | Vite+ + env-config + architecture quality gate |
 | `.specify/scripts/bash/check-env-config.sh` | Direct env-access guard |
 | `.specify/scripts/bash/verify-stitch-design.sh` | Playwright Stitch token/visual gate |
+| `.specify/scripts/bash/mark-task-done.sh` | Only legitimate writer of an untagged task tick (requires a fresh green gate) |
+| `.specify/scripts/bash/reconcile-task-ledger.sh` | Derives `[verify:*]` ticks from gate evidence |
+| `.specify/scripts/bash/check-bundle-preflight.sh` | Install-completeness check: fails in seconds, not after three repair windows |
 | `.specify/scripts/bash/check-blast-radius.sh` | Blast radius scope protection & circuit breaker anti-loop guard |
 | `.specify/scripts/bash/check-contracts.sh` | Route manifest & orphan component contract integrity gate |
 | `.specify/scripts/bash/check-ghost-classes.sh` | Ghost classes gate: scans JSX/TSX for undeclared CSS classes |
@@ -870,7 +873,7 @@ bash .specify/scripts/bash/check-design-artifacts.sh --allow-missing
 ### 11. `check-tasks-complete.sh` (Task Completion Gate)
 Completion cannot be proven by a scaffold. Fails while `tasks.md` still contains unchecked items and prints the first pending tasks.
 
-> **Two owners, one ledger.** `tasks.md` mixes implementation work with verification work, and the checkbox used to be a hand-maintained mirror of both. An untagged task is the agent's: it ticks it after the **scoped** gate (`check-quality-gate.sh --scope=<slice>`), the only form reachable mid-feature. A task tagged `[verify:quality|contracts|design|bundle|runtime]` belongs to the workflow: `reconcile-task-ledger.sh` ticks **and un-ticks** it from the evidence that gate wrote, and it runs before `gate_tasks` and before `recheck_tasks`, because judging an unreconciled ledger is what made a finished feature report as incomplete. `skipped` evidence counts as not passed, an unknown tag is a hard error, and untagged lines are never touched. The gate now reports pending work split by owner (`implementation: N, gate-derived: M`), so an unchecked `[verify:*]` sends you to the red gate instead of to code that already exists. `tests/task-ledger-protocol.test.ts` keeps all seven copies of the rules in sync.
+> **Two owners, one ledger.** `tasks.md` mixes implementation work with verification work, and the checkbox used to be a hand-maintained mirror of both. An untagged task is the agent's, but the tick is written by `mark-task-done.sh --id=T001`, which refuses unless the **scoped** gate (`check-quality-gate.sh --scope=<slice>`) passed AND that pass postdates the last edit — a green gate from before your edit proves nothing. Hand-editing a checkbox leaves no `task-ticks.jsonl` record, which is how a fabricated tick becomes visible. A task tagged `[verify:quality|contracts|design|bundle|runtime]` belongs to the workflow: `reconcile-task-ledger.sh` ticks **and un-ticks** it from the evidence that gate wrote, and it runs before `gate_tasks` and before `recheck_tasks`, because judging an unreconciled ledger is what made a finished feature report as incomplete. `skipped` evidence counts as not passed, an unknown tag is a hard error, and untagged lines are never touched. The gate now reports pending work split by owner (`implementation: N, gate-derived: M`), so an unchecked `[verify:*]` sends you to the red gate instead of to code that already exists. `tests/task-ledger-protocol.test.ts` keeps all seven copies of the rules in sync.
 
 ```bash
 # Fails when any task is unchecked (default: newest feature under specs/)

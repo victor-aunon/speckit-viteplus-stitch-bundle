@@ -86,11 +86,17 @@ steps:
       - NEVER use `replace` or `write_file` on `package.json` (blocked by CLI security policy for build configuration files). To add or update scripts, use terminal commands: `npm pkg set scripts.<name>="..."`.
       - TWO KINDS OF TASK, TWO OWNERS. `tasks.md` mixes implementation work with
         verification work; do not treat them the same.
-      - IMPLEMENTATION TASKS (untagged) are yours. After finishing one, run
+      - IMPLEMENTATION TASKS (untagged) are yours, and you mark them with a script,
+        NEVER by editing `tasks.md`. After finishing one, run
         `bash .specify/scripts/bash/check-quality-gate.sh` (pass `--scope=<slice>`
-        when the run declares a scope: the scoped run is the one that can genuinely
-        be green mid-feature). Tick `- [x]` only when the gate you just ran exits 0.
-        Ticking on a red gate is a fatal violation of Quality Gate Integrity.
+        when the run declares a scope: that narrows the regression suite to your
+        slice and makes a mid-feature pass reachable at all). Then run
+        `bash .specify/scripts/bash/mark-task-done.sh --id=T001`.
+      - MARK-TASK-DONE REFUSES unless the gate passed AND the pass postdates your
+        last edit: a green gate from before your edit proves nothing about your
+        edit. It records the tick in `evidence/task-ticks.jsonl`. Hand-editing a
+        checkbox is a fatal violation of Quality Gate Integrity — it leaves no
+        audit record, so a fabricated tick cannot be told apart from a verified one.
       - VERIFICATION TASKS (`[verify:<gate>]`) are NOT yours. Never tick and never
         un-tick them, by hand or in bulk. Their checkbox is derived by the workflow
         from the evidence the gate itself wrote: `reconcile-task-ledger.sh` ticks
@@ -149,6 +155,20 @@ steps:
     continue_on_error: true
     run: |
       bash .specify/scripts/bash/bootstrap-project-env.sh --has-ui={{ inputs.has_ui }} || true
+
+  # Install-completeness check, before any agent time is spent. A script missing
+  # from the install turns into a gate that can never pass, and the repair loop
+  # then spends three 30-minute windows on a problem no edit can fix. Degrades to
+  # a warning when the checker itself is absent (workflow newer than scripts).
+  - id: preflight
+    type: shell
+    run: |
+      if [ ! -f .specify/scripts/bash/check-bundle-preflight.sh ]; then
+        echo "ℹ️  [PREFLIGHT] check-bundle-preflight.sh is not installed (older bundle); skipping."
+        echo "   Reinstall the bundle to gain install-completeness checking."
+        exit 0
+      fi
+      bash .specify/scripts/bash/check-bundle-preflight.sh
 
   - id: specify
     type: if
@@ -436,7 +456,15 @@ steps:
     type: shell
     continue_on_error: true
     run: |
-      bash .specify/scripts/bash/reconcile-task-ledger.sh
+      # Degrade, do not loop, when the script is missing (a workflow updated
+      # without its scripts): a hard failure here would leave the tagged tasks
+      # unchecked and hand gate_tasks a red ledger it cannot repair.
+      if [ -f .specify/scripts/bash/reconcile-task-ledger.sh ]; then
+        bash .specify/scripts/bash/reconcile-task-ledger.sh
+      else
+        echo "⚠️  [TASK LEDGER] reconcile-task-ledger.sh is not installed; [verify:*] tasks will not be derived."
+        echo "   Reinstall the bundle to restore ledger reconciliation."
+      fi
 
   - id: gate_tasks
     type: shell
@@ -564,10 +592,13 @@ steps:
                 wire `tokens.css` into the app stylesheet so the DOM exposes the
                 tokens. Never skip the contracts/visual gates and never pass
                 `--tokens-only` to make them disappear.
-              - UNCHECKED TASKS: implement the untagged ones. Tick an untagged task
-                `- [x]` only while `check-quality-gate.sh` exits 0 (pass `--scope`
-                when the run declares one). A finished feature with an empty ledger
-                still fails `gate_tasks`, so before this window ends, tick every
+              - UNCHECKED TASKS: implement the untagged ones. Mark an untagged task
+                ONLY with `bash .specify/scripts/bash/mark-task-done.sh --id=T001`
+                — never by editing `tasks.md`. It refuses unless
+                `check-quality-gate.sh` passed AND that pass postdates your last
+                edit, so re-run the gate (with `--scope` when the run declares one)
+                before marking in bulk. A finished feature with an empty ledger
+                still fails `gate_tasks`: before this window ends, mark every
                 untagged task that is demonstrably done and print
                 `task id -> justification` for each; leave the rest unchecked with a
                 one-line reason.
@@ -627,7 +658,11 @@ steps:
             type: shell
             continue_on_error: true
             run: |
-              bash .specify/scripts/bash/reconcile-task-ledger.sh
+              if [ -f .specify/scripts/bash/reconcile-task-ledger.sh ]; then
+                bash .specify/scripts/bash/reconcile-task-ledger.sh
+              else
+                echo "⚠️  [TASK LEDGER] reconcile-task-ledger.sh is not installed; skipping derivation."
+              fi
           - id: recheck_tasks
             type: shell
             continue_on_error: true

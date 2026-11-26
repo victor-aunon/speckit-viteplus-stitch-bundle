@@ -232,7 +232,11 @@ if [ -n "$TASKS_FILE" ] && [ -f "$TASKS_FILE" ]; then
       echo "   and fix the gate. The checkbox is derived from that gate's evidence."
     fi
     if [ "$PENDING_UNTAGGED" -gt 0 ]; then
-      echo "   $PENDING_UNTAGGED are implementation tasks. Ticking is legal only on a green"
+      if [ "$PENDING_UNTAGGED" -eq 1 ]; then
+        echo "   1 is an implementation task. Ticking is legal only on a green"
+      else
+        echo "   $PENDING_UNTAGGED are implementation tasks. Ticking is legal only on a green"
+      fi
       echo "   'check-quality-gate.sh' (--scope makes that reachable mid-feature)."
     fi
     write_evidence "failed" "$TOTAL" "$COMPLETED" "$PENDING" "unchecked_tasks"

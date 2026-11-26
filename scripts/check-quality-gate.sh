@@ -469,7 +469,16 @@ if [ "$DRY_RUN" = false ]; then
       exit 1
     fi
   else
-    echo "⚠️ [QUALITY GATE WARNING]: check-env-config.sh not found; skipping environment gate."
+    # A warning here is invisible inside a 30-minute repair window, and the
+    # effect is a gate that silently does not run: exactly the "green means
+    # nothing" failure this bundle exists to prevent. Treat a missing checker as
+    # a broken install, not as an absent check.
+    echo "❌ [QUALITY GATE FAILED]: check-env-config.sh is missing from the installed bundle."
+    echo "   The environment gate cannot run, so it cannot be reported as passed."
+    echo "   Reinstall the bundle (specify bundle install viteplus-stitch) and retry."
+    write_evidence "failed" "env_config"
+    emit_gate_telemetry "failed" 2
+    exit 2
   fi
 fi
 

@@ -61,10 +61,23 @@ describe('task ledger ownership', () => {
     }
   });
 
-  it('keeps ticking an untagged task illegal on a red gate', () => {
+  it('routes every untagged tick through the enforcing script', () => {
+    // "Tick only on a green gate" was prose nobody could check. The precondition
+    // is now enforced by mark-task-done.sh, which also refuses a STALE pass.
     for (const rel of GUARDRAIL_FILES) {
-      expect(read(rel), rel).toMatch(/Never tick on a red gate|Ticking on a red gate/i);
+      expect(read(rel), rel).toContain('mark-task-done.sh');
+      expect(read(rel), rel).toMatch(/fatal violation of Quality Gate Integrity/i);
     }
+    expect(guardrailsStep.prompt).toContain('mark-task-done.sh');
+    expect(guardrailsStep.prompt).toMatch(/postdates your\s+last edit/i);
+  });
+
+  it('forbids hand-editing an untagged checkbox', () => {
+    for (const rel of GUARDRAIL_FILES) {
+      expect(read(rel), rel).toMatch(/never by editing `tasks\.md`/i);
+    }
+    const repairAgent = repairLoop.steps.find((step: any) => step.id === 'repair_agent');
+    expect(repairAgent.prompt).toMatch(/never by editing `tasks\.md`/i);
   });
 
   it('tells the agent to tag the verification tasks it writes', () => {

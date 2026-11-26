@@ -188,6 +188,8 @@ if [ -z "$VERDICT_FILE" ] || [ ! -f "$VERDICT_FILE" ]; then
   echo "❌ [VERDICT GATE FAILED]: no machine verdict found at '${VERDICT_FILE:-none}'."
   echo "   The final verification step MUST write { \"verdict\": \"pass\" | \"reject\" }."
   echo "   A prose report alone cannot pass or fail a workflow."
+  echo "   Next step: run the verification step so it writes that file, or write it"
+  echo "   yourself from the audit result, then resume: specify workflow resume"
   fail_gate "missing" "missing_verdict_file"
 fi
 
@@ -238,6 +240,9 @@ OK="$(read_field ok)"
 if [ "$OK" != "true" ]; then
   echo "❌ [VERDICT GATE FAILED]: could not parse '${VERDICT_FILE}'."
   echo "$(read_field error)"
+  echo "   Next step: the file must be valid JSON of the shape"
+  echo "   { \"verdict\": \"pass\" | \"reject\", \"reasons\": [ ... ] }."
+  echo "   Fix the JSON (do not delete the file), then resume: specify workflow resume"
   fail_gate "invalid" "unparseable_verdict"
 fi
 
@@ -279,11 +284,15 @@ case "$VERDICT" in
       });
     ' 2>/dev/null || true
     echo "   The workflow cannot be reported as completed with a rejecting audit."
+    echo "   Next step: fix every blocking reason above, then resume: specify workflow resume"
+    echo "   Full report: $(dirname "${VERDICT_FILE:-.}")/../VERIFICATION_REPORT.md"
     fail_gate "reject" "verification_rejected"
     ;;
   *)
     echo ""
     echo "❌ [VERDICT GATE FAILED]: verdict must be exactly 'pass' or 'reject' (got '${VERDICT:-empty}')."
+    echo "   Next step: correct the value in ${VERDICT_FILE:-<feature>/evidence/verification.json};"
+    echo "   any other spelling (\"ok\", \"approved\", \"PASS \") is a hard failure, not a pass."
     fail_gate "${VERDICT:-invalid}" "invalid_verdict_value"
     ;;
 esac

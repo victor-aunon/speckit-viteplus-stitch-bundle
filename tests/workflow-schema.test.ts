@@ -16,6 +16,7 @@ describe('Workflow YAML Schema Validation', () => {
     expect(stepIds).toEqual([
       'guardrails',
       'bootstrap_env_early',
+      'preflight',
       'specify',
       'audit-spec',
       'review-spec',

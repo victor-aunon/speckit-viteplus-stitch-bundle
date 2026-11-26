@@ -12,6 +12,40 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- **An untagged checkbox is now written by a script, not by the agent.** "Tick
+  only after the gate passes" was prose, so an agent that swept every box at the
+  end was indistinguishable from one that verified each task — and in a real run
+  that is exactly what happened, including a task asking for the final commit.
+  `scripts/mark-task-done.sh --id=T001` is now the only legitimate writer of an
+  untagged task: it requires `status: "passed"` in `quality-gate.json`, and it
+  refuses a **stale** pass (`find -newer`: a green gate that predates your last
+  edit proves nothing about your last edit). It records each tick in
+  `evidence/task-ticks.jsonl`, so a hand-edited box has no audit record and is
+  distinguishable from a verified one. It also refuses to touch a `[verify:*]`
+  task, which belongs to `reconcile-task-ledger.sh`.
+
+- **A missing script silently disabled gates.** `check-quality-gate.sh` skipped
+  the environment check with a warning when `check-env-config.sh` was absent, and
+  `check-contracts.sh` did the same for ghost classes — invisible inside a
+  30-minute window and indistinguishable from a pass. The environment check is
+  now a hard failure (exit 2, reinstall), and `scripts/check-bundle-preflight.sh`
+  verifies the installed bundle is complete before any agent time is spent:
+  every script the installer ships, executable where required, plus node. A
+  broken install now fails in seconds with the exact remediation commands instead
+  of burning repair windows on a problem no edit can fix. It degrades to a
+  warning when the checker itself is absent, so a workflow newer than its scripts
+  cannot deadlock.
+
+- **`scripts/check-env-config.sh` was not executable** in the bundle source.
+  `install.sh` chmods the installed copy, so no run was affected, but the source
+  disagreed with its own installer.
+
+- **The verdict gate now says what to do.** A rejecting audit listed its blocking
+  reasons and stopped there; the missing/unparseable/invalid-verdict branches had
+  no next step either. All four now name the file, the expected shape and the
+  command to resume.
+
+
 - **A finished feature could never be reported as finished.** The task-ledger rules
   formed a deadlock by construction. `check-tasks-complete.sh` fails on any
   unchecked box. Both the guardrails and the repair prompt forbade ticking a box
