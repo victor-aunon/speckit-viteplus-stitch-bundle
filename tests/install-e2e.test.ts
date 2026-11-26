@@ -103,6 +103,105 @@ describe('Bundle Installer Script E2E', () => {
     removeDir(tempDir);
   });
 
+  it('reconciles a brownfield manifest: aliases vite, pins the toolchain, installs what the scripts need', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-reconcile-test-'));
+    // The exact shape that used to break: a plain `vite` next to a missing
+    // toolchain. vp refuses to boot with two Vite copies installed.
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify(
+        { name: 'existing-saas', scripts: {}, dependencies: { vite: '^6.2.0' } },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+
+    const referenceTemplate = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '../templates/package.json.tmpl'), 'utf8')
+    );
+    const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+
+    // The plain range is replaced by the official alias (docs: npm fails with
+    // EOVERRIDE when the direct dependency and the override disagree).
+    expect(pkg.devDependencies.vite).toBe(referenceTemplate.devDependencies.vite);
+    expect(pkg.dependencies.vite).toBeUndefined();
+    expect(pkg.overrides.vite).toBe(referenceTemplate.overrides.vite);
+    expect(pkg.overrides.vitest).toBe(referenceTemplate.overrides.vitest);
+
+    // Without these the quality gate cannot run at all.
+    expect(pkg.devDependencies['vite-plus']).toBeDefined();
+    expect(pkg.devDependencies.typescript).toBeDefined();
+    // vite.config.ts imports these two for the React/Vite profiles.
+    expect(pkg.devDependencies['@vitejs/plugin-react']).toBeDefined();
+    expect(pkg.devDependencies['@shadcn/lint']).toBeDefined();
+
+    // Idempotence: a second run rewrites nothing.
+    const before = fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8');
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+    expect(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8')).toBe(before);
+
+    removeDir(tempDir);
+  });
+
+  it('gives an API project a Node runtime and vp pack, never the Vite app build', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-api-profile-test-'));
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'billing-api', scripts: {} }, null, 2),
+      'utf8'
+    );
+
+    runBash(installScript, [`--target-dir=${tempDir}`, '--profile=api']);
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+
+    // `vp dev`/`vp build` are built-ins: they start the Vite dev server / run the
+    // Vite production build and ignore scripts, so neither can serve a Node API.
+    expect(pkg.scripts.dev).toBe('npm run dev:api');
+    expect(pkg.scripts['dev:api']).toBe('tsx watch src/main.ts');
+    expect(pkg.scripts.build).toBe('vp pack src/main.ts');
+    expect(pkg.devDependencies.tsx).toBeDefined();
+
+    // The API profile gets the bundler-agnostic config (no React plugin rules).
+    const viteConfig = fs.readFileSync(path.join(tempDir, 'vite.config.ts'), 'utf8');
+    expect(viteConfig).not.toContain("from 'vite-plus'");
+    expect(viteConfig).not.toContain('@vitejs/plugin-react');
+
+    removeDir(tempDir);
+  });
+
+  it('gives a full-stack framework its own dev/build commands', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-fullstack-test-'));
+    // Detection must work from the declared dependency alone: a clean starter may
+    // not have created next.config yet when the installer runs.
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify(
+        { name: 'marketing-site', scripts: {}, dependencies: { next: '^16.4.6' } },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    runBash(installScript, [`--target-dir=${tempDir}`]);
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(tempDir, 'package.json'), 'utf8'));
+
+    expect(pkg.scripts.dev).toBe('next dev');
+    expect(pkg.scripts.build).toBe('next build');
+    // Vitest via vp is framework-agnostic and stays the test runner.
+    expect(pkg.scripts.test).toBe('vp test');
+    // The agnostic config must not carry React bundler plugins into a Next tree.
+    expect(pkg.devDependencies['@vitejs/plugin-react']).toBeUndefined();
+    expect(pkg.devDependencies['vite-plus']).toBeDefined();
+
+    removeDir(tempDir);
+  });
+
   it('should ship only the files the installer consumes', () => {
     expect(fs.existsSync(releaseScript)).toBe(true);
     const stats = fs.statSync(releaseScript);

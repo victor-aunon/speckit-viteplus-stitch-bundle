@@ -409,17 +409,51 @@ if [ -f "$EXTENSIONS_FILE" ]; then
   fi
 fi
 
+# Resolves the project's bundler/runtime.
+# The framework CONFIG FILE is the primary fact because it is unambiguous. A
+# declared framework dependency is the fallback: a clean starter may be installed
+# before its config exists, and guessing "vite dev" for a Next.js project then
+# writes a dev/build script that cannot work.
+detect_framework() {
+  local target="$1"
+  local pkg_file="$target/package.json"
+
+  for candidate in "next:next.config" "nuxt:nuxt.config" "astro:astro.config" "remix:remix.config" "sveltekit:svelte.config"; do
+    local fw_name="${candidate%%:*}"
+    local fw_glob="${candidate##*:}"
+    if compgen -G "$target/$fw_glob.*" >/dev/null 2>&1; then
+      printf '%s' "$fw_name"
+      return 0
+    fi
+  done
+
+  if [ -f "$pkg_file" ]; then
+    for fw_dep in '"next"' '"nuxt"' '"astro"' '"@remix-run/dev"' '"@sveltejs/kit"'; do
+      if grep -q "$fw_dep[[:space:]]*:" "$pkg_file" 2>/dev/null; then
+        case "$fw_dep" in
+          '"next"') printf 'next' ;;
+          '"nuxt"') printf 'nuxt' ;;
+          '"astro"') printf 'astro' ;;
+          '"@remix-run/dev"') printf 'remix' ;;
+          '"@sveltejs/kit"') printf 'sveltekit' ;;
+        esac
+        return 0
+      fi
+    done
+  fi
+
+  printf 'vite'
+}
+
 detect_project_profile() {
   local target="$1"
   local pkg_file="$target/package.json"
 
-  # 1. Framework configs (Next, Nuxt, Astro, Remix, SvelteKit) -> fullstack
-  for candidate in "next.config.*" "nuxt.config.*" "astro.config.*" "remix.config.*" "svelte.config.*"; do
-    if compgen -G "$target/$candidate" >/dev/null 2>&1; then
-      echo "fullstack"
-      return 0
-    fi
-  done
+  # 1. Full-stack framework (Next, Nuxt, Astro, Remix, SvelteKit) -> fullstack
+  if [ "$(detect_framework "$target")" != "vite" ]; then
+    echo "fullstack"
+    return 0
+  fi
 
   # 2. Inspect package.json if present
   if [ -f "$pkg_file" ]; then
@@ -472,6 +506,13 @@ elif ! grep -q "viteplus-stitch:agents-instructions" "$AGENTS_FILE"; then
   fi
 fi
 
+# 6b. Resolve the bundler/runtime ONCE. The package.json scripts below must match
+#     the framework that actually runs the app, not the detected UI profile.
+FRAMEWORK="$(detect_framework "$TARGET_DIR")"
+if [ "$FRAMEWORK" != "vite" ]; then
+  echo "✓ Detected runtime framework: $FRAMEWORK (its own dev/build commands win over vp built-ins)"
+fi
+
 # 7. Provision starter package.json if the project root does not have one
 PACKAGE_FILE="$TARGET_DIR/package.json"
 if [ ! -f "$PACKAGE_FILE" ]; then
@@ -480,27 +521,65 @@ if [ ! -f "$PACKAGE_FILE" ]; then
     echo "✓ Initialized starter package.json with scripts and dependencies"
   fi
 elif command -v node >/dev/null 2>&1; then
+  # Reconciles an EXISTING manifest: scripts the project is missing, plus the
+  # toolchain packages those scripts need. Versions come from the shipped
+  # template so there is exactly one source of truth for the pins.
   NODE_PKG_SCRIPT='
     const fs = require("fs");
     const file = process.argv[1];
     const profile = process.argv[2] || "";
+    const framework = process.argv[3] || "vite";
+    const templateFile = process.argv[4] || "";
     try {
       const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
       pkg.scripts = pkg.scripts || {};
+      pkg.devDependencies = pkg.devDependencies || {};
+      const notes = [];
       let changed = false;
 
+      // ---- single source of truth: the shipped template ----
+      let tpl = {};
+      try { tpl = JSON.parse(fs.readFileSync(templateFile, "utf8")); } catch (e) { tpl = {}; }
+      const tplDev = tpl.devDependencies || {};
+      const tplOverrides = tpl.overrides || {};
+      const vitePlusVersion = tplDev["vite-plus"] || "";
+      const viteAlias = tplDev.vite || "";
+      const vitestPin = tplOverrides.vitest || "";
+      const pluginReactVersion = tplDev["@vitejs/plugin-react"] || "";
+      const shadcnLintVersion = tplDev["@shadcn/lint"] || "";
+      const typescriptVersion = tplDev.typescript || "";
+      const tsxVersion = tplDev.tsx || "^4.23.15";
+
+      // ---- scripts: the framework runtime owns dev/build (built-ins cannot) ----
+      const devByFramework = {
+        next: "next dev", nuxt: "nuxt dev", astro: "astro dev",
+        remix: "remix vite:dev", sveltekit: "vite dev", vite: "vp dev",
+      };
+      const buildByFramework = {
+        next: "next build", nuxt: "nuxt build", astro: "astro build",
+        remix: "remix vite:build", sveltekit: "vite build", vite: "vp build",
+      };
+
+      if (profile === "api" && !pkg.scripts["dev:api"]) {
+        pkg.scripts["dev:api"] = "tsx watch src/main.ts";
+        changed = true;
+      }
+
       if (!pkg.scripts.dev) {
-        if (profile === "api") {
-          pkg.scripts["dev:api"] = pkg.scripts["dev:api"] || "tsx watch src/main.ts";
-          pkg.scripts.dev = "vp run dev:api || npm run dev:api";
-        } else {
-          pkg.scripts.dev = "vp dev";
-        }
+        pkg.scripts.dev = profile === "api"
+          ? "npm run dev:api"
+          : (devByFramework[framework] || "vp dev");
         changed = true;
       }
 
       if (!pkg.scripts.build) {
-        pkg.scripts.build = "vp build";
+        // `vp build` is ALWAYS the built-in Vite production build and ignores the
+        // declared script, so it is the wrong command for a Node service or for a
+        // framework whose bundler is its own. vp pack (tsdown) is the documented
+        // production build for libraries and standalone executables.
+        pkg.scripts.build = profile === "api"
+          ? "vp pack src/main.ts"
+          : (buildByFramework[framework] || "vp build");
         changed = true;
       }
 
@@ -519,15 +598,76 @@ elif command -v node >/dev/null 2>&1; then
         changed = true;
       }
 
+      // ---- dependencies the scripts above actually need ----
+      const ensureDev = (name, version, reason) => {
+        if (!version || pkg.devDependencies[name]) return;
+        pkg.devDependencies[name] = version;
+        notes.push("+ " + name + "@" + version + (reason ? " (" + reason + ")" : ""));
+        changed = true;
+      };
+
+      ensureDev("vite-plus", vitePlusVersion, "vp CLI is the quality engine");
+      ensureDev("typescript", typescriptVersion, "vp check type-checks");
+
+      if (profile === "api") {
+        ensureDev("tsx", tsxVersion, "dev:api runtime");
+      } else if (framework === "vite") {
+        // vite.config.ts here imports the React plugin and the shadcn lint plugin.
+        ensureDev("@vitejs/plugin-react", pluginReactVersion, "vite.config.ts imports it");
+        ensureDev("@shadcn/lint", shadcnLintVersion, "vite.config.ts lint plugin");
+      }
+
+      // A project whose test script is plain `vitest run` owns that runner, so it
+      // must be installed. Keep it on the exact version vp bundles.
+      const testScript = String(pkg.scripts.test || "");
+      if (vitestPin && /(^|[^a-z])vitest([^a-z]|$)/i.test(testScript)) {
+        ensureDev("vitest", vitestPin, "declared test script uses it");
+      }
+
+      // ---- Vite+ aliasing: a plain `vite` next to `vite-plus` installs a SECOND
+      // Vite and vp refuses to boot ("Expected @voidzero-dev/vite-plus-core@X,
+      // but found vite@Y"). npm also requires a direct dependency and its
+      // override to share the exact same spec, or install fails with EOVERRIDE.
+      if (viteAlias) {
+        pkg.dependencies = pkg.dependencies || {};
+        const declared = pkg.devDependencies.vite || pkg.dependencies.vite || "";
+        if (!declared) {
+          pkg.devDependencies.vite = viteAlias;
+          notes.push("+ vite -> " + viteAlias);
+          changed = true;
+        } else if (declared !== viteAlias) {
+          // Vite is a build tool, not a runtime dependency: normalise the section
+          // as well as the spec so both npm rules (EOVERRIDE + peer resolution)
+          // hold. A plain "vite" range here installs a SECOND Vite.
+          if (pkg.dependencies.vite) delete pkg.dependencies.vite;
+          pkg.devDependencies.vite = viteAlias;
+          notes.push("~ vite " + declared + " -> " + viteAlias);
+          changed = true;
+        }
+      }
+
+      pkg.overrides = pkg.overrides || {};
+      if (viteAlias && pkg.overrides.vite !== viteAlias) {
+        pkg.overrides.vite = viteAlias;
+        changed = true;
+      }
+      if (vitestPin && !pkg.overrides.vitest) {
+        // Without this pin a dependency can pull a different Vitest than the
+        // bundled runner, splitting mocks / expect / runner state.
+        pkg.overrides.vitest = vitestPin;
+        changed = true;
+      }
+
       if (changed) {
         fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n", "utf8");
-        process.stdout.write("updated");
+        process.stdout.write("updated" + (notes.length ? "\n" + notes.join("\n") : ""));
       }
     } catch (e) {}
   '
-  PKG_UPDATED="$(node -e "$NODE_PKG_SCRIPT" "$PACKAGE_FILE" "$TARGET_PROFILE" 2>/dev/null || true)"
-  if [ "$PKG_UPDATED" = "updated" ]; then
-    echo "✓ Ensured baseline scripts (dev, build, test) in existing package.json"
+  PKG_OUT="$(node -e "$NODE_PKG_SCRIPT" "$PACKAGE_FILE" "$TARGET_PROFILE" "$FRAMEWORK" "$BUNDLE_ROOT/templates/package.json.tmpl" 2>/dev/null || true)"
+  if [ "$(printf '%s' "$PKG_OUT" | head -n 1)" = "updated" ]; then
+    echo "✓ Ensured baseline scripts and toolchain dependencies in existing package.json"
+    printf '%s\n' "$PKG_OUT" | tail -n +2 | sed '/^$/d; s/^/  /'
   fi
 fi
 
@@ -539,31 +679,26 @@ fi
 #     `@vitejs/plugin-react` + `@shadcn/lint` would be wrong and would fail to
 #     resolve in a dependency tree that does not ship them.
 #
-#     Detection is deliberately file-based: the framework config is the fact, not
-#     a dependency guess.
-FRAMEWORK="vite"
-for candidate in "next:next.config" "nuxt:nuxt.config" "astro:astro.config" "remix:remix.config" "sveltekit:svelte.config"; do
-  FRAMEWORK_NAME="${candidate%%:*}"
-  FRAMEWORK_GLOB="${candidate##*:}"
-  if compgen -G "$TARGET_DIR/$FRAMEWORK_GLOB.*" >/dev/null 2>&1; then
-    FRAMEWORK="$FRAMEWORK_NAME"
-    break
-  fi
-done
-
+#     Detection is file-first (see detect_framework): the framework config is the
+#     fact, with a declared framework dependency as the fallback.
 VITE_CONFIG_FILE="$TARGET_DIR/vite.config.ts"
 if [ ! -f "$VITE_CONFIG_FILE" ]; then
   if { [ "$FRAMEWORK" != "vite" ] || [ "$TARGET_PROFILE" = "api" ]; } && [ -f "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" ]; then
     cp "$BUNDLE_ROOT/templates/vite.config.agnostic.ts.tmpl" "$VITE_CONFIG_FILE"
     echo "✓ Detected $FRAMEWORK ($TARGET_PROFILE profile): initialized vite.config.ts (Vite+ lint/fmt/boundaries only, no Vite bundler plugins)"
-    echo "  Next step: add \`vite-plus\` (or use the global \`vp\` CLI) so \`vp check\` runs here."
+    echo "  \`vite-plus\` is added to devDependencies above, so \`npm install\` brings the \`vp\` CLI in."
   elif [ -f "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" ]; then
     cp "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" "$VITE_CONFIG_FILE"
     echo "✓ Initialized vite.config.ts (React plugin + Vite+ lint rules)"
   fi
 fi
 
-# 8. Provision .npmrc with legacy-peer-deps=true for Vite+ peer dependency resolution
+# 8. Provision .npmrc. `legacy-peer-deps=true` is a compatibility shim for
+#    brownfield trees with genuine peer conflicts, NOT a Vite+ requirement: a
+#    freshly provisioned manifest (aligned core alias + plugin-react 6 + the
+#    vitest pin) resolves with zero ERESOLVE without it. It is kept because an
+#    inherited dependency tree may still conflict, but it is worth revisiting:
+#    it also silences conflicts that deserve a human's attention.
 NPMRC_FILE="$TARGET_DIR/.npmrc"
 if [ ! -f "$NPMRC_FILE" ]; then
   if [ -f "$BUNDLE_ROOT/templates/.npmrc.tmpl" ]; then

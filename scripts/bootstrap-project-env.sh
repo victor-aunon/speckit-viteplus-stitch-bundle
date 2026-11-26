@@ -52,6 +52,7 @@ DO_TEMPLATES=true
 QUIET=false
 PROFILE=""
 HAS_UI=""
+RESOLVED_PROFILE=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -236,29 +237,96 @@ if [ ! -f "$ROOT/package.json" ]; then
   fi
 fi
 
+# The shipped template is the single source of truth for the Vite+ pins.
+TOOLCHAIN_TMPL=""
+for candidate in "$ROOT/.specify/templates/package.json.tmpl" "$ROOT/.specify/templates/package.json"; do
+  if [ -f "$candidate" ]; then
+    TOOLCHAIN_TMPL="$candidate"
+    break
+  fi
+done
+
+# Same framework resolution as install.sh: the framework config file is the fact,
+# a declared framework dependency is the fallback.
+BOOTSTRAP_FRAMEWORK="vite"
+for candidate in "next:next.config" "nuxt:nuxt.config" "astro:astro.config" "remix:remix.config" "sveltekit:svelte.config"; do
+  CANDIDATE_NAME="${candidate%%:*}"
+  CANDIDATE_GLOB="${candidate##*:}"
+  if compgen -G "$ROOT/$CANDIDATE_GLOB.*" >/dev/null 2>&1; then
+    BOOTSTRAP_FRAMEWORK="$CANDIDATE_NAME"
+    break
+  fi
+done
+if [ "$BOOTSTRAP_FRAMEWORK" = "vite" ] && [ -f "$ROOT/package.json" ]; then
+  for candidate_dep in '"next"' '"nuxt"' '"astro"' '"@remix-run/dev"' '"@sveltejs/kit"'; do
+    if grep -q "$candidate_dep[[:space:]]*:" "$ROOT/package.json" 2>/dev/null; then
+      case "$candidate_dep" in
+        '"next"') BOOTSTRAP_FRAMEWORK="next" ;;
+        '"nuxt"') BOOTSTRAP_FRAMEWORK="nuxt" ;;
+        '"astro"') BOOTSTRAP_FRAMEWORK="astro" ;;
+        '"@remix-run/dev"') BOOTSTRAP_FRAMEWORK="remix" ;;
+        '"@sveltejs/kit"') BOOTSTRAP_FRAMEWORK="sveltekit" ;;
+      esac
+      break
+    fi
+  done
+fi
+
 if [ -f "$ROOT/package.json" ] && command -v node >/dev/null 2>&1; then
   NODE_PKG_SCRIPT='
     const fs = require("fs");
     const file = process.argv[1];
     const hasUi = process.argv[2] !== "false";
     const profile = process.argv[3] || "";
+    const framework = process.argv[4] || "vite";
+    const templateFile = process.argv[5] || "";
     try {
       const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
       pkg.scripts = pkg.scripts || {};
+      pkg.devDependencies = pkg.devDependencies || {};
+      const notes = [];
       let changed = false;
 
+      let tpl = {};
+      try { tpl = JSON.parse(fs.readFileSync(templateFile, "utf8")); } catch (e) { tpl = {}; }
+      const tplDev = tpl.devDependencies || {};
+      const tplOverrides = tpl.overrides || {};
+      const vitePlusVersion = tplDev["vite-plus"] || "";
+      const viteAlias = tplDev.vite || "";
+      const vitestPin = tplOverrides.vitest || "";
+      const pluginReactVersion = tplDev["@vitejs/plugin-react"] || "";
+      const shadcnLintVersion = tplDev["@shadcn/lint"] || "";
+      const typescriptVersion = tplDev.typescript || "";
+      const tsxVersion = tplDev.tsx || "^4.23.15";
+
+      const devByFramework = {
+        next: "next dev", nuxt: "nuxt dev", astro: "astro dev",
+        remix: "remix vite:dev", sveltekit: "vite dev", vite: "vp dev",
+      };
+      const buildByFramework = {
+        next: "next build", nuxt: "nuxt build", astro: "astro build",
+        remix: "remix vite:build", sveltekit: "vite build", vite: "vp build",
+      };
+
+      if (profile === "api" && !pkg.scripts["dev:api"]) {
+        pkg.scripts["dev:api"] = "tsx watch src/main.ts";
+        changed = true;
+      }
+
       if (!pkg.scripts.dev) {
-        if (hasUi) {
-          pkg.scripts.dev = "vp dev";
-        } else {
-          pkg.scripts["dev:api"] = pkg.scripts["dev:api"] || "tsx watch src/main.ts";
-          pkg.scripts.dev = "vp run dev:api || npm run dev:api";
-        }
+        pkg.scripts.dev = profile === "api"
+          ? "npm run dev:api"
+          : (devByFramework[framework] || "vp dev");
         changed = true;
       }
 
       if (!pkg.scripts.build) {
-        pkg.scripts.build = "vp build";
+        // vp build is the built-in Vite production build; it is the wrong command
+        // for a Node service (vp pack / tsdown is its documented build) and for any
+        // framework whose bundler is its own.
+        pkg.scripts.build = profile === "api"
+          ? "vp pack src/main.ts"
+          : (buildByFramework[framework] || "vp build");
         changed = true;
       }
 
@@ -277,29 +345,73 @@ if [ -f "$ROOT/package.json" ] && command -v node >/dev/null 2>&1; then
         changed = true;
       }
 
+      const ensureDev = (name, version, reason) => {
+        if (!version || pkg.devDependencies[name]) return;
+        pkg.devDependencies[name] = version;
+        notes.push("+ " + name + "@" + version + (reason ? " (" + reason + ")" : ""));
+        changed = true;
+      };
+
+      ensureDev("vite-plus", vitePlusVersion, "vp CLI is the quality engine");
+      ensureDev("typescript", typescriptVersion, "vp check type-checks");
+
+      if (profile === "api") {
+        ensureDev("tsx", tsxVersion, "dev:api runtime");
+      } else if (framework === "vite") {
+        ensureDev("@vitejs/plugin-react", pluginReactVersion, "vite.config.ts imports it");
+        ensureDev("@shadcn/lint", shadcnLintVersion, "vite.config.ts lint plugin");
+      }
+
+      const testScript = String(pkg.scripts.test || "");
+      if (vitestPin && /(^|[^a-z])vitest([^a-z]|$)/i.test(testScript)) {
+        ensureDev("vitest", vitestPin, "declared test script uses it");
+      }
+
       if (hasUi) {
-        pkg.devDependencies = pkg.devDependencies || {};
-        if (!pkg.devDependencies["@playwright/test"]) {
-          pkg.devDependencies["@playwright/test"] = "^1.65.1";
+        ensureDev("@playwright/test", "^1.65.1");
+        ensureDev("@axe-core/playwright", "^4.14.0");
+      }
+
+      if (viteAlias) {
+        pkg.dependencies = pkg.dependencies || {};
+        const declared = pkg.devDependencies.vite || pkg.dependencies.vite || "";
+        if (!declared) {
+          pkg.devDependencies.vite = viteAlias;
+          notes.push("+ vite -> " + viteAlias);
           changed = true;
-        }
-        if (!pkg.devDependencies["@axe-core/playwright"]) {
-          pkg.devDependencies["@axe-core/playwright"] = "^4.14.0";
+        } else if (declared !== viteAlias) {
+          // Vite is a build tool, not a runtime dependency: normalise the section
+          // as well as the spec so both npm rules (EOVERRIDE + peer resolution)
+          // hold. A plain "vite" range here installs a SECOND Vite.
+          if (pkg.dependencies.vite) delete pkg.dependencies.vite;
+          pkg.devDependencies.vite = viteAlias;
+          notes.push("~ vite " + declared + " -> " + viteAlias);
           changed = true;
         }
       }
 
+      pkg.overrides = pkg.overrides || {};
+      if (viteAlias && pkg.overrides.vite !== viteAlias) {
+        pkg.overrides.vite = viteAlias;
+        changed = true;
+      }
+      if (vitestPin && !pkg.overrides.vitest) {
+        pkg.overrides.vitest = vitestPin;
+        changed = true;
+      }
+
       if (changed) {
         fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n", "utf8");
-        process.stdout.write("updated");
+        process.stdout.write("updated" + (notes.length ? "\n" + notes.join("\n") : ""));
       }
     } catch (e) {
       // invalid JSON, ignore
     }
   '
-  PKG_UPDATED="$(node -e "$NODE_PKG_SCRIPT" "$ROOT/package.json" "$HAS_UI" "$RESOLVED_PROFILE" 2>/dev/null || true)"
-  if [ "$PKG_UPDATED" = "updated" ]; then
-    echo "✓ Ensured baseline scripts (dev, build, test) in package.json"
+  PKG_OUT="$(node -e "$NODE_PKG_SCRIPT" "$ROOT/package.json" "$HAS_UI" "$RESOLVED_PROFILE" "$BOOTSTRAP_FRAMEWORK" "$TOOLCHAIN_TMPL" 2>/dev/null || true)"
+  if [ "$(printf '%s' "$PKG_OUT" | head -n 1)" = "updated" ]; then
+    echo "✓ Ensured baseline scripts and toolchain dependencies in package.json"
+    printf '%s\n' "$PKG_OUT" | tail -n +2 | sed '/^$/d; s/^/  /'
     ACTIONS=$((ACTIONS + 1))
   fi
 fi
