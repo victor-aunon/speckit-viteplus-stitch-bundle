@@ -4,6 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run"
+    "dev:api": "tsx watch src/main.ts",
+    "dev": "npm run dev:api",
+    "build": "vp pack src/main.ts",
+    "test": "vp test",
+    "check": "vp check"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.3",
+    "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8001",
+    "vite-plus": "1.8.0"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8001",
+    "vitest": "5.1.1"
   }
 }
