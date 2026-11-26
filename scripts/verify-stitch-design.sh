@@ -25,7 +25,15 @@ Options:
   --tokens-only             Validate tokens.css structure without launching Playwright.
                             Structural only: writes stitch-design-tokens.json, never
                             stitch-design.json, and is rejected with --require-ui.
-  --update-snapshots        Update canonical snapshots if design was intentionally modified
+  --calibrate               Render the reference screens, compare the app against
+                            them, and PRINT the per-screen diff ratio without failing.
+                            Use it to choose a tolerance with data instead of guessing;
+                            exits 0 unless the run cannot execute at all.
+  --update-snapshots        Regenerate the golden screenshots from designs/<id>.html.
+                            The HTML is the design master: this NEVER promotes the app's
+                            current render to the baseline (that would silently bless a
+                            regression), so the flag is now the same work the gate always
+                            does, stated explicitly.
   --skip-orphans            Skip orphan UI component detection during contract check
   --require-ui              Fail if UI/Stitch designs are missing (do not skip)
   --evidence-dir=<path>     Directory to write machine evidence JSON (default: <feature-dir>/evidence)
@@ -40,6 +48,7 @@ EOF
 
 FEATURE_DIR=""
 UPDATE_SNAPSHOTS=false
+CALIBRATE=false
 TOKENS_ONLY=false
 SKIP_ORPHANS=false
 REQUIRE_UI=false
@@ -60,6 +69,9 @@ for arg in "$@"; do
       ;;
     --update-snapshots)
       UPDATE_SNAPSHOTS=true
+      ;;
+    --calibrate)
+      CALIBRATE=true
       ;;
     --skip-orphans)
       SKIP_ORPHANS=true
@@ -283,9 +295,45 @@ if ! command -v npx >/dev/null 2>&1; then
   exit 2
 fi
 
+# ------------------------------------------------------------------------------
+# Golden references, derived from the design master
+# ------------------------------------------------------------------------------
+# The design phase forbids shipping binary screenshots and declares the HTML the
+# master, so `designs/<id>.png` never existed and the spec's existence check
+# skipped every screen: the "visual fidelity" test passed having asserted
+# nothing. The golden is therefore DERIVED from `designs/<id>.html` here, in the
+# same browser with the same deterministic render CSS the spec uses, so the
+# comparison is real and the HTML stays the only committed source of truth.
+GOLDENS_SCRIPT="$SCRIPT_DIR/render-design-goldens.mjs"
+GOLDENS_STATUS=0
+if [ -f "$GOLDENS_SCRIPT" ] && command -v node >/dev/null 2>&1; then
+  echo "Rendering golden references from designs/*.html..."
+  FEATURE_DIR="$FEATURE_DIR" node "$GOLDENS_SCRIPT" \
+    --feature-dir="$FEATURE_DIR" \
+    --json="${EVIDENCE_DIR:-$FEATURE_DIR/evidence}/design-goldens.json" 2>&1 || GOLDENS_STATUS=$?
+  if [ "$GOLDENS_STATUS" -ne 0 ]; then
+    echo ""
+    echo "❌ [VISUAL GATE ERROR]: could not render the reference screenshots."
+    echo "   Without a reference there is nothing to compare against, and reporting"
+    echo "   'no differences' would be a false green."
+    emit_gate_telemetry "failed" "$GOLDENS_STATUS"
+    write_evidence "failed" "$TOKEN_COUNT"
+    exit 2
+  fi
+else
+  echo "⚠️  [VISUAL GATE ERROR]: render-design-goldens.mjs is not installed or node is missing."
+  echo "   The app cannot be compared against the design master without it."
+  emit_gate_telemetry "failed" 2
+  write_evidence "failed" "$TOKEN_COUNT"
+  exit 2
+fi
+
 PW_FLAGS=""
-if [ "$UPDATE_SNAPSHOTS" = true ]; then
-  PW_FLAGS="--update-snapshots"
+if [ "$CALIBRATE" = true ]; then
+  # Tolerance 0 forces every screen to report its real ratio: "passed" tells you
+  # nothing when the number you need is how far off it actually is.
+  PW_FLAGS="--reporter=json"
+  export SPECIFY_DESIGN_TOLERANCE=0
 fi
 
 CONFIG_FILE=""
@@ -315,6 +363,101 @@ if [ -z "$DESIGN_SPEC" ]; then
   emit_gate_telemetry "failed" 2
   write_evidence "failed" "$TOKEN_COUNT"
   exit 2
+fi
+
+if [ "$UPDATE_SNAPSHOTS" = true ]; then
+  echo "ℹ️  --update-snapshots: goldens were regenerated from designs/*.html (the design master)."
+  echo "   The app's current render is never promoted to the baseline."
+fi
+
+# ------------------------------------------------------------------------------
+# Calibration: measure, do not judge
+# ------------------------------------------------------------------------------
+# A tolerance that blocks without ever having been measured is how a gate becomes
+# a 30-minute window no agent can close. Calibration forces tolerance 0 so every
+# screen reports its true ratio, then exits 0 whatever the numbers are.
+if [ "$CALIBRATE" = true ]; then
+  echo ""
+  echo "[CALIBRATION] Comparing the implementation against the design master (report only)."
+  CALIBRATION_RAW="$(FEATURE_DIR="$FEATURE_DIR" npx playwright test --config="$CONFIG_FILE" --reporter=json 2>&1 || true)"
+
+  if ! CALIBRATION_TABLE="$(printf '%s' "$CALIBRATION_RAW" | node -e '
+    let raw = "";
+    process.stdin.on("data", (chunk) => (raw += chunk)).on("end", () => {
+      const start = raw.indexOf("{");
+      if (start === -1) {
+        console.log("  (could not parse the Playwright JSON report)");
+        process.exit(0);
+      }
+      let report;
+      try {
+        report = JSON.parse(raw.slice(start));
+      } catch {
+        console.log("  (could not parse the Playwright JSON report)");
+        process.exit(0);
+      }
+      const rows = [];
+      const failures = [];
+      const walk = (node) => {
+        if (!node || typeof node !== "object") return;
+        if (Array.isArray(node.errors)) {
+          for (const error of node.errors) {
+            const message = String(error && error.message ? error.message : "").replace(/\u001b\[[0-9;]*m/g, "");
+            failures.push(message);
+            const snapshot = /Snapshot:\s*(.+)/.exec(message);
+            const diff = /(\d+) pixels \(ratio ([0-9.]+)/.exec(message);
+            if (snapshot && diff) {
+              rows.push({ screen: snapshot[1].trim(), pixels: Number(diff[1]), ratio: Number(diff[2]) });
+            }
+          }
+        }
+        for (const value of Object.values(node)) walk(value);
+      };
+      walk(report);
+      const stats = report.stats || {};
+      const failedTests = Number(stats.unexpected) || 0;
+      const ranTests = Number(stats.expected) || 0;
+
+      // "No diff rows" is NOT the same as "identical". A navigation error, a
+      // missing snapshot or a timeout also produces zero rows, and reporting
+      // those as a pixel match is the exact class of false green this whole
+      // mode exists to avoid.
+      if (rows.length === 0) {
+        if (failedTests > 0) {
+          console.log(`  ${failedTests} visual test(s) failed WITHOUT producing a pixel diff.`);
+          console.log("  That is not a match: the comparison never ran. First error:");
+          const first = (failures[0] || "").split("\n").filter(Boolean).slice(0, 4);
+          for (const line of first) console.log(`    ${line.trim()}`);
+          process.exit(0);
+        }
+        if (ranTests === 0) {
+          console.log("  No visual tests executed.");
+          process.exit(0);
+        }
+        console.log("  Every screen is pixel-identical to its reference.");
+        process.exit(0);
+      }
+      rows.sort((a, b) => b.ratio - a.ratio);
+      console.log("  SCREEN                                   RATIO    PIXELS");
+      console.log("  " + "-".repeat(58));
+      for (const row of rows) {
+        console.log("  " + row.screen.padEnd(40) + String(row.ratio).padEnd(9) + row.pixels);
+      }
+      console.log("");
+      console.log("  Screens not listed above matched their reference exactly.");
+    });
+  ')"; then
+    echo "  (could not parse the Playwright JSON report)"
+  else
+    printf '%s\n' "$CALIBRATION_TABLE"
+  fi
+
+  echo ""
+  echo "✅ [CALIBRATION COMPLETE]: report only, no gate verdict written."
+  echo "   Pick a tolerance from the ratios above (the config default is 0.05) and set"
+  echo "   SPECIFY_DESIGN_TOLERANCE, or edit maxDiffPixelRatio in the design config."
+  emit_gate_telemetry "calibration" 0
+  exit 0
 fi
 
 echo "Executing visual fidelity tests with config '$CONFIG_FILE'..."

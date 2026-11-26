@@ -120,6 +120,10 @@ cp "$BUNDLE_ROOT/scripts/check-verification-verdict.sh" "$SPECIFY_DIR/scripts/ba
 cp "$BUNDLE_ROOT/scripts/bootstrap-project-env.sh" "$SPECIFY_DIR/scripts/bash/bootstrap-project-env.sh"
 # bootstrap-project-env.sh delegates manifest reconciliation to this module.
 cp "$BUNDLE_ROOT/scripts/reconcile-package-manifest.mjs" "$SPECIFY_DIR/scripts/bash/reconcile-package-manifest.mjs"
+# Renders designs/<screen>.html into the golden screenshots the visual audit
+# compares the implementation against. Without it the gate has no reference and
+# says so instead of reporting a vacuous pass.
+cp "$BUNDLE_ROOT/scripts/render-design-goldens.mjs" "$SPECIFY_DIR/scripts/bash/render-design-goldens.mjs"
 cp "$BUNDLE_ROOT/scripts/check-design-artifacts.sh" "$SPECIFY_DIR/scripts/bash/check-design-artifacts.sh"
 cp "$BUNDLE_ROOT/scripts/check-dev-entrypoint.sh" "$SPECIFY_DIR/scripts/bash/check-dev-entrypoint.sh"
 cp "$BUNDLE_ROOT/scripts/repair-loop-guard.sh" "$SPECIFY_DIR/scripts/bash/repair-loop-guard.sh"

@@ -19,8 +19,11 @@ coverage/
 .svelte-kit/
 .output/
 
-# Visual-audit artifacts. Screenshots under tests/design/__snapshots__ ARE
-# evidence and stay tracked; only the runner's scratch output is ignored.
+# Visual-audit artifacts. The golden screenshots under
+# tests/design/__snapshots__/ are DERIVED from designs/<screen>.html on every
+# run (render-design-goldens.mjs): the HTML is the committed master, the PNGs
+# are build output. Only the HTML stays tracked.
+tests/design/__snapshots__/
 playwright-report/
 test-results/
 .vite/

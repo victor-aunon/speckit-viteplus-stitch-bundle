@@ -125,7 +125,12 @@ if [ "$DO_GIT" = true ] && command -v git >/dev/null 2>&1; then
     # Run state and telemetry are local artifacts: state.json stores the stdout
     # and stderr of every prompt/command step (agent transcripts), so committing
     # them leaks context into the repository and bloats the baseline.
-    for ignore_entry in "node_modules/" "dist/" ".specify/workflows/runs/" ".specify/telemetry.jsonl"; do
+    # `tests/design/__snapshots__/` is here for a reason: those screenshots are
+    # DERIVED from designs/<screen-id>.html by render-design-goldens.mjs on every
+    # run. Committing them would make a generated artifact compete with the
+    # design master for authority, and a stale golden would then hide the very
+    # regression the visual gate exists to catch.
+    for ignore_entry in "node_modules/" "dist/" ".specify/workflows/runs/" ".specify/telemetry.jsonl" "tests/design/__snapshots__/"; do
       if [ ! -f "$GITIGNORE" ]; then
         printf '%s\n' "$ignore_entry" >> "$GITIGNORE"
         echo "✓ Created .gitignore with $ignore_entry"

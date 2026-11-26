@@ -744,7 +744,9 @@ bash .specify/scripts/bash/check-ghost-classes.sh --dry-run
 ### 5. `verify-stitch-design.sh` (Stitch Token & Visual Gate)
 Runs route/component contracts, verifies `tokens.css` against DOM `:root` computed styles, and then Playwright visual snapshot regression.
 
-> **💡 Graceful Degradation / Auto-Bypass:** If `specs/<feature>/designs` does not exist (e.g. backend features run with `has_ui=false` or UI features run with `enable_stitch=false`), this script automatically **skips execution and exits with code 0**. If `tokens.css` is present but golden `.png` screenshots are omitted (text-only HTML assets), token verification and WCAG AA accessibility tests still run while screenshot diffing is bypassed by design — the artifact then claims tokens/DOM verification, not pixel parity.
+> **💡 Graceful Degradation / Auto-Bypass:** If `specs/<feature>/designs` does not exist (e.g. backend features run with `has_ui=false` or UI features run with `enable_stitch=false`), this script automatically **skips execution and exits with code 0**.
+>
+> **🖼️ Where the golden screenshots come from.** The design phase forbids shipping binary screenshots and declares `designs/<screen-id>.html` the master (that is what Stitch returns). `scripts/render-design-goldens.mjs` therefore derives the goldens from that HTML on every run — same browser, same viewport from the manifest, same deterministic render CSS, same masks — into `tests/design/__snapshots__/`, which is **git-ignored**. The HTML is the committed source of truth; the PNGs are build output. A missing golden is a hard failure (`updateSnapshots: 'none'`), never a silent pass: the previous `continue` on a missing `designs/<id>.png` made the pixel test report success while comparing nothing.
 
 > **⚠️ Structural vs visual:** `--tokens-only` only validates `tokens.css` structure. It writes `stitch-design-tokens.json` (never `stitch-design.json`), sets `full_visual_verification: false`, and is **rejected with exit 2 when combined with `--require-ui`**. The Playwright config and design-audit spec are resolved from the project root or `.specify/templates/` (including the `.tmpl` sources); if neither exists the gate exits 2 with the actionable path instead of failing with a cryptic "no tests found".
 
@@ -752,7 +754,11 @@ Runs route/component contracts, verifies `tokens.css` against DOM `:root` comput
 # Structural token check only: no Playwright, no rendering claim
 bash .specify/scripts/bash/verify-stitch-design.sh --tokens-only
 
-# Full visual regression comparison against Stitch golden screenshots
+# Measure the real per-screen diff ratio without failing: choose the tolerance
+# from data instead of inheriting 0.05
+bash .specify/scripts/bash/verify-stitch-design.sh --feature-dir=specs/001-feature --calibrate
+
+# Full visual regression comparison against the design master
 bash .specify/scripts/bash/verify-stitch-design.sh --feature-dir=specs/001-feature
 
 # Skip orphan UI component detection during intermediate design checks

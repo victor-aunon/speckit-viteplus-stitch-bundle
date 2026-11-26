@@ -98,12 +98,14 @@ describe('verify-stitch-design.sh and templates', () => {
     }
   });
 
-  it('templates should exist and configure maxDiffPixelRatio 0.05 and tokens evaluation', () => {
+  it('templates should exist, keep 0.05 as the default tolerance and evaluate tokens', () => {
     expect(fs.existsSync(configTmpl)).toBe(true);
     expect(fs.existsSync(specTmpl)).toBe(true);
 
     const configContent = fs.readFileSync(configTmpl, 'utf8');
-    expect(configContent).toContain('maxDiffPixelRatio: 0.05');
+    // 0.05 stays the default, but it must be overridable: a tolerance nobody
+    // measured is how a visual gate becomes a window no agent can close.
+    expect(configContent).toContain('SPECIFY_DESIGN_TOLERANCE ?? 0.05');
 
     const specContent = fs.readFileSync(specTmpl, 'utf8');
     expect(specContent).toContain('tokens.css');

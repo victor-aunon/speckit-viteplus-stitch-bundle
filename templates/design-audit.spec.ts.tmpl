@@ -194,10 +194,19 @@ test.describe('Stitch Design Audit & Tokens Verification', () => {
 
     const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
     for (const screen of manifest.screens || []) {
-      const goldenImagePath = path.join(designsDir, `${screen.id}.png`);
-      if (!fs.existsSync(goldenImagePath)) {
-        continue;
-      }
+      // NO existence check here, deliberately.
+      //
+      // The design phase forbids shipping binary screenshots and declares
+      // `designs/<screen-id>.html` the master, so the `designs/<id>.png` this
+      // used to require never existed. The resulting `continue` skipped every
+      // screen and the test passed having asserted nothing -- a green badge for
+      // a comparison that never happened.
+      //
+      // The golden now lives where `snapshotPathTemplate` puts it and is
+      // rendered from the HTML by `render-design-goldens.mjs`, which
+      // `verify-stitch-design.sh` runs before Playwright. `updateSnapshots:
+      // 'none'` in the config makes a missing golden a hard failure instead of
+      // silently adopting the implementation as the new baseline.
 
       // 1. Configure custom viewport if defined in manifest
       if (screen.viewport?.width && screen.viewport?.height) {

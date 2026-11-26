@@ -17,9 +17,21 @@ const BASE_URL = process.env.PLAYWRIGHT_TEST_BASE_URL || `http://localhost:${APP
 export default defineConfig({
   testDir: './tests/design',
   snapshotPathTemplate: '{testDir}/__snapshots__/{testFilePath}/{arg}{ext}',
+  /**
+   * Never let the app's current render become the baseline. The golden is
+   * DERIVED from designs/<screen-id>.html by render-design-goldens.mjs, which
+   * runs before Playwright; without this, a missing golden would be written
+   * from the implementation and the regression would be blessed.
+   */
+  updateSnapshots: 'none',
   expect: {
     toHaveScreenshot: {
-      maxDiffPixelRatio: 0.05, // Calibrated tolerance for OS font rendering differences
+      /**
+       * Overridable so a project can calibrate from measured data instead of
+       * inheriting 0.05 blindly:
+       *   bash .specify/scripts/bash/verify-stitch-design.sh --calibrate
+       */
+      maxDiffPixelRatio: Number(process.env.SPECIFY_DESIGN_TOLERANCE ?? 0.05),
       animations: 'disabled',
       caret: 'hide',
       scale: 'css',

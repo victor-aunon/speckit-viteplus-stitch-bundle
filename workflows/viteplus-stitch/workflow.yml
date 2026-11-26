@@ -204,6 +204,10 @@ steps:
           {% if inputs.enable_stitch %}
           - Execute all Stitch MCP tools directly in this conversation. Do NOT delegate Stitch tool calls or verification to subagents (subagents lack access to MCP extensions).
           - TEXT-ONLY ASSETS RULE: never download binary screenshots, create fake .png files, or read `.png` files with file tools. The design master is the HTML code (`<screen-id>.html`).
+            The visual gate DERIVES its golden screenshots from that HTML on every run
+            (`render-design-goldens.mjs`): the PNGs are build output under
+            `tests/design/__snapshots__/`, never a deliverable and never committed. Do
+            not create them yourself, and do not treat their absence as a missing artifact.
           {% else %}
           - Stitch is DISABLED for this run (`enable_stitch=false`). Do NOT call any Stitch MCP tool and do NOT ask the human to enable it.
           - You are responsible for producing the same artifacts locally, as self-contained HTML wireframes. This is not a degraded mode you may skip: the gates below are identical.

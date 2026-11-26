@@ -12,6 +12,37 @@ one-file change plus this changelog.
 
 ### Added
 
+- **The visual gate actually compares the implementation against the design master.**
+  It never did. The design phase forbids shipping binary screenshots and declares
+  `designs/<screen-id>.html` the master — correctly, because that is what Stitch
+  returns — but the audit spec required `designs/<screen-id>.png`, so every screen
+  hit `if (!fs.existsSync(goldenImagePath)) continue;` and the "visual layout
+  matches Stitch golden screenshot" test passed having asserted **nothing**. A
+  green badge for a comparison that never ran.
+
+  `scripts/render-design-goldens.mjs` now derives the golden from the HTML on
+  every run: same browser, same viewport from the manifest, same
+  `DETERMINISTIC_RENDER_CSS` as the spec, same target selector (degrading to the
+  full page when a screen's `data-testid` only exists in the app), same masks,
+  `scale: 'css'`. Verified byte-for-byte against Playwright's own expectation:
+  a `toHaveScreenshot` run using the generated golden passes. The HTML stays the
+  committed master; the PNGs land in `tests/design/__snapshots__/`, which is now
+  git-ignored, because a generated artifact must not compete with the master for
+  authority and a stale golden would hide the regression the gate exists for.
+
+  `verify-stitch-design.sh --calibrate` renders the references, forces tolerance
+  0 and prints the real per-screen ratio without failing, so the tolerance is
+  chosen from measured data instead of an inherited `0.05`. The ratio is also
+  overridable at runtime via `SPECIFY_DESIGN_TOLERANCE`. `updateSnapshots: 'none'`
+  in the design config makes a missing golden a hard failure rather than silently
+  adopting the implementation as the new baseline.
+
+  Two honesty fixes fell out of it: calibration now distinguishes "no pixel diff"
+  from "the comparison never ran" (a navigation error or missing snapshot used to
+  read as a match), and the renderer's entrypoint guard realpaths both sides —
+  invoked through the macOS `/tmp` symlink it exited 0 having done nothing while
+  the gate printed "Rendering golden references..." and produced none.
+
 - **Repair windows and breaker resets are now measurable.** A real run needed
   three hours of triage because the two numbers that mattered were never written
   down. First, no `repair_agent` step event was ever recorded, so a repair phase
