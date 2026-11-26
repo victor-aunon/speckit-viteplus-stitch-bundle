@@ -59,6 +59,23 @@ one-file change plus this changelog.
   its own runtime and toolchain: React + `@vitejs/plugin-react` for the SPA, `next` for
   the full-stack example (which also makes framework detection correct from the
   manifest alone), `tsx` + `vp pack` for the API, and the shared Vite+ pins everywhere.
+- **The manifest reconciler is no longer JavaScript embedded in bash.** Both
+  `install.sh` and `bootstrap-project-env.sh` carried the same ~150-line Node
+  program inside a single-quoted `NODE_PKG_SCRIPT='...'` heredoc, invoked with
+  four positional arguments. A single apostrophe in a JS comment terminated the
+  shell string (hit while writing this very change, caught by `bash -n`), the
+  call sites were unreadable, and none of the logic could be unit-tested. It now
+  lives in `scripts/reconcile-package-manifest.mjs`, with named flags, a pure
+  exported `reconcile()` and a CLI, covered by
+  `tests/reconcile-package-manifest.test.ts` (10 cases). The installer ships the
+  module to `.specify/scripts/bash/` so the per-task bootstrap resolves it next
+  to itself.
+  Two silent failures were found and fixed while extracting it: the entrypoint
+  guard compared `path.resolve(argv[1])` against `import.meta.url`, which does
+  not follow symlinks, so any symlinked checkout or `/tmp` invocation skipped
+  reconciliation without a word (now `realpathSync` on both sides, with a
+  symlink regression test); and an unparseable `package.json` used to be
+  swallowed, now it is reported as an explicit warning.
 - **The bundler-agnostic `vite.config.ts` did not parse.** Its header comment
   documented the absent UI boundary as `` `src/**/ui` ``, and the `**/` inside a
   `/** ... */` block comment closed it early. Every `vp` command on the `api` and

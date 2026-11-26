@@ -273,148 +273,31 @@ if [ "$BOOTSTRAP_FRAMEWORK" = "vite" ] && [ -f "$ROOT/package.json" ]; then
 fi
 
 if [ -f "$ROOT/package.json" ] && command -v node >/dev/null 2>&1; then
-  NODE_PKG_SCRIPT='
-    const fs = require("fs");
-    const file = process.argv[1];
-    const hasUi = process.argv[2] !== "false";
-    const profile = process.argv[3] || "";
-    const framework = process.argv[4] || "vite";
-    const templateFile = process.argv[5] || "";
-    try {
-      const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
-      pkg.scripts = pkg.scripts || {};
-      pkg.devDependencies = pkg.devDependencies || {};
-      const notes = [];
-      let changed = false;
-
-      let tpl = {};
-      try { tpl = JSON.parse(fs.readFileSync(templateFile, "utf8")); } catch (e) { tpl = {}; }
-      const tplDev = tpl.devDependencies || {};
-      const tplOverrides = tpl.overrides || {};
-      const vitePlusVersion = tplDev["vite-plus"] || "";
-      const viteAlias = tplDev.vite || "";
-      const vitestPin = tplOverrides.vitest || "";
-      const pluginReactVersion = tplDev["@vitejs/plugin-react"] || "";
-      const shadcnLintVersion = tplDev["@shadcn/lint"] || "";
-      const typescriptVersion = tplDev.typescript || "";
-      const tsxVersion = tplDev.tsx || "^4.23.15";
-
-      const devByFramework = {
-        next: "next dev", nuxt: "nuxt dev", astro: "astro dev",
-        remix: "remix vite:dev", sveltekit: "vite dev", vite: "vp dev",
-      };
-      const buildByFramework = {
-        next: "next build", nuxt: "nuxt build", astro: "astro build",
-        remix: "remix vite:build", sveltekit: "vite build", vite: "vp build",
-      };
-
-      if (profile === "api" && !pkg.scripts["dev:api"]) {
-        pkg.scripts["dev:api"] = "tsx watch src/main.ts";
-        changed = true;
-      }
-
-      if (!pkg.scripts.dev) {
-        pkg.scripts.dev = profile === "api"
-          ? "npm run dev:api"
-          : (devByFramework[framework] || "vp dev");
-        changed = true;
-      }
-
-      if (!pkg.scripts.build) {
-        // vp build is the built-in Vite production build; it is the wrong command
-        // for a Node service (vp pack / tsdown is its documented build) and for any
-        // framework whose bundler is its own.
-        pkg.scripts.build = profile === "api"
-          ? "vp pack src/main.ts"
-          : (buildByFramework[framework] || "vp build");
-        changed = true;
-      }
-
-      if (!pkg.scripts.test) {
-        pkg.scripts.test = "vp test";
-        changed = true;
-      }
-
-      if (!pkg.scripts["check-quality"]) {
-        pkg.scripts["check-quality"] = "bash .specify/scripts/bash/check-quality-gate.sh";
-        changed = true;
-      }
-
-      if (hasUi && !pkg.scripts["verify-design"]) {
-        pkg.scripts["verify-design"] = "bash .specify/scripts/bash/verify-stitch-design.sh";
-        changed = true;
-      }
-
-      const ensureDev = (name, version, reason) => {
-        if (!version || pkg.devDependencies[name]) return;
-        pkg.devDependencies[name] = version;
-        notes.push("+ " + name + "@" + version + (reason ? " (" + reason + ")" : ""));
-        changed = true;
-      };
-
-      ensureDev("vite-plus", vitePlusVersion, "vp CLI is the quality engine");
-      ensureDev("typescript", typescriptVersion, "vp check type-checks");
-
-      if (profile === "api") {
-        ensureDev("tsx", tsxVersion, "dev:api runtime");
-      } else if (framework === "vite" && (profile === "react" || profile === "")) {
-        // An empty profile is the react default used by install.sh; the vanilla
-        // config imports neither of these.
-        ensureDev("@vitejs/plugin-react", pluginReactVersion, "vite.config.ts imports it");
-        ensureDev("@shadcn/lint", shadcnLintVersion, "vite.config.ts lint plugin");
-      }
-
-      const testScript = String(pkg.scripts.test || "");
-      if (vitestPin && /(^|[^a-z])vitest([^a-z]|$)/i.test(testScript)) {
-        ensureDev("vitest", vitestPin, "declared test script uses it");
-      }
-
-      if (hasUi) {
-        ensureDev("@playwright/test", "^1.65.1");
-        ensureDev("@axe-core/playwright", "^4.14.0");
-      }
-
-      if (viteAlias) {
-        pkg.dependencies = pkg.dependencies || {};
-        const declared = pkg.devDependencies.vite || pkg.dependencies.vite || "";
-        if (!declared) {
-          pkg.devDependencies.vite = viteAlias;
-          notes.push("+ vite -> " + viteAlias);
-          changed = true;
-        } else if (declared !== viteAlias) {
-          // Vite is a build tool, not a runtime dependency: normalise the section
-          // as well as the spec so both npm rules (EOVERRIDE + peer resolution)
-          // hold. A plain "vite" range here installs a SECOND Vite.
-          if (pkg.dependencies.vite) delete pkg.dependencies.vite;
-          pkg.devDependencies.vite = viteAlias;
-          notes.push("~ vite " + declared + " -> " + viteAlias);
-          changed = true;
-        }
-      }
-
-      pkg.overrides = pkg.overrides || {};
-      if (viteAlias && pkg.overrides.vite !== viteAlias) {
-        pkg.overrides.vite = viteAlias;
-        changed = true;
-      }
-      if (vitestPin && !pkg.overrides.vitest) {
-        pkg.overrides.vitest = vitestPin;
-        changed = true;
-      }
-
-      if (changed) {
-        fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n", "utf8");
-        process.stdout.write("updated" + (notes.length ? "\n" + notes.join("\n") : ""));
-      }
-    } catch (e) {
-      // invalid JSON, ignore
-    }
-  '
-  PKG_OUT="$(node -e "$NODE_PKG_SCRIPT" "$ROOT/package.json" "$HAS_UI" "$RESOLVED_PROFILE" "$BOOTSTRAP_FRAMEWORK" "$TOOLCHAIN_TMPL" 2>/dev/null || true)"
-  if [ "$(printf '%s' "$PKG_OUT" | head -n 1)" = "updated" ]; then
-    echo "✓ Ensured baseline scripts and toolchain dependencies in package.json"
-    printf '%s\n' "$PKG_OUT" | tail -n +2 | sed '/^$/d; s/^/  /'
-    ACTIONS=$((ACTIONS + 1))
+  # The reconcile logic lives in reconcile-package-manifest.mjs (installed next
+  # to this script), not in a single-quoted bash heredoc.
+  DESIGN_SCRIPT=true
+  if [ "$HAS_UI" = "false" ]; then
+    DESIGN_SCRIPT=false
+  fi
+  RECONCILER="$SCRIPT_DIR/reconcile-package-manifest.mjs"
+  if [ -f "$RECONCILER" ]; then
+    PKG_OUT="$(node "$RECONCILER" \
+      --manifest="$ROOT/package.json" \
+      --template="$TOOLCHAIN_TMPL" \
+      --profile="$RESOLVED_PROFILE" \
+      --framework="$BOOTSTRAP_FRAMEWORK" \
+      --design-script="$DESIGN_SCRIPT" \
+      --playwright-deps="$DESIGN_SCRIPT" 2>/dev/null || true)"
+    PKG_STATUS="$(printf '%s' "$PKG_OUT" | head -n 1)"
+    if [ "$PKG_STATUS" = "updated" ]; then
+      echo "✓ Ensured baseline scripts and toolchain dependencies in package.json"
+      printf '%s\n' "$PKG_OUT" | tail -n +2 | sed '/^$/d; s/^/  /'
+      ACTIONS=$((ACTIONS + 1))
+    elif [ "$PKG_STATUS" = "invalid" ]; then
+      echo "⚠️  [BOOTSTRAP WARNING]: package.json is not valid JSON; scripts and dependencies were left untouched."
+    fi
+  else
+    echo "⚠️  [BOOTSTRAP WARNING]: $RECONCILER not found; package.json was not reconciled."
   fi
 fi
 

@@ -105,6 +105,7 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/bootstrap-project-env.sh` | Deterministic bootstrap: `git init` + baseline commit, Playwright config/audit-spec materialization |
 | `.specify/scripts/bash/check-design-artifacts.sh` | Design-artifact gate: fails before implementation if screens, tokens or manifest are missing |
 | `.specify/scripts/bash/check-tasks-complete.sh` | Task-ledger completion gate (fails on unchecked tasks) |
+| `.specify/scripts/bash/reconcile-package-manifest.mjs` | Idempotent `package.json` reconciler (baseline scripts + the dependencies they execute); used by the installer and the bootstrap |
 | `.specify/scripts/bash/check-verification-verdict.sh` | Machine verdict gate (fails unless `verification.json` says `pass`) |
 | `.specify/scripts/bash/emit-telemetry.sh` | Structured telemetry & observability event logger |
 | `.specify/templates/` | `vite.config.ts`, Playwright config, env config, and design-audit templates |
