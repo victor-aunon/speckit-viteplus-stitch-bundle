@@ -12,6 +12,34 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- **A profile-only gate failure lost its deterministic handling.** The Spec Kit
+  expression engine (`specify_cli/workflows/expressions.py`) is a hand-rolled
+  splitter, not a Python/Jinja parser: it splits on top-level ` or `, then ` and `,
+  then comparisons, and it has **no grouping support whatsoever**. A bracketed
+  sub-expression never reaches a comparison operator, so it falls through to
+  identifier resolution and evaluates to `False` — silently. `repair_gates`,
+  `repair_gates_loop` and `fail_after_repair` all wrapped their profile guards in
+  `( )`, which made `(not inputs.has_ui and steps.gate_runtime_check…)` and
+  `(inputs.has_ui and steps.gate_contracts_check…)` permanently false.
+
+  Scope, precisely: because the always-on clauses (`quality`, `bundle`, `tasks`)
+  are unparenthesised and still work, the repair window kept opening normally
+  whenever any of them also failed — which is the usual mid-implementation state,
+  and why the agent was still seen repairing design fidelity and contracts from
+  inside the window. The defect only bit when the profile gate was the **only**
+  failing one: `repair_gates` skipped the window, and `fail_after_repair` skipped
+  the abort, so the run fell through to `verify`. That is an LLM auditor which
+  re-runs `check-contracts.sh --require-ui` and `verify-stitch-design.sh
+  --require-ui` and hard-fails without a `pass` verdict, so no red UI shipped —
+  but the deterministic gate layer stopped aborting for exactly the two gates
+  this bundle exists to guarantee, and its verdict was delegated to a
+  probabilistic backstop. The conditions are now parenthesis-free and rely on the
+  documented `and`-binds-tighter-than-`or` precedence, with a comment at each
+  site explaining why brackets are forbidden.
+  `tests/workflow-expressions.test.ts` now evaluates all three conditions against
+  the real evaluator for every gate × profile × progress combination (and asserts
+  no `condition` contains brackets), which is the check that would have caught
+  this: `toContain`-style assertions on the raw YAML string cannot.
 - **The Vite+ pins no longer install two Vite copies.** `templates/package.json.tmpl`
   aliased `vite` to `npm:@voidzero-dev/vite-plus-core@^1.3.0` while `vite-plus` floated
   on `^1.3.0`. Those two packages version independently: `vite-plus@^1.3.0` resolves to

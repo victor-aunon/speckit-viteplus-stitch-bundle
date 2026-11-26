@@ -422,12 +422,36 @@ steps:
   # ---------------------------------------------------------------------------
   - id: repair_gates
     type: if
-    condition: "{{ steps.gate_quality.output.exit_code != 0 or steps.gate_bundle.output.exit_code != 0 or (not inputs.has_ui and steps.gate_runtime_check.output.exit_code != 0) or (inputs.has_ui and steps.gate_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.gate_visual_check.output.exit_code != 0) or steps.gate_tasks.output.exit_code != 0 }}"
+    # NO PARENTHESES. The Spec Kit expression engine is a hand-rolled splitter
+    # (specify_cli/workflows/expressions.py), not a Python/Jinja parser: it splits
+    # on top-level ` or ` first, then on ` and `, then on comparisons, and it has
+    # NO grouping support at all. A bracketed sub-expression never reaches a
+    # comparison operator, so it resolves as an unknown identifier and is False,
+    # silently. Wrapping the profile guards in `( )` made those clauses
+    # permanently false, so a profile-only failure was invisible whenever it was
+    # the ONLY failing gate: no repair window here, and no abort in
+    # `fail_after_repair` — the run fell through to `verify`, which is an LLM
+    # re-run of the gates, not a deterministic abort. "and" binds tighter than
+    # "or" here, which is exactly what the unparenthesised chain below relies on.
+    condition: >-
+      {{ steps.gate_quality.output.exit_code != 0
+      or steps.gate_bundle.output.exit_code != 0
+      or not inputs.has_ui and steps.gate_runtime_check.output.exit_code != 0
+      or inputs.has_ui and steps.gate_contracts_check.output.exit_code != 0
+      or inputs.has_ui and steps.gate_visual_check.output.exit_code != 0
+      or steps.gate_tasks.output.exit_code != 0 }}
     then:
       - id: repair_gates_loop
         type: do-while
         max_iterations: 3
-        condition: "{{ steps.recheck_quality.output.exit_code != 0 or steps.recheck_bundle.output.exit_code != 0 or (not inputs.has_ui and steps.recheck_runtime_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0) or steps.recheck_tasks.output.exit_code != 0 }}"
+        # Same parenthesis-free grammar as `repair_gates` (see the note there).
+        condition: >-
+          {{ steps.recheck_quality.output.exit_code != 0
+          or steps.recheck_bundle.output.exit_code != 0
+          or not inputs.has_ui and steps.recheck_runtime_check.output.exit_code != 0
+          or inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0
+          or inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0
+          or steps.recheck_tasks.output.exit_code != 0 }}
         steps:
           # The circuit breaker and this bounded loop both cap retries. Without a
           # reset, attempt 3 can be spent on "CIRCUIT BREAKER TRIPPED" instead of
@@ -543,7 +567,14 @@ steps:
               bash .specify/scripts/bash/check-tasks-complete.sh
       - id: fail_after_repair
         type: if
-        condition: "{{ steps.recheck_quality.output.exit_code != 0 or steps.recheck_bundle.output.exit_code != 0 or (not inputs.has_ui and steps.recheck_runtime_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0) or (inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0) or steps.recheck_tasks.output.exit_code != 0 }}"
+        # Parenthesis-free for the same reason as `repair_gates` (see the note there).
+        condition: >-
+          {{ steps.recheck_quality.output.exit_code != 0
+          or steps.recheck_bundle.output.exit_code != 0
+          or not inputs.has_ui and steps.recheck_runtime_check.output.exit_code != 0
+          or inputs.has_ui and steps.recheck_contracts_check.output.exit_code != 0
+          or inputs.has_ui and steps.recheck_visual_check.output.exit_code != 0
+          or steps.recheck_tasks.output.exit_code != 0 }}
         then:
           - id: abort_unrepaired
             type: shell

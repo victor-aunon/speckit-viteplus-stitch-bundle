@@ -235,6 +235,8 @@ Deterministic problems are not delegated to an LLM: `bootstrap_env` runs `bootst
 
 Repair agents are explicitly forbidden from using `--allow-no-tests`, `--allow-incomplete`, `--allow-missing`, `--allow-foreign-git`, `--tokens-only`, `--skip-tests`, `--skip-build`, or `--skip-orphans`, and from editing gates, configs, tests, snapshots or evidence. Silencing a gate is never a repair.
 
+> **When editing `condition:` values, never use parentheses.** The Spec Kit expression engine is a hand-rolled splitter, not a Jinja/Python parser: it splits on top-level ` or `, then ` and `, then comparisons, and it has **no grouping support**. A bracketed sub-expression never reaches a comparison operator, so it resolves as an unknown identifier and evaluates to `False` — silently, with no validation error. `a or b and c` correctly means `a or (b and c)`, so write the flat chain and lean on that precedence. `tests/workflow-expressions.test.ts` guards this: it rejects any `condition` containing brackets and evaluates the three gate conditions against the real evaluator for every gate × profile × progress combination.
+
 ### Step 1: Start a New Feature (`specify`)
 Trigger the cycle with a prompt describing what you want to build:
 ```bash
