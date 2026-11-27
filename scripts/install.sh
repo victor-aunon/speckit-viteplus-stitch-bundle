@@ -20,7 +20,6 @@ resolve_bundle_version() {
   [ -f "$manifest" ] || return 0
   sed -n -E 's/^  version:[[:space:]]*"([^"]+)".*/\1/p' "$manifest" | head -n 1
 }
-BUNDLE_VERSION="$(resolve_bundle_version)"
 RELEASE_TAG=""
 ZIP_FILE=""
 TARGET_DIR="."
@@ -99,6 +98,12 @@ elif [ ! -f "$BUNDLE_ROOT/workflows/viteplus-stitch/workflow.yml" ]; then
     exit 2
   fi
 fi
+
+# Resolved HERE, not at parse time. On the `--zip` and `--release` paths the real
+# bundle root is a temp directory created above, so resolving it earlier reported
+# "could not resolve bundle.version" for every remote install — which is the
+# recommended path in the README, and left the installed version unknowable.
+BUNDLE_VERSION="$(resolve_bundle_version)"
 
 if [ -n "$BUNDLE_VERSION" ]; then
   echo "Installing viteplus-stitch bundle v$BUNDLE_VERSION into: $TARGET_DIR..."

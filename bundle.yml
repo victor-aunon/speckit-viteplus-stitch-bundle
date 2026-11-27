@@ -2,7 +2,7 @@ schema_version: "1.0"
 bundle:
   id: "viteplus-stitch"
   name: "Vite+ & Stitch Quality Bundle"
-  version: "2.1.0"
+  version: "2.1.1"
   license: "MIT"
   role: "workflow"
   description: "Spec Kit bundle with Vite+, Airbnb lint, Clean Architecture gates (vertical slices), typed env config guard, Stitch MCP, and Playwright"
@@ -20,4 +20,4 @@ requires:
 provides:
   workflows:
     - id: "viteplus-stitch"
-      version: "2.1.0"
+      version: "2.1.1"

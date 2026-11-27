@@ -12,6 +12,19 @@ one-file change plus this changelog.
 
 _Nothing yet._
 
+## [2.1.1] - 2026-11-27
+
+### Fixed
+
+- **Installing from a release no longer loses the version.** `BUNDLE_VERSION` was
+  resolved while `BUNDLE_ROOT` still pointed at the directory the script was
+  launched from — but on `--zip` and `--release` the real bundle root is a temp
+  directory created after the flags are parsed. Every remote install therefore
+  printed `⚠️ Could not resolve bundle.version` and nothing recorded which version
+  had been installed, on exactly the path the README recommends. The version is
+  now resolved once the bundle root is final, and the `--zip` e2e asserts the
+  banner carries the version from the unpacked manifest.
+
 ## [2.1.0] - 2026-11-27
 
 ### Fixed

@@ -556,6 +556,22 @@ hooks:
     expect(entries).toContain('bundle.yml');
     expect(entries).toContain('scripts/check-quality-gate.sh');
     expect(fs.statSync(zipPath).size).toBeLessThan(1024 * 1024);
+    // The version has to come from the UNPACKED manifest, not from the directory
+    // the script happened to start in. Both remote paths (`--zip` and `--release`)
+    // create the bundle root after parsing the flags, so resolving the version at
+    // parse time printed "could not resolve bundle.version" for every install from
+    // a release — the recommended path in the README.
+    const declaredVersion = fs
+      .readFileSync(path.join(bundleDir, 'bundle.yml'), 'utf8')
+      .match(/^  version:\s*"([^"]+)"/m)?.[1];
+    expect(declaredVersion).toBeTruthy();
+    const zipInstall = runBash(
+      installScript,
+      [`--target-dir=${tempDir}`, `--zip=${zipPath}`],
+      { stdio: 'pipe' }
+    );
+    expect(String(zipInstall)).toContain(`Installing viteplus-stitch bundle v${declaredVersion} into:`);
+    expect(String(zipInstall)).not.toContain('Could not resolve bundle.version');
 
     const output = runBash(installScript, [`--target-dir=${tempDir}`, `--zip=${zipPath}`]);
     expect(output).toContain('Unpacking release archive from');
