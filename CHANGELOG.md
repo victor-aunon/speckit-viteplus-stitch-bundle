@@ -10,6 +10,10 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.2.0] - 2026-11-27
+
 ### Fixed
 
 - **A protected gate config that was merely unformatted was unrepairable.**
