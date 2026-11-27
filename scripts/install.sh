@@ -627,6 +627,32 @@ if [ ! -f "$VITE_CONFIG_FILE" ]; then
     cp "$BUNDLE_ROOT/templates/vite.config.ts.tmpl" "$VITE_CONFIG_FILE"
     echo "✓ Initialized vite.config.ts (React plugin + Vite+ lint rules)"
   fi
+else
+  # Existing config: never overwrite a hand-tuned file. But two defects in it are
+  # invisible until a gate has already run, and both are unrepairable from inside
+  # the repair loop, so the cheapest place to say so is here.
+  if ! grep -q 'ignorePatterns' "$VITE_CONFIG_FILE" 2>/dev/null; then
+    echo ""
+    echo "⚠️  [INSTALL WARNING]: $VITE_CONFIG_FILE declares no \`ignorePatterns\`."
+    echo "   \`vp check\` therefore formats and lints two trees the workflow forbids"
+    echo "   the agent to touch, which makes the repair loop unwinnable:"
+    echo "     .specify/**           protected by check-blast-radius.sh; a --fix pass"
+    echo "                           there is a violation the agent cannot repair"
+    echo "     specs/**/evidence/**  written by the gates; the agent may not edit it,"
+    echo "                           and an unformatted evidence file fails code_quality"
+    echo "   Add to BOTH the \`lint\` and \`fmt\` blocks:"
+    echo "     const IGNORED_GENERATED_PATHS = ['.specify/**', 'specs/**/evidence/**', 'specs/**/designs/**'];"
+    echo "     lint: { ignorePatterns: IGNORED_GENERATED_PATHS, ... }"
+    echo "     fmt:  { ignorePatterns: IGNORED_GENERATED_PATHS, ... }"
+  fi
+  if grep -q "from 'vite'" "$VITE_CONFIG_FILE" 2>/dev/null \
+    && grep -qE '^[[:space:]]*(lint|fmt):' "$VITE_CONFIG_FILE" 2>/dev/null; then
+    echo ""
+    echo "⚠️  [INSTALL WARNING]: $VITE_CONFIG_FILE imports \`defineConfig\` from 'vite'"
+    echo "   but declares Vite+ \`lint\`/\`fmt\` blocks. Vite's UserConfigExport does not"
+    echo "   know them, so with \`lint.options.typeCheck\` the config fails its own gate"
+    echo "   with TS2769. Import \`defineConfig\` from 'vite-plus' instead."
+  fi
 fi
 
 # 8. Deliberately NOT provisioning `.npmrc` with `legacy-peer-deps=true`.

@@ -19,6 +19,16 @@ describe('Bundle Installer Script E2E', () => {
     expect(executable).toBe(true);
   });
 
+  it('warns an existing project about the two config defects it cannot repair', () => {
+    // Neither defect is visible until a gate has already run, and both are
+    // unrepairable from inside the repair loop, so the installer is the cheapest
+    // place to say so out loud. The installer must NOT rewrite the file.
+    const source = fs.readFileSync(installScript, 'utf8');
+    expect(source).toContain('declares no \\`ignorePatterns\\`');
+    expect(source).toContain("from 'vite-plus'");
+    expect(source).toContain('TS2769');
+  });
+
   it('should install workflow, scripts, and hooks into target project cleanly and idempotently', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-install-test-'));
     fs.mkdirSync(path.join(tempDir, '.specify'), { recursive: true });
