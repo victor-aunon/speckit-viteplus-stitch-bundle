@@ -245,30 +245,33 @@ describe('check-quality-gate.sh', () => {
     }
   });
 
-  it('should detect tampering when quality rules are deleted from vite.config.ts', () => {
+  it('should detect tampering when quality rules are deleted from a config the blast radius does not cover', () => {
+    // `vitest.config.ts` is a protected blast-radius file now, so a deletion there
+    // dies at that gate before this one runs. `vitest.config.ts` is not protected
+    // outright, which makes this delta check its only guard.
     const gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quality-tamper-vite-'));
     try {
       execFileSync('git', ['init'], { cwd: gitDir });
       execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: gitDir });
       execFileSync('git', ['config', 'user.name', 'Test'], { cwd: gitDir });
       fs.writeFileSync(
-        path.join(gitDir, 'vite.config.ts'),
+        path.join(gitDir, 'vitest.config.ts'),
         "export default { test: { rules: { 'complexity': ['error', 10], 'no-restricted-imports': 'error' } } };\n",
         'utf8'
       );
       execFileSync('git', ['add', '.'], { cwd: gitDir });
-      execFileSync('git', ['commit', '-m', 'init vite config'], { cwd: gitDir });
+      execFileSync('git', ['commit', '-m', 'init config'], { cwd: gitDir });
 
-      // Agent tampers with vite.config.ts by deleting complexity rule
+      // Agent tampers with vitest.config.ts by deleting complexity rule
       fs.writeFileSync(
-        path.join(gitDir, 'vite.config.ts'),
+        path.join(gitDir, 'vitest.config.ts'),
         "export default { test: { rules: { 'no-restricted-imports': 'error' } } };\n",
         'utf8'
       );
 
       try {
         runBash(scriptPath, [], { cwd: gitDir, stdio: 'pipe' });
-        expect.fail('should fail when quality rules are deleted from vite.config.ts');
+        expect.fail('should fail when quality rules are deleted from vitest.config.ts');
       } catch (error: any) {
         expect(error.status).toBe(1);
         const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
@@ -643,5 +646,65 @@ describe('check-quality-gate.sh', () => {
     } finally {
       removeDir(project.dir);
     }
+  });
+
+  describe('anti-tampering audits additions, not only deletions', () => {
+    // `vitest.config.ts`, not `vite.config.ts`: the latter is now a protected
+    // blast-radius file, so any edit there dies at that gate first and never
+    // reaches this check. This check is the only guard left for the config files
+    // that are not protected outright, so that is what it is tested against.
+    const GATE_CONFIG = "export default { test: { globals: true } };\n";
+
+    const runOnConfig = (next: string): { status: number; output: string } => {
+      const dir = makeGitProject({ 'vitest.config.ts': GATE_CONFIG });
+      try {
+        fs.writeFileSync(path.join(dir, 'vitest.config.ts'), next, 'utf8');
+        try {
+          runBash(scriptPath, ['--skip-tests', '--skip-build'], { cwd: dir, stdio: 'pipe' });
+          return { status: 0, output: '' };
+        } catch (error: any) {
+          return { status: error.status, output: `${error.stdout ?? ''}${error.stderr ?? ''}` };
+        }
+      } finally {
+        removeDir(dir);
+      }
+    };
+
+    it('flags an exclusion added to the gate config', () => {
+      // The deletion check greps `-` lines. One added `ignorePatterns` takes whole
+      // trees away from the linter and the formatter, so the gate grades an empty
+      // set and reports green — and nothing was deleted.
+      const { status, output } = runOnConfig(
+        "export default { lint: { ignorePatterns: ['src/**'] } };\n"
+      );
+      expect(status).toBe(1);
+      expect(output).toContain('ANTI-TAMPERING VIOLATION');
+      expect(output).toContain('ignorePatterns');
+    });
+
+    it('flags the type check being switched off', () => {
+      const { status, output } = runOnConfig(
+        "export default { test: { globals: true }, lint: { options: { typeCheck: false } } };\n"
+      );
+      expect(status).toBe(1);
+      expect(output).toContain('ANTI-TAMPERING VIOLATION');
+    });
+
+    it('flags a quality rule retuned to off', () => {
+      const { status, output } = runOnConfig(
+        "export default { test: { globals: true }, lint: { rules: { 'max-depth': 'off' } } };\n"
+      );
+      expect(status).toBe(1);
+      expect(output).toContain('ANTI-TAMPERING VIOLATION');
+    });
+
+    it('does not flag a legitimate addition', () => {
+      // The jsdom test block is exactly what a real run added, and exactly what the
+      // template now ships. "The project needs a test config" is not tampering.
+      const { output } = runOnConfig(
+        "export default { test: { environment: 'jsdom', globals: true } };\n"
+      );
+      expect(output).not.toContain('ANTI-TAMPERING VIOLATION');
+    });
   });
 });

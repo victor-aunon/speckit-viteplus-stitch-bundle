@@ -482,6 +482,32 @@ if [ "$DRY_RUN" = false ] && [ "$GIT_OWNED" = true ]; then
     TAMPERING_VIOLATIONS=$((TAMPERING_VIOLATIONS + 1))
   fi
 
+  # B2. ADDITIONS matter as much as deletions, and the delta check above only
+  # greps removed lines. `ignorePatterns` is the cheapest bypass in the file: one
+  # line takes whole trees away from the linter and the formatter, so the gate
+  # grades an empty set and reports green. Same for switching the type check off
+  # or retuning a rule to `off`/`warn`. A real run needed an addition here (the
+  # jsdom test block), which is why that block now ships in the template instead:
+  # the fix for "I need to edit the gate config" is the template, never the gate.
+  VITE_ADDITIONS=$(git -C "$PROJECT_ROOT" diff HEAD -U0 -- 'vite.config.*' 'vitest.config.*' 2>/dev/null | grep -E '^\+[^+]' || true)
+  if [ -n "$VITE_ADDITIONS" ]; then
+    VITE_ADDED_BYPASS=$(printf '%s\n' "$VITE_ADDITIONS" | grep -E 'ignorePatterns' || true)
+    VITE_TYPECHECK_OFF=$(printf '%s\n' "$VITE_ADDITIONS" | grep -E '(typeCheck|typeAware)[[:space:]]*:[[:space:]]*false' || true)
+    VITE_RULE_DOWNGRADED=$(printf '%s\n' "$VITE_ADDITIONS" | grep -E '(complexity|max-lines-per-function|max-depth|max-params|max-statements|no-restricted-imports|no-multi-comp).*(off|warn)' || true)
+
+    if [ -n "$VITE_ADDED_BYPASS" ] || [ -n "$VITE_TYPECHECK_OFF" ] || [ -n "$VITE_RULE_DOWNGRADED" ]; then
+      echo ""
+      echo "❌ [ANTI-TAMPERING VIOLATION]: Adding an exclusion, or disabling a check, in the bundler config is prohibited:"
+      if [ -n "$VITE_ADDED_BYPASS" ]; then printf '%s\n' "$VITE_ADDED_BYPASS"; fi
+      if [ -n "$VITE_TYPECHECK_OFF" ]; then printf '%s\n' "$VITE_TYPECHECK_OFF"; fi
+      if [ -n "$VITE_RULE_DOWNGRADED" ]; then printf '%s\n' "$VITE_RULE_DOWNGRADED"; fi
+      echo "   An exclusion narrows what the gate can see; that is the gate grading itself."
+      echo "   If the change is legitimate, commit it: this check reads the working tree,"
+      echo "   so a committed decision is audited history instead of an unrecorded edit."
+      TAMPERING_VIOLATIONS=$((TAMPERING_VIOLATIONS + 1))
+    fi
+  fi
+
   # C. Check for neutralization of test/check scripts in package.json
   PKG_NEUTRALIZATIONS=$(git diff HEAD -U0 -- package.json 2>/dev/null | grep -E '^\+[^+]' | grep -E '"(test|check)"[[:space:]]*:[[:space:]]*"(echo\b|true\b|exit[[:space:]]+0\b|:|"")' || true)
   if [ -n "$PKG_NEUTRALIZATIONS" ]; then
