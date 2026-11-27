@@ -10,7 +10,40 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **The workflow's conditional template syntax was never rendered, so agents and
+  gates were handed `{% if %}` as literal text.** The engine substitutes
+  `{{ ... }}` and nothing else; `{% %}` blocks are not evaluated, which means the
+  block is always included and **both** branches of an `{% else %}` are delivered.
+  Three fields were affected, all captured from a real run:
+
+  *Prompts.* The guardrails prompt — the one that forbids touching
+  `vite.config.ts`, tests and gate scripts — arrived as `{% if inputs.scope %}`
+  followed by "All work is restricted to slice ''". The instruction that confines
+  the agent to a feature slice was empty and wrapped in noise. The designer prompt
+  had `{% else %}` branches, so it shipped two contradictory protocols at once
+  (Stitch and local wireframe). Both are now shell steps that print the clause and
+  are interpolated with `{{ steps.<id>.output.stdout }}`.
+
+  *`input.args` of `command` steps.* `/speckit.plan A dialog {% if inputs.scope
+  %}--scope={% endif %} --with-viteplus {% if ... %}--with-stitch{% endif %}` was
+  the literal argv of every slash command: `--with-stitch` was always passed, even
+  with Stitch disabled.
+
+  *`run:` of shell steps.* The quiet one: `bash check-quality-gate.sh {% if
+  inputs.scope %}--scope={% endif %}` makes bash pass `{%`, `if`,
+  `inputs.scope`, `%}--scope={%`, `endif`, `%}` as six arguments. The gate scripts
+  ignore unknown arguments, the run continues **unscoped**, and the blast radius
+  falls back to auto-detection from `git status` instead of the declared slice.
+
+  The scope flag is now computed once (`flag_scope`) and shared by the six gate
+  invocations and the four slash commands. `tests/workflow-prompts.test.ts` walks
+  the YAML and fails if any `${%`-style tag reaches `prompt`, `run` or `args`.
+
+  Conditional branching itself is supported — as a `type: if` step with
+  `condition`/`then`/`else` — but that chooses between steps; it cannot wrap a
+  paragraph inside one.
 
 ## [2.1.1] - 2026-11-27
 

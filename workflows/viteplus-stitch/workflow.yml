@@ -56,6 +56,58 @@ inputs:
     prompt: "AI model for task implementation (defaults to 'model' when empty)"
 
 steps:
+  # Prompt strings are rendered with `{{ }}` interpolation only. `{% if %}` is
+  # delivered to the agent as literal text and the block is always included, so
+  # the instruction that confines work to a feature slice arrived reading
+  # "restricted to slice ''" wrapped in meaningless tags. Conditional text is
+  # computed by these steps and interpolated into the prompt.
+  - id: guardrails_scope
+    type: shell
+    run: |
+      scope='{{ inputs.scope }}'
+      if [ -n "$scope" ]; then
+        printf "FEATURE SCOPE RESTRICTION: All work is restricted to slice '%s'.\n" "$scope"
+        printf "Do NOT modify or create application source files outside this directory.\n"
+      fi
+  - id: guardrails_runtime
+    type: shell
+    run: |
+      case '{{ inputs.has_ui }}' in
+        true|True|1) ;;
+        *)
+          cat <<'CLAUSE'
+      RUNTIME ENTRYPOINT CONTRACT (has_ui=false):
+      - `has_ui` describes THIS FEATURE, not the project. Most non-UI features live
+        inside an existing React/Vite project, so you MUST NOT remove React, Vite,
+        `@vitejs/plugin-react`, `vite.config.ts`, the typed env config, or the
+        project's existing `dev` script.
+      - Declare how the feature runs in `specs/<feature>/runtime.json` (start from
+        `.specify/templates/runtime.json.tmpl`):
+          {"kind":"http","command":"npm run dev:api","port":3000,"readiness":"/health"}
+          {"kind":"http","command":"npm run dev","port":3000,"readiness":"/api/health"}
+          {"kind":"none","reason":"<why this feature has no runtime entrypoint>"}
+      - How to expose HTTP depends on the framework:
+        * Bundler is Vite (this repository): add a NEW script (`"dev:api": "tsx watch
+          src/main.ts"`) and never touch `dev`. `"command": "npm run dev:api"`.
+        * Full-stack framework (Next.js, Nuxt, Astro, Remix, SvelteKit): the framework
+          dev server already serves the endpoints (`app/api/<route>/route.ts`), so
+          declare `"command": "npm run dev"` (or `"vp run dev"`) with a SPECIFIC
+          readiness path such as `/api/health`. Do not invent a second server.
+      - `gate_runtime` runs `check-dev-entrypoint.sh --require-contract`: it starts the
+        declared command, probes the declared port and readiness path, and fails
+        unless it gets an HTTP 2xx response. A manual `tsx src/main.ts` that the
+        contract does not declare is a red gate, not a workaround.
+      - Vite built-ins (`vp dev`, `vite`, `vp preview`) are REJECTED as the runtime: they
+        always start the built-in Vite dev server and ignore package.json scripts. A
+        dev-server runtime with `"readiness": "/"` is also rejected, because a frontend
+        dev server answers 200 on / regardless of the API.
+      - The port MUST come from the typed env config (`src/config/env.ts`) and be
+        declared in `runtime.json` with the same value; the gate probes exactly that
+        port, so drift between the two is a red gate. The spec, `quickstart.md`,
+        the contract and the script must all agree on it.
+      CLAUSE
+          ;;
+      esac
   - id: guardrails
     type: prompt
     integration: "{{ inputs.integration }}"
@@ -66,10 +118,7 @@ steps:
       Before any work starts, read `.specify/workflows/viteplus-stitch/GUARDRAILS.md`
       and `.specify/memory/constitution.md` (sections "Quality Gate Integrity" and
       "Impeccable UI Craft Lifecycle").
-      {% if inputs.scope %}
-      FEATURE SCOPE RESTRICTION: All work is restricted to slice '{{ inputs.scope }}'.
-      Do NOT modify or create application source files outside this directory.
-      {% endif %}
+      {{ steps.guardrails_scope.output.stdout }}
       NON-NEGOTIABLE RULE: at no point may you modify Vite settings
       (`vite.config.ts` or any Vite/Vite+ config), weaken `package.json` quality scripts,
       alter the quality scripts (`.specify/scripts/bash/check-quality-gate.sh`,
@@ -112,37 +161,7 @@ steps:
         genuinely done but unmarked, tick what is demonstrably done and print
         `task id -> justification` for each.
       - Spec Kit runs automated quality gates (`gate_quality`, `gate_bundle`, `gate_contracts`) as non-agent shell steps with an automated self-healing repair window.
-      {% if not inputs.has_ui %}
-      RUNTIME ENTRYPOINT CONTRACT (has_ui=false):
-      - `has_ui` describes THIS FEATURE, not the project. Most non-UI features live
-        inside an existing React/Vite project, so you MUST NOT remove React, Vite,
-        `@vitejs/plugin-react`, `vite.config.ts`, the typed env config, or the
-        project's existing `dev` script.
-      - Declare how the feature runs in `specs/<feature>/runtime.json` (start from
-        `.specify/templates/runtime.json.tmpl`):
-          {"kind":"http","command":"npm run dev:api","port":3000,"readiness":"/health"}
-          {"kind":"http","command":"npm run dev","port":3000,"readiness":"/api/health"}
-          {"kind":"none","reason":"<why this feature has no runtime entrypoint>"}
-      - How to expose HTTP depends on the framework:
-        * Bundler is Vite (this repository): add a NEW script (`"dev:api": "tsx watch
-          src/main.ts"`) and never touch `dev`. `"command": "npm run dev:api"`.
-        * Full-stack framework (Next.js, Nuxt, Astro, Remix, SvelteKit): the framework
-          dev server already serves the endpoints (`app/api/<route>/route.ts`), so
-          declare `"command": "npm run dev"` (or `"vp run dev"`) with a SPECIFIC
-          readiness path such as `/api/health`. Do not invent a second server.
-      - `gate_runtime` runs `check-dev-entrypoint.sh --require-contract`: it starts the
-        declared command, probes the declared port and readiness path, and fails
-        unless it gets an HTTP 2xx response. A manual `tsx src/main.ts` that the
-        contract does not declare is a red gate, not a workaround.
-      - Vite built-ins (`vp dev`, `vite`, `vp preview`) are REJECTED as the runtime: they
-        always start the built-in Vite dev server and ignore package.json scripts. A
-        dev-server runtime with `"readiness": "/"` is also rejected, because a frontend
-        dev server answers 200 on / regardless of the API.
-      - The port MUST come from the typed env config (`src/config/env.ts`) and be
-        declared in `runtime.json` with the same value; the gate probes exactly that
-        port, so drift between the two is a red gate. The spec, `quickstart.md`,
-        the contract and the script must all agree on it.
-      {% endif %}
+      {{ steps.guardrails_runtime.output.stdout }}
 
       Acknowledge this rule and stop. Do not modify any files in this step.
 
@@ -212,12 +231,38 @@ steps:
         options: [approve, reject]
         on_reject: abort
 
+  # `input.args` is interpolated with `{{ }}` exactly like a prompt, so the
+  # `{% if %}` guards that used to sit here were handed to the slash command as
+  # literal text: `--scope=` was always passed (usually empty) and `--with-stitch`
+  # was always passed, even with Stitch disabled. The flags are computed instead.
+  - id: flag_scope
+    type: shell
+    run: |
+      scope='{{ inputs.scope }}'
+      if [ -n "$scope" ]; then printf ' --scope=%s' "$scope"; fi
+      exit 0
+
+  - id: flag_stitch
+    type: shell
+    run: |
+      case '{{ inputs.has_ui }}:{{ inputs.enable_stitch }}' in
+        true:true|True:True|1:1) printf ' --with-stitch' ;;
+      esac
+      exit 0
+
+  - id: flag_impeccable
+    type: shell
+    run: |
+      case '{{ inputs.has_ui }}' in
+        true|True|1) printf ' --with-impeccable-lifecycle' ;;
+      esac
+      exit 0
   - id: plan
     command: speckit.plan
     integration: "{{ inputs.integration }}"
     model: "{{ inputs.model }}"
     input:
-      args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --with-viteplus {% if inputs.has_ui and inputs.enable_stitch %}--with-stitch{% endif %}"
+      args: "{{ inputs.spec }}{{ steps.flag_scope.output.stdout }} --with-viteplus{{ steps.flag_stitch.output.stdout }}"
 
   # Design artifacts are REQUIRED for any UI feature. Stitch is one way to
   # produce them, not the only one: with enable_stitch=false the step still runs
@@ -228,59 +273,97 @@ steps:
     type: if
     condition: "{{ inputs.has_ui }}"
     then:
+      # The engine renders prompts with `{{ }}` only: `{% if %}` reaches the agent as
+      # literal text and BOTH branches of an `{% else %}` are delivered at once, so
+      # this step used to hand the designer two contradictory protocols. The three
+      # clauses are computed here and interpolated.
+      - id: design_role
+        type: shell
+        run: |
+          case '{{ inputs.enable_stitch }}' in
+            true|True|1) printf ' (GOOGLE STITCH MCP)' ;;
+            *) printf ' (LOCAL WIREFRAME FALLBACK)' ;;
+          esac
+      - id: design_protocol
+        type: shell
+        run: |
+          case '{{ inputs.enable_stitch }}' in
+            true|True|1)
+              cat <<'CLAUSE'
+          - Execute all Stitch MCP tools directly in this conversation. Do NOT delegate Stitch tool calls or verification to subagents (subagents lack access to MCP extensions).
+          - TEXT-ONLY ASSETS RULE: never download binary screenshots, create fake .png files, or read `.png` files with file tools. The design master is the HTML code (`<screen-id>.html`).
+          The visual gate DERIVES its golden screenshots from that HTML on every run
+          (`render-design-goldens.mjs`): the PNGs are build output under
+          `tests/design/__snapshots__/`, never a deliverable and never committed. Do
+          not create them yourself, and do not treat their absence as a missing artifact.
+          CLAUSE
+              ;;
+            *)
+              cat <<'CLAUSE'
+          - Stitch is DISABLED for this run (`enable_stitch=false`). Do NOT call any Stitch MCP tool and do NOT ask the human to enable it.
+          - You are responsible for producing the same artifacts locally, as self-contained HTML wireframes. This is not a degraded mode you may skip: the gates below are identical.
+          CLAUSE
+              ;;
+          esac
+      - id: design_sourcing
+        type: shell
+        run: |
+          case '{{ inputs.enable_stitch }}' in
+            true|True|1)
+              case '{{ inputs.stitch_project_id }}' in
+                '') cat <<'CLAUSE'
+          - NEW DESIGN GENERATION VIA STITCH MCP:
+          * Call `create_project` (or target the active project) with the feature title.
+          * Call `create_design_system` to establish colour palette, typography (Inter/Roboto), corner roundness, and appearance theme aligned with the project.
+          * For each primary screen in the specification, call `generate_screen_from_text` with rich layout, accessibility, and component details.
+          * Call `get_screen` for each generated screen to retrieve its `html_code` reference.
+          * Download ONLY the HTML code with `download_file` (`name: <screen.html_code.name>`) and save it to `specs/<feature>/designs/<screen-id>.html` using `write_file`. Never download `screenshot.name`.
+          CLAUSE
+                    ;;
+                *) cat <<'CLAUSE'
+          - EXISTING STITCH STUDIO PROJECT (inputs.stitch_project_id: "{{ inputs.stitch_project_id }}"):
+          * Do NOT generate new screens from text. Import existing screens from project ID "{{ inputs.stitch_project_id }}".
+          * Normalize the ID first: if it was provided as `projects/<id>`, use only `<id>` (the Stitch API rejects the prefixed form). Do the normalization yourself; the workflow expression engine has no string-filter functions.
+          * Call `list_screens(projectId: "{{ inputs.stitch_project_id }}")` to enumerate all project screens.
+          * Call `get_screen` for each screen to retrieve its `html_code` reference.
+          * Download each HTML file using `download_file` with `name: <screen.html_code.name>` and save it to `specs/<feature>/designs/<screen-id>.html`.
+          * Inspect the downloaded HTML and populate `tokens.css` with the active CSS variables.
+          CLAUSE
+                    ;;
+              esac
+              cat <<'CLAUSE'
+          - If Stitch is unreachable or rate-limited, fall back to local wireframe HTML instead of stopping.
+          CLAUSE
+              ;;
+            *)
+              cat <<'CLAUSE'
+          - LOCAL WIREFRAME PATH (`enable_stitch=false`):
+          * Write one self-contained HTML file per screen: `specs/<feature>/designs/<screen-id>.html`, with inline `<style>` using the design tokens and real content from the spec (no lorem ipsum, no broken links).
+          * Every screen must be usable at 360px and 1440px widths and include focus styles (`:focus-visible`), semantic landmarks, and `aria-label` on interactive controls.
+          * Do NOT create `.png` files or screenshots.
+          CLAUSE
+              ;;
+          esac
       - id: design-assets
         type: prompt
         integration: "{{ inputs.integration }}"
         model: "{{ inputs.model }}"
         timeout: 900
         prompt: |
-          ROLE: UI SYSTEMS DESIGN ENGINEER{% if inputs.enable_stitch %} (GOOGLE STITCH MCP){% else %} (LOCAL WIREFRAME FALLBACK){% endif %}.
+          ROLE: UI SYSTEMS DESIGN ENGINEER{{ steps.design_role.output.stdout }}.
           Produce the canonical design artifacts every UI feature needs:
           screens, `tokens.css`, and `routes-manifest.json`. The contracts gate and
           the visual gate run with `--require-ui` and hard-fail without them.
 
           EXECUTION PROTOCOL:
-          {% if inputs.enable_stitch %}
-          - Execute all Stitch MCP tools directly in this conversation. Do NOT delegate Stitch tool calls or verification to subagents (subagents lack access to MCP extensions).
-          - TEXT-ONLY ASSETS RULE: never download binary screenshots, create fake .png files, or read `.png` files with file tools. The design master is the HTML code (`<screen-id>.html`).
-            The visual gate DERIVES its golden screenshots from that HTML on every run
-            (`render-design-goldens.mjs`): the PNGs are build output under
-            `tests/design/__snapshots__/`, never a deliverable and never committed. Do
-            not create them yourself, and do not treat their absence as a missing artifact.
-          {% else %}
-          - Stitch is DISABLED for this run (`enable_stitch=false`). Do NOT call any Stitch MCP tool and do NOT ask the human to enable it.
-          - You are responsible for producing the same artifacts locally, as self-contained HTML wireframes. This is not a degraded mode you may skip: the gates below are identical.
-          {% endif %}
+          {{ steps.design_protocol.output.stdout }}
 
           STEPS:
           0. Idempotency Check: inspect `specs/<feature>/designs/`. If the HTML screens, `tokens.css`, and `routes-manifest.json` already exist, verify their completeness, ensure fixtures exist, and output the summary table immediately without regenerating.
           1. Inspect `specs/<feature>/spec.md` and `plan.md` to identify the core user journeys and all required screens/views.
           2. Locate or create `specs/<feature>/designs/` and `specs/<feature>/designs/fixtures/`.
           3. SOURCING SCREENS:
-             {% if inputs.enable_stitch %}
-             {% if inputs.stitch_project_id %}
-             - EXISTING STITCH STUDIO PROJECT (inputs.stitch_project_id: "{{ inputs.stitch_project_id }}"):
-               * Do NOT generate new screens from text. Import existing screens from project ID "{{ inputs.stitch_project_id }}".
-               * Normalize the ID first: if it was provided as `projects/<id>`, use only `<id>` (the Stitch API rejects the prefixed form). Do the normalization yourself; the workflow expression engine has no string-filter functions.
-               * Call `list_screens(projectId: "{{ inputs.stitch_project_id }}")` to enumerate all project screens.
-               * Call `get_screen` for each screen to retrieve its `html_code` reference.
-               * Download each HTML file using `download_file` with `name: <screen.html_code.name>` and save it to `specs/<feature>/designs/<screen-id>.html`.
-               * Inspect the downloaded HTML and populate `tokens.css` with the active CSS variables.
-             {% else %}
-             - NEW DESIGN GENERATION VIA STITCH MCP:
-               * Call `create_project` (or target the active project) with the feature title.
-               * Call `create_design_system` to establish colour palette, typography (Inter/Roboto), corner roundness, and appearance theme aligned with the project.
-               * For each primary screen in the specification, call `generate_screen_from_text` with rich layout, accessibility, and component details.
-               * Call `get_screen` for each generated screen to retrieve its `html_code` reference.
-               * Download ONLY the HTML code with `download_file` (`name: <screen.html_code.name>`) and save it to `specs/<feature>/designs/<screen-id>.html` using `write_file`. Never download `screenshot.name`.
-             {% endif %}
-             - If Stitch is unreachable or rate-limited, fall back to local wireframe HTML instead of stopping.
-             {% else %}
-             - LOCAL WIREFRAME PATH (`enable_stitch=false`):
-               * Write one self-contained HTML file per screen: `specs/<feature>/designs/<screen-id>.html`, with inline `<style>` using the design tokens and real content from the spec (no lorem ipsum, no broken links).
-               * Every screen must be usable at 360px and 1440px widths and include focus styles (`:focus-visible`), semantic landmarks, and `aria-label` on interactive controls.
-               * Do NOT create `.png` files or screenshots.
-             {% endif %}
+          {{ steps.design_sourcing.output.stdout }}
           4. Create the canonical design tokens at `specs/<feature>/designs/tokens.css`:
              - Declare CSS variables under `:root`: colours (`--color-background`, `--color-surface`, `--color-primary`, `--color-text`, ...), radii (`--radius-sm|md|lg`), typography (`--font-family`, `--font-size-*`), and spacing (`--space-*`).
              - WIRE THEM INTO THE APP: the visual gate reads `getComputedStyle(document.documentElement)`, so every token must exist in the running DOM. Copy the `:root` block into `src/styles/app.css` (or `src/styles/tokens.css` imported by it). If the DOM does not expose a token, the gate fails even though the design file is perfect.
@@ -343,7 +426,7 @@ steps:
     integration: "{{ inputs.integration }}"
     model: "{{ inputs.model }}"
     input:
-      args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased {% if inputs.has_ui %}--with-impeccable-lifecycle{% endif %}"
+      args: "{{ inputs.spec }}{{ steps.flag_scope.output.stdout }} --phased{{ steps.flag_impeccable.output.stdout }}"
 
   - id: implement
     type: if
@@ -354,14 +437,14 @@ steps:
         integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
         model: "{{ inputs.implement_model | default(inputs.model) }}"
         input:
-          args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --auto-continue"
+          args: "{{ inputs.spec }}{{ steps.flag_scope.output.stdout }} --phased --verify-gates --auto-continue"
     else:
       - id: implement-paused
         command: speckit.implement
         integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
         model: "{{ inputs.implement_model | default(inputs.model) }}"
         input:
-          args: "{{ inputs.spec }} {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} --phased --verify-gates --pause-after-phase"
+          args: "{{ inputs.spec }}{{ steps.flag_scope.output.stdout }} --phased --verify-gates --pause-after-phase"
 
   - id: bootstrap_deps
     type: shell
@@ -384,7 +467,7 @@ steps:
     type: shell
     continue_on_error: true
     run: |
-      bash .specify/scripts/bash/check-quality-gate.sh {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || {
+      bash .specify/scripts/bash/check-quality-gate.sh {{ steps.flag_scope.output.stdout }} || {
         err=$?
         echo "" >/dev/tty 2>/dev/null || true
         echo "⚠️  [QUALITY GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
@@ -428,7 +511,7 @@ steps:
         type: shell
         continue_on_error: true
         run: |
-          bash .specify/scripts/bash/check-contracts.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || {
+          bash .specify/scripts/bash/check-contracts.sh --require-ui {{ steps.flag_scope.output.stdout }} || {
             err=$?
             echo "" >/dev/tty 2>/dev/null || true
             echo "⚠️  [CONTRACT GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
@@ -439,7 +522,7 @@ steps:
         type: shell
         continue_on_error: true
         run: |
-          bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %} || {
+          bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {{ steps.flag_scope.output.stdout }} || {
             err=$?
             echo "" >/dev/tty 2>/dev/null || true
             echo "⚠️  [VISUAL GATE DETECTED ISSUES - Exit $err]" >/dev/tty 2>/dev/null || true
@@ -622,7 +705,7 @@ steps:
             type: shell
             continue_on_error: true
             run: |
-              bash .specify/scripts/bash/check-quality-gate.sh {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}
+              bash .specify/scripts/bash/check-quality-gate.sh {{ steps.flag_scope.output.stdout }}
           - id: recheck_bundle
             type: shell
             continue_on_error: true
@@ -645,12 +728,12 @@ steps:
                 type: shell
                 continue_on_error: true
                 run: |
-                  bash .specify/scripts/bash/check-contracts.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}
+                  bash .specify/scripts/bash/check-contracts.sh --require-ui {{ steps.flag_scope.output.stdout }}
               - id: recheck_visual_check
                 type: shell
                 continue_on_error: true
                 run: |
-                  bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {% if inputs.scope %}--scope={{ inputs.scope }}{% endif %}
+                  bash .specify/scripts/bash/verify-stitch-design.sh --require-ui {{ steps.flag_scope.output.stdout }}
           # Re-derive the tagged tasks before judging them: a gate that went green
           # in this iteration must show up in the ledger, and one that regressed
           # must not.

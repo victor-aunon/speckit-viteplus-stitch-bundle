@@ -14,12 +14,17 @@ describe('Workflow YAML Schema Validation', () => {
 
     const stepIds = wf.steps.map((s: any) => s.id);
     expect(stepIds).toEqual([
+      'guardrails_scope',
+      'guardrails_runtime',
       'guardrails',
       'bootstrap_env_early',
       'preflight',
       'specify',
       'audit-spec',
       'review-spec',
+      'flag_scope',
+      'flag_stitch',
+      'flag_impeccable',
       'plan',
       'generate-designs',
       'critique-design',
@@ -42,9 +47,16 @@ describe('Workflow YAML Schema Validation', () => {
       'gate_verdict_final'
     ]);
 
-    // The first step must instruct the model that gate tampering is forbidden
-    // before it is allowed to touch any code.
-    const guardrails = wf.steps[0];
+    // The first AGENT step must instruct the model that gate tampering is
+    // forbidden before it is allowed to touch any code. The two shell steps in
+    // front of it compute the conditional clauses it interpolates: `{% if %}`
+    // inside a prompt is delivered to the agent literally.
+    const guardrails = wf.steps.find((s: any) => s.id === 'guardrails');
+    expect(wf.steps.findIndex((s: any) => s.id === 'guardrails')).toBe(2);
+    expect(wf.steps.slice(0, 2).map((s: any) => s.type)).toEqual(['shell', 'shell']);
+    expect(guardrails.prompt).not.toContain('{%');
+    expect(guardrails.prompt).toContain('steps.guardrails_scope.output.stdout');
+    expect(guardrails.prompt).toContain('steps.guardrails_runtime.output.stdout');
     expect(guardrails.type).toBe('prompt');
     expect(guardrails.integration).toContain('inputs.integration');
     expect(guardrails.prompt).toContain('NON-NEGOTIABLE');
@@ -265,21 +277,41 @@ describe('Workflow YAML Schema Validation', () => {
     expect(generateDesignsStep.condition).toContain('inputs.has_ui');
     expect(generateDesignsStep.condition).not.toContain('inputs.enable_stitch');
     const designPrompt = generateDesignsStep.then.find((s: any) => s.id === 'design-assets');
-    expect(designPrompt.prompt).toContain('Stitch');
-    expect(designPrompt.prompt).toContain('LOCAL WIREFRAME PATH');
-    expect(designPrompt.prompt).toContain('enable_stitch=false');
+    const byId = (id: string) => generateDesignsStep.then.find((s: any) => s.id === id);
+
+    // The three clauses are interpolated, not written inline.
+    expect(designPrompt.prompt).toContain('steps.design_role.output.stdout');
+    expect(designPrompt.prompt).toContain('steps.design_protocol.output.stdout');
+    expect(designPrompt.prompt).toContain('steps.design_sourcing.output.stdout');
     expect(designPrompt.prompt).toContain('tokens.css');
     // The DOM must expose the tokens, not just the design file.
     expect(designPrompt.prompt).toContain('getComputedStyle(document.documentElement)');
     expect(designPrompt.prompt).toContain('routes-manifest.json');
-    expect(designPrompt.prompt).toContain('stitch_project_id');
-    expect(designPrompt.prompt).toContain('list_screens');
     expect(designPrompt.prompt).toContain('fixtures');
+
+    // Conditional text is computed by a step and interpolated. `{% if %}` inside
+    // a prompt is delivered to the agent literally, and both branches of an
+    // `{% else %}` arrive at once — so the designer used to be handed two
+    // contradictory protocols.
+    expect(designPrompt.prompt).not.toContain('{%');
+    expect(byId('design_role').run).toContain('LOCAL WIREFRAME FALLBACK');
+    expect(byId('design_role').run).toContain('GOOGLE STITCH MCP');
+    expect(byId('design_protocol').run).toContain('Stitch is DISABLED');
+    expect(byId('design_protocol').run).toContain('Execute all Stitch MCP tools');
+    expect(byId('design_sourcing').run).toContain('LOCAL WIREFRAME PATH');
+    expect(byId('design_sourcing').run).toContain('stitch_project_id');
+    expect(byId('design_sourcing').run).toContain('list_screens');
 
     // A prompt can complete without writing files: a deterministic gate must
     // fail in seconds instead of after implementation.
     const designIds = generateDesignsStep.then.map((s: any) => s.id);
-    expect(designIds).toEqual(['design-assets', 'design_artifacts']);
+    expect(designIds).toEqual([
+      'design_role',
+      'design_protocol',
+      'design_sourcing',
+      'design-assets',
+      'design_artifacts',
+    ]);
     const designGate = generateDesignsStep.then.find((s: any) => s.id === 'design_artifacts');
     expect(designGate.type).toBe('shell');
     expect(designGate.continue_on_error).toBeUndefined();
