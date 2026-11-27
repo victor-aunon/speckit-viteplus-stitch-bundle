@@ -286,6 +286,16 @@ if [ "$CHECK_SCOPE" = true ] || [ "$CHECK_BREAKER" = false ]; then
     ".specify/memory/"
     ".specify/templates/"
     "templates/guardrails.md"
+    # The gate config IS a gate. An addition there is as dangerous as a deletion:
+    # `lint: { ignorePatterns: ['src/**'] }` removes every rule from the code and
+    # the anti-tampering delta check (which greps removed lines) never sees it.
+    # A real run had to edit this file just to give vitest a jsdom environment, so
+    # the profiles that need it now ship that block in the template: nobody should
+    # have to touch this file to run the test suite.
+    "vite.config.ts"
+    # The vendored accessibility/visual audit. It is tooling, and an agent that can
+    # edit it can make the audit pass by weakening the audit.
+    "tests/design/"
   )
 
   # App-shell and shared infrastructure are intentionally outside any slice.

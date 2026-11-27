@@ -138,6 +138,27 @@ describe('vite config templates', () => {
     expect(pkg.devDependencies['@types/node']).toBeDefined();
   });
 
+  it('ship the jsdom test block, so nobody edits a protected config to run tests', () => {
+    // `vite.config.ts` is now a protected gate file. That is only safe if the
+    // template already gives vitest what it needs: a real run had to add this
+    // block by hand — jsdom plus `exclude: ['tests/design/**']` — because without
+    // it every component test died on `document is not defined`, and the agent
+    // reached for the gate config.
+    for (const name of ['vite.config.ts.tmpl', 'vite.config.vanilla.ts.tmpl']) {
+      const source = fs.readFileSync(path.join(templatesDir, name), 'utf8');
+      expect(source, `${name}: needs a jsdom test environment`).toMatch(
+        /test:\s*\{[\s\S]*?environment:\s*'jsdom'/
+      );
+      // The audit spec belongs to `playwright test`. An `include` that sweeps
+      // tests/** makes vitest execute it and fail on `test.describe`.
+      expect(source, `${name}: must exclude tests/design from vitest`).toMatch(
+        /exclude:\s*\[[^\]]*tests\/design/
+      );
+    }
+    const pkg = JSON.parse(fs.readFileSync(path.join(templatesDir, 'package.json.tmpl'), 'utf8'));
+    expect(pkg.devDependencies.jsdom).toBeDefined();
+  });
+
   it('never close a block comment early with a glob', () => {
     for (const name of configTemplates()) {
       const source = fs.readFileSync(path.join(templatesDir, name), 'utf8');

@@ -159,6 +159,7 @@ export function reconcile(pkg, options = {}) {
   const playwrightVersion = tplDev['@playwright/test'] || '^1.65.1';
   const axeVersion = tplDev['@axe-core/playwright'] || '^4.14.0';
   const typesNodeVersion = tplDev['@types/node'] || '^26.6.11';
+  const jsdomVersion = tplDev.jsdom || '^31.0.1';
 
   const next = structuredClone(pkg);
   next.scripts = next.scripts || {};
@@ -278,6 +279,13 @@ export function reconcile(pkg, options = {}) {
   // TS2591 ("Cannot find name 'process'") — the gate then fails on the tooling it
   // just materialized, which the agent is forbidden to fix.
   ensureDev('@types/node', typesNodeVersion, 'process.env in Node-side configs and specs');
+
+  // The react and vanilla templates ship a vitest `test` block with
+  // `environment: 'jsdom'`; without the environment package every component test
+  // dies on `document is not defined` before it asserts anything.
+  if (profile === 'react' || profile === 'vanilla') {
+    ensureDev('jsdom', jsdomVersion, 'vitest jsdom environment for component tests');
+  }
 
   // ---------------------------------------------------------------------------
   // 3. Vite+ aliasing. A plain `vite` next to `vite-plus` installs a second Vite

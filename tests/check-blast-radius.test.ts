@@ -149,6 +149,44 @@ describe('check-blast-radius.sh', () => {
     expect(content).toContain('--reset-breaker');
   });
 
+  it('treats the gate config and the vendored audit spec as protected', () => {
+    // Both were editable in the run that motivated this test. `vite.config.ts` is
+    // where the gate is configured, so an addition there (an `ignorePatterns`, a
+    // rule retuned to `off`) turns the gate off without deleting a line. The
+    // audit spec is the audit: an agent that may edit it can pass accessibility
+    // by weakening the assertions.
+    for (const file of ['vite.config.ts', 'tests/design/design-audit.spec.ts']) {
+      const gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blast-protected-'));
+      try {
+        execFileSync('git', ['init'], { cwd: gitDir });
+        execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: gitDir });
+        execFileSync('git', ['config', 'user.name', 'Test'], { cwd: gitDir });
+        const target = path.join(gitDir, file);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, '// original\n', 'utf8');
+        execFileSync('git', ['add', '.'], { cwd: gitDir });
+        execFileSync('git', ['commit', '-m', 'init'], { cwd: gitDir });
+
+        fs.writeFileSync(target, '// tampered\n', 'utf8');
+
+        try {
+          runBash(scriptPath, ['--check-scope', `--state-dir=${tempStateDir}`], {
+            cwd: gitDir,
+            stdio: 'pipe',
+          });
+          expect.fail(`${file} must be protected`);
+        } catch (error: any) {
+          expect(error.status).toBe(1);
+          const combined = `${error.stdout ?? ''}${error.stderr ?? ''}`;
+          expect(combined).toContain('BLAST RADIUS VIOLATION');
+          expect(combined).toContain(file.split('/')[0]);
+        }
+      } finally {
+        removeDir(gitDir);
+      }
+    }
+  });
+
   it('should detect violations when protected .specify/memory/ is modified', () => {
     const gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blast-protect-test-'));
     try {

@@ -191,4 +191,14 @@ export default defineConfig({
     tabWidth: 2,
     printWidth: 100,
   },
+  // Unit tests run in jsdom, and the accessibility audit under tests/design is
+  // driven by `playwright test` — never by vitest. Vitest's default include picks
+  // that spec up and dies on `test.describe`, which is exactly what happened in a
+  // real run: the agent had to add this block itself, to a file this bundle now
+  // protects. Shipping it here is what makes that protection safe.
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    exclude: ['**/node_modules/**', '**/dist/**', '**/tests/design/**'],
+  },
 });
