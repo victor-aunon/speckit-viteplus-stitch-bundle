@@ -144,6 +144,17 @@ one-file change plus this changelog.
 
 ### Added
 
+- **A documented recovery path for a failed run.** The README explained the
+  self-healing loops but never what to do once one gave up, while
+  `abort_unrepaired` printed commands (`check-blast-radius.sh --reset
+  --source=human`, then `specify workflow resume`) that appeared nowhere in it.
+  Two new sections cover it: *Reading a Failed Run* — including that
+  `failure_recorded` is the circuit breaker counting a failure, **not** a failing
+  gate, and that `regression_tests: unreached` with `tests_executed: 0` means the
+  suite never ran — and *Recovering from an Aborted Run*, with the gate-to-
+  evidence-to-re-run table and the stalled-loop caveat (the fingerprint excludes
+  `.specify/**` and `specs/*/evidence/**` by design).
+
 - **The visual gate actually compares the implementation against the design master.**
   It never did. The design phase forbids shipping binary screenshots and declares
   `designs/<screen-id>.html` the master — correctly, because that is what Stitch

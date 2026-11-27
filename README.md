@@ -242,6 +242,46 @@ Repair agents are explicitly forbidden from using `--allow-no-tests`, `--allow-i
 
 > **When editing `condition:` values, never use parentheses.** The Spec Kit expression engine is a hand-rolled splitter, not a Jinja/Python parser: it splits on top-level ` or `, then ` and `, then comparisons, and it has **no grouping support**. A bracketed sub-expression never reaches a comparison operator, so it resolves as an unknown identifier and evaluates to `False` — silently, with no validation error. `a or b and c` correctly means `a or (b and c)`, so write the flat chain and lean on that precedence. `tests/workflow-expressions.test.ts` guards this: it rejects any `condition` containing brackets and evaluates the three gate conditions against the real evaluator for every gate × profile × progress combination.
 
+### Reading a Failed Run
+
+When `repair_gates` exhausts its attempts, `abort_unrepaired` prints the reason, the telemetry summary and the resume commands. Two of that summary's conventions are easy to misread, and both were misread in practice.
+
+**`failure_recorded` is not a failing gate.** It is the circuit breaker logging one failure against its budget (`details.max_failures`, default `3`). The gate that emitted it may have passed. A real run printed `check-blast-radius ... failure_…` six times beside a quality-gate evidence file that said `"blast_radius": "passed"`. Chase the evidence, not the breaker line: the breaker is a counter, not a verdict.
+
+**The evidence names the gate — and, for the quality gate, what broke.** Each evidence file records where a gate stopped (`failed_step`) and which of its checks passed. `quality-gate.json` additionally carries a `failure` block: `step`, `exit_code`, `output` (the tail of the tool output, up to 120 lines) and `output_file`, which points at the untruncated `quality-gate.log` written beside it. The other gates still record only their status, so for those, re-running the gate remains the only way to see the detailed violation.
+
+`failure.output` is deliberately excluded from the `<gate>.history.jsonl` state comparison: its content drifts on every run (paths, line numbers, counts) without the gate's *state* changing, and including it would append a history line per execution.
+
+| Gate | Evidence (`specs/<feature>/evidence/`) | Re-run (`.specify/scripts/bash/`) |
+| --- | --- | --- |
+| `check-quality-gate` | `quality-gate.json` | `check-quality-gate.sh --fix` |
+| `check-bundle-budget` | `bundle-budget.json` | `check-bundle-budget.sh` |
+| `check-contracts` | `contracts.json` | `check-contracts.sh --require-ui` |
+| `verify-stitch-design` | `stitch-design.json` | `verify-stitch-design.sh --require-ui` |
+| `check-tasks-complete` | `tasks.json` | `check-tasks-complete.sh` |
+| `check-design-artifacts` | `design-artifacts.json` | `check-design-artifacts.sh` |
+
+The `checks` map inside `quality-gate.json` is ordered, and it is the shortest path to the blocker: the first entry marked `failed` is the gate that stopped the run, and everything after it is `unreached`. `regression_tests: unreached` therefore means the suite has **not run** — it is not a test failure, and `tests_executed: 0` is not a count of passing tests. Do not go hunting for a broken test that was never executed.
+
+`.specify/telemetry.jsonl` is the execution journal, not the verdict: it tells you how often each gate ran and how long each repair window took (`bash .specify/scripts/bash/emit-telemetry.sh --summary`). Only the evidence files are authoritative, which is what the auditor re-executes.
+
+### Recovering from an Aborted Run
+
+`abort_unrepaired` exits `1` and prints the commands below, because the blocking cause is often not in the application code:
+
+```bash
+# 1. Reproduce the failing gate for real (see the table above)
+bash .specify/scripts/bash/check-quality-gate.sh --fix
+
+# 2. Clear the circuit breaker, then resume
+bash .specify/scripts/bash/check-blast-radius.sh --reset --source=human
+specify workflow resume
+```
+
+Keep `--source=human` when you do this by hand. A workflow iteration, the operator following this section and an agent retrying are the *same command* in the *same* work tree, so the origin is not inferable from anything else. A reset logged as `unspecified` is the only signal that something other than the documented paths performed it.
+
+If the loop stopped with `[REPAIR LOOP STALLED]` rather than exhausted, re-running will reproduce the result: the guard saw no change to the working tree and committed nothing. The diagnosis is printed above the abort *and* written to `.specify/.repair-loop/reason.txt`. The fingerprint deliberately excludes `.specify/**` and `specs/*/evidence/**`, so a window that only rewrote the tooling or the evidence artifacts counts as **no** progress by design. The most common reason in practice is that the offending file sits inside the blast-radius protected set, where no legal repair exists — the fix belongs in the supporting configuration, or with a human.
+
 ### Step 1: Start a New Feature (`specify`)
 Trigger the cycle with a prompt describing what you want to build:
 ```bash
@@ -311,7 +351,7 @@ The agent executes tasks phase by phase.
 ### Step 9: Imperative Shell Quality Gates & Self-Healing (`bootstrap_env`, `gate_*`, `repair_gates`)
 Once tasks are complete, the workflow engine executes deterministic shell gates in the host OS with `continue_on_error: true`:
 1. **`bootstrap_deps`**: Ensures `node_modules` exists via `vp install` or `npm install`.
-2. **`bootstrap_env`**: Runs `bootstrap-project-env.sh` — deterministic, idempotent `git init` + baseline commit (`.specify/workflows/runs/` and telemetry ignored) and Playwright config/design-audit materialization. The same script also runs first, as `bootstrap_env_early`, before any agent step. No LLM involved: these were never application bugs. It also runs **first** (`bootstrap_env_early`, right after `guardrails` and before any agent step), so no gate ever audits an ancestor repository — the `$HOME` trap — while spec, plan or designs are being written. The baseline commit uses `--allow-empty`, so a project with nothing to stage still gets a `HEAD` for `git diff HEAD`.
+2. **`bootstrap_env`**: Runs `bootstrap-project-env.sh` — deterministic, idempotent `git init` + baseline commit and Playwright config/design-audit materialization. Machine-local state (`.specify/.repair-loop/**`, `.specify/.circuit-breaker-state`, `.specify/telemetry.jsonl`, `.specify/workflows/runs/**`) is excluded from the commit by explicit pathspec, because it is rewritten on every run and committing it turns the history into a log of the loop's own bookkeeping — see [The tooling baseline commit](#9-bootstrap-project-envsh-deterministic-project-bootstrap). The same script also runs first, as `bootstrap_env_early`, before any agent step. No LLM involved: these were never application bugs. It also runs **first** (`bootstrap_env_early`, right after `guardrails` and before any agent step), so no gate ever audits an ancestor repository — the `$HOME` trap — while spec, plan or designs are being written. The baseline commit uses `--allow-empty`, so a project with nothing to stage still gets a `HEAD` for `git diff HEAD`.
 3. **`gate_quality`**: Runs `check-quality-gate.sh` (Vite+ / Oxfmt / Oxlint / Clean Architecture boundaries / executed-test count / compilation).
 4. **`gate_bundle`**: Runs `check-bundle-budget.sh` (production asset limits <250KB per chunk, <1000KB total).
 5. **`gate_runtime`** (when `has_ui: false`): Runs `check-dev-entrypoint.sh --require-contract` — starts the command declared in `specs/<feature>/runtime.json`, probes its port/readiness path, and fails without HTTP 2xx. Treats an already-occupied port as an error instead of grading a process it did not start.
@@ -832,6 +872,12 @@ Resolves environment, tooling, and configuration prerequisites deterministically
    - Creates `.git` when the project root has none and records an initial baseline commit so diff-based gates (`anti_tampering`, `blast_radius`) have a `HEAD`.
    - `.gitignore` is populated with `node_modules/`, `dist/`, `.specify/workflows/runs/` and `.specify/telemetry.jsonl` (run state contains prompt transcripts, so it must never enter the snapshot).
    - In pre-existing git repositories, commits untracked tooling assets (`.specify/scripts/**`, `extensions.yml`, `memory/`, `templates/`) into a tooling baseline snapshot (`chore: baseline specify tooling snapshot`), ensuring `check-blast-radius.sh` starts clean and avoids false-positive scope violations.
+
+     **This commit can fire more than once — expect one per repair iteration.** `reset_breaker` re-runs this script, so a run that repairs three times leaves three of these commits. They are machine bookkeeping, not work: the author is `spec-kit bootstrap`, the message is fixed, and they are safe to squash.
+
+     **What it does and does not capture.** Machine-local state (`.specify/.repair-loop/**`, `.specify/.circuit-breaker-state`, `.specify/telemetry.jsonl`, `.specify/workflows/runs/**`) is excluded by pathspec, and `.specify/.gitignore` carries a managed block for the same paths, because the CLI-provided file covers only `feature.json` and the extension overrides. `repair-loop-guard.sh` additionally writes its own `.gitignore` inside `.specify/.repair-loop/`, so that directory stays untracked even if the block is lost.
+
+     **The snapshot also stages pending edits to `.gitignore`, `AGENTS.md`, `playwright.design.config.ts` and `tests/design/`.** Those are real content changes, and folding them into a commit titled `chore: baseline …` hides them from every diff-based gate — blast radius and anti-tampering included. If one of those paths has a meaningful edit in flight, commit it yourself with an honest message before the next bootstrap run.
 2. **`package.json` Quality Scripts & UI Dependencies**:
    - Provisions a starter `package.json` if absent.
    - If `package.json` exists, non-destructively guarantees missing baseline scripts (`dev`, `build`, `test`, `check-quality`, `verify-design`) based on the detected project profile (`react`, `fullstack`, `api`, `vanilla`). User-defined scripts are never overwritten; only a value the bundle itself wrote (a bundle default) is retargeted when the detected technology changes or the manifest is a fresh seed.
