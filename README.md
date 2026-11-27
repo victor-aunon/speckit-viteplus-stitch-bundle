@@ -66,15 +66,15 @@ Run inside the root directory of any repository initialized with Spec Kit (`spec
 ### Option A: Install from a specific GitHub Release (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --release=v2.0.0
+curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --release=v2.1.0
 ```
 
 ### Option B: Install using a downloaded Release `.zip`
 
-If you downloaded `viteplus-stitch-2.0.0.zip` from GitHub Releases:
+If you downloaded `viteplus-stitch-2.1.0.zip` from GitHub Releases:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --zip=./viteplus-stitch-2.0.0.zip
+curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitch-bundle/main/scripts/install.sh | bash -s -- --zip=./viteplus-stitch-2.1.0.zip
 ```
 
 *(Or unzip it and run `bash scripts/install.sh`)*
@@ -93,7 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitc
 |---|---|
 | `--target-dir=<path>` | Project root to install into (default: current directory) |
 | `--profile=<name>` | `react` \| `vanilla` \| `api` \| `fullstack`. Declares the project archetype **before** any file exists. Default: auto-detected from the framework config, the framework dependency, or a `src/features` + `index.html` heuristic; falls back to `react`. |
-| `--release=<tag>` | Install from a specific GitHub Release tag (e.g. `v2.0.0`) |
+| `--release=<tag>` | Install from a specific GitHub Release tag (e.g. `v2.1.0`) |
 | `--zip=<path>` | Install from a locally downloaded release `.zip` |
 | `--allow-toolchain-downgrade` | Move `vite` back to the bundle pin even when the project already runs a **newer** core. Default: keep the newer one and warn (see [Upgrading](#upgrading-a-project-that-already-installed-this-bundle)). |
 | `--help` | Usage |

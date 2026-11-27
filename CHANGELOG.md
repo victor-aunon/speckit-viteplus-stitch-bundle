@@ -10,6 +10,45 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.1.0] - 2026-11-27
+
+### Fixed
+
+- **The gates could be satisfied by moving the things they measure.** Three
+  holes, all of them an agent editing the apparatus instead of the code:
+
+  *The design master was editable mid-run.* `verify-stitch-design.sh` re-renders
+  the goldens from `designs/<screen>.html` on every run, so an agent that edits
+  the master is compared against its own edit. A real run did exactly that: it
+  added `min-height: 2.75rem` to a screen at 13:39, the visual gate re-ran at
+  13:44 and passed. The auditor never saw it, because the audit protocol is
+  explicitly "from-scratch, not a diff review". `check-design-artifacts.sh` now
+  seals the master (new `design-seal.sh`) into `design-artifacts.json`, and the
+  visual gate recomputes the seal and refuses to grade a reference that moved,
+  naming `check-design-artifacts.sh` as the deliberate way to re-seal.
+
+  *`vite.config.ts` and `tests/design/**` were editable.* The gate config is where
+  the gate is configured, and the vendored audit spec is the audit. Both are now
+  `PROTECTED_PATTERNS`. That only holds because the React and vanilla templates
+  now ship the vitest `test` block (`jsdom`, and `exclude: ['tests/design/**']`)
+  the run had to add by hand to make the suite execute at all — protecting a file
+  the template does not provision is how a workflow becomes unrepairable.
+
+  *The anti-tampering check only audited deletions.* It grepped `^-` lines for a
+  deleted rule, so one added `ignorePatterns: ['src/**']` took every rule away
+  from `src/` and the gate reported green. Additions are audited now: added
+  `ignorePatterns`, `typeCheck`/`typeAware` set to `false`, and quality rules
+  retuned to `off`/`warn` are all violations. The check still reads the working
+  tree, so a committed decision stays audited history and an unrecorded edit does
+  not.
+
+  What none of this fixes: an agent can still re-run `check-design-artifacts.sh`
+  to re-seal a moved master. That is deliberate — it is a logged, visible act,
+  which is the difference between a decision and an accident — but it is a
+  detector, not a lock.
+
 ### Changed
 
 - **Reinstalling the bundle no longer downgrades a project's toolchain.** The
