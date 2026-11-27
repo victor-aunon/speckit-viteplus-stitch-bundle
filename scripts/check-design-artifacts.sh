@@ -117,7 +117,15 @@ write_evidence() {
   if [ -n "$EVIDENCE_DIR" ]; then
     mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
     if command -v node >/dev/null 2>&1; then
+      # Seal the design master NOW, while it is the thing being approved. The
+      # visual gate recomputes it and refuses to grade an implementation against a
+      # reference that moved. See design-seal.sh for the incident.
+      DESIGNS_SEAL=""
+      if [ -x "$SCRIPT_DIR/design-seal.sh" ] || [ -f "$SCRIPT_DIR/design-seal.sh" ]; then
+        DESIGNS_SEAL="$(bash "$SCRIPT_DIR/design-seal.sh" --designs-dir="$DESIGNS_DIR" 2>/dev/null || true)"
+      fi
       EV_DESIGNS_DIR="$DESIGNS_DIR" \
+      EV_DESIGNS_SEAL="$DESIGNS_SEAL" \
       EV_FEATURE_DIR="$FEATURE_DIR" \
       node -e '
         const fs = require("fs");
@@ -136,6 +144,7 @@ write_evidence() {
           previous_status: previousStatus,
           reason: status === "skipped" ? "no_designs_declared" : undefined,
           designs_dir: process.env.EV_DESIGNS_DIR || undefined,
+          designs_seal: process.env.EV_DESIGNS_SEAL || undefined,
           feature_dir: process.env.EV_FEATURE_DIR || undefined,
           tokens_count: Number(tokensCount) || 0,
           screens_count: Number(screensCount) || 0,

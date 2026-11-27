@@ -229,6 +229,40 @@ fi
 
 echo "✓ Design directory found: $FEATURE_DIR/designs"
 
+# ------------------------------------------------------------------------------
+# The design master must not have moved since the design gate approved it
+# ------------------------------------------------------------------------------
+# The goldens below are re-rendered from `designs/<id>.html` on every run, so if
+# the reference can change between runs this gate grades the implementation
+# against whatever the agent last edited. A real run added `min-height: 2.75rem`
+# to a screen mid-repair and passed the visual check five minutes later: the audit
+# had moved its own reference. Sealing it at the design gate and comparing it here
+# is the difference between an audit and a mirror.
+SEAL_SCRIPT="$SCRIPT_DIR/design-seal.sh"
+SEAL_EVIDENCE="${EVIDENCE_DIR:-$FEATURE_DIR/evidence}/design-artifacts.json"
+if [ -f "$SEAL_SCRIPT" ] && [ -f "$SEAL_EVIDENCE" ]; then
+  SEALED="$(sed -n 's/.*"designs_seal": *"\([^"]*\)".*/\1/p' "$SEAL_EVIDENCE" 2>/dev/null | head -1)"
+  if [ -n "$SEALED" ]; then
+    CURRENT_SEAL="$(bash "$SEAL_SCRIPT" --designs-dir="$FEATURE_DIR/designs" 2>/dev/null || true)"
+    if [ "$CURRENT_SEAL" != "$SEALED" ]; then
+      echo ""
+      echo "❌ [VISUAL GATE FAILED]: the design master changed after the design gate approved it."
+      echo "   sealed:  $SEALED"
+      echo "   current: $CURRENT_SEAL"
+      echo "   $FEATURE_DIR/designs/ is the reference this gate grades against. Editing it"
+      echo "   during implementation or repair makes the comparison meaningless: the audit"
+      echo "   would be grading the implementation against itself."
+      echo "   If the design really has to change, do it deliberately:"
+      echo "     bash .specify/scripts/bash/check-design-artifacts.sh   # re-seals, and logs it"
+      echo "   then commit the new master together with the implementation it describes."
+      write_evidence "failed" 0
+      exit 1
+    fi
+    echo "✓ Design master unchanged since the design gate (sealed ${SEALED:0:12})"
+  fi
+fi
+
+
 # Strictly validate the Stitch token source of truth before rendering.
 TOKENS_FILE="$FEATURE_DIR/designs/tokens.css"
 HAS_UI_ARTIFACTS=false

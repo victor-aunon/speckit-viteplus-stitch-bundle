@@ -42,6 +42,8 @@ describe('Bundle Installer Script E2E', () => {
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-env-config.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/verify-stitch-design.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-blast-radius.sh'))).toBe(true);
+    // The visual gate recomputes the design seal the design gate recorded.
+    expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/design-seal.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-contracts.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/check-bundle-budget.sh'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/scripts/bash/emit-telemetry.sh'))).toBe(true);

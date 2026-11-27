@@ -142,6 +142,7 @@ cp "$BUNDLE_ROOT/scripts/reconcile-task-ledger.sh" "$SPECIFY_DIR/scripts/bash/re
 # The only legitimate writer of an untagged tasks.md checkbox.
 cp "$BUNDLE_ROOT/scripts/mark-task-done.sh" "$SPECIFY_DIR/scripts/bash/mark-task-done.sh"
 cp "$BUNDLE_ROOT/scripts/repair-loop-guard.sh" "$SPECIFY_DIR/scripts/bash/repair-loop-guard.sh"
+cp "$BUNDLE_ROOT/scripts/design-seal.sh" "$SPECIFY_DIR/scripts/bash/design-seal.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-quality-gate.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/check-env-config.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/verify-stitch-design.sh"
@@ -159,6 +160,7 @@ chmod +x "$SPECIFY_DIR/scripts/bash/check-bundle-preflight.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/reconcile-task-ledger.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/mark-task-done.sh"
 chmod +x "$SPECIFY_DIR/scripts/bash/repair-loop-guard.sh"
+chmod +x "$SPECIFY_DIR/scripts/bash/design-seal.sh"
 
 # 3. Copy templates
 if [ -d "$BUNDLE_ROOT/templates" ]; then

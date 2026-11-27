@@ -153,6 +153,7 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/check-tasks-complete.sh` | Task-ledger completion gate (fails on unchecked tasks) |
 | `.specify/scripts/bash/reconcile-package-manifest.mjs` | Idempotent `package.json` reconciler (baseline scripts + the dependencies they execute); used by the installer and the bootstrap |
 | `.specify/scripts/bash/check-verification-verdict.sh` | Machine verdict gate (fails unless `verification.json` says `pass`) |
+| `.specify/scripts/bash/design-seal.sh` | Content seal of the design master, so the visual gate cannot grade against a reference that moved |
 | `.specify/scripts/bash/emit-telemetry.sh` | Structured telemetry & observability event logger |
 | `.specify/templates/` | `vite.config.ts`, Playwright config, env config, and design-audit templates |
 | `vite.config.ts` (project root, only when absent) | Vite+ config with the React plugin registered (`plugins: [react()]`) so Fast Refresh works |
@@ -837,6 +838,17 @@ Runs route/component contracts, verifies `tokens.css` against DOM `:root` comput
 > **💡 Graceful Degradation / Auto-Bypass:** If `specs/<feature>/designs` does not exist (e.g. backend features run with `has_ui=false` or UI features run with `enable_stitch=false`), this script automatically **skips execution and exits with code 0**.
 >
 > **🖼️ Where the golden screenshots come from.** The design phase forbids shipping binary screenshots and declares `designs/<screen-id>.html` the master (that is what Stitch returns). `scripts/render-design-goldens.mjs` therefore derives the goldens from that HTML on every run — same browser, same viewport from the manifest, same deterministic render CSS, same masks — into `tests/design/__snapshots__/`, which is **git-ignored**. The HTML is the committed source of truth; the PNGs are build output. A missing golden is a hard failure (`updateSnapshots: 'none'`), never a silent pass: the previous `continue` on a missing `designs/<id>.png` made the pixel test report success while comparing nothing.
+
+> **🔒 The design master is sealed.** Because the goldens are derived from
+> `designs/<screen-id>.html` on every run, a reference that can change between
+> runs makes this gate grade the implementation against itself. `check-design-artifacts.sh`
+> records a content seal of `designs/` in `design-artifacts.json`; this gate
+> recomputes it and **fails** if the master moved, naming
+> `check-design-artifacts.sh` as the deliberate way to re-seal. A real run added
+> `min-height: 2.75rem` to a screen mid-repair and passed the visual check five
+> minutes later, which is exactly the failure this closes. `designs/` is not a
+> blast-radius protected path — the design phase legitimately writes it — so the
+> seal, not a permission, is what keeps the reference honest.
 
 > **⚠️ Structural vs visual:** `--tokens-only` only validates `tokens.css` structure. It writes `stitch-design-tokens.json` (never `stitch-design.json`), sets `full_visual_verification: false`, and is **rejected with exit 2 when combined with `--require-ui`**. The Playwright config and design-audit spec are resolved from the project root or `.specify/templates/` (including the `.tmpl` sources); if neither exists the gate exits 2 with the actionable path instead of failing with a cryptic "no tests found".
 
