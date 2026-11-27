@@ -168,6 +168,18 @@ export default defineConfig({
           'max-lines-per-function': 'off',
         },
       },
+      // The vendored audit spec is tooling, not application code: it is
+      // materialized from the bundle and the agent may not edit it. Grading it
+      // against the application complexity and nesting budget only produces
+      // errors nobody is allowed to fix.
+      {
+        files: ['**/tests/design/**'],
+        rules: {
+          complexity: 'off',
+          'max-depth': 'off',
+          'max-lines-per-function': 'off',
+        },
+      },
     ],
   },
   fmt: {

@@ -12,6 +12,24 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- **The type environment was missing, so the gate graded code the agent never
+  wrote.** With `lint.options.typeCheck: true` the gate type-checks the project,
+  and nothing supplied the types it needs. `@types/node` was never declared, so
+  `process.env` in `playwright.design.config.ts` and the design audit reported
+  TS2591; and `import.meta.env` plus the `*.css` side-effect imports reported
+  TS2339/TS2882 because `vite` is aliased to @voidzero-dev/vite-plus-core, whose
+  package root ships no `client.d.ts` — so nothing referenced `vite/client`.
+  Measured on a real project: 19 errors, 11 of them from the tooling's own files
+  and 2 more from the config's own Vite+ blocks. The bundle now declares
+  `@types/node` in the baseline devDependencies (template plus reconciler, so
+  brownfield manifests get it too) and materializes `vite-env.d.ts`. On that
+  project the count went 19 → 7 → 2, and both survivors live in `src/`, where the
+  agent can actually work.
+
+  The vendored `tests/design/design-audit.spec.ts` is also exempted from the
+  application complexity and nesting budget. It is tooling the agent may not
+  edit, so its only possible grading outcome was an error nobody could fix.
+
 - **The quality gate could not pass: it failed on its own artifacts, and its own
   remedy made the tree untouchable.** Two mechanisms, both unrepairable from
   inside the loop, closed every exit.

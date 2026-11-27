@@ -1,0 +1,18 @@
+/// <reference types="vite/client" />
+
+/**
+ * Vite client types: `import.meta.env` and the `*.css` side-effect imports.
+ *
+ * `vite` is aliased to `@voidzero-dev/vite-plus-core`, whose package root ships
+ * no `client.d.ts` — but the `vite/client` type entry does resolve through its
+ * `exports` map, and that is the file declaring both. Without this reference,
+ * `lint.options.typeCheck` reports TS2339 ("Property 'env' does not exist on type
+ * 'ImportMeta'") for every `import.meta.env` read and TS2882 for every
+ * stylesheet import, which means the quality gate fails on the type environment
+ * instead of on the code.
+ *
+ * Kept at the project root rather than in `src/` on purpose: it is tooling, not
+ * application code, so an agent scoped to `src/features/<slice>` has no reason to
+ * reach it.
+ */
+export {};

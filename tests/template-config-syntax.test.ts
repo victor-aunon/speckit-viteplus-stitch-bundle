@@ -111,6 +111,33 @@ describe('vite config templates', () => {
     }
   });
 
+  it('exempt the vendored audit spec from the application complexity budget', () => {
+    // `tests/design/design-audit.spec.ts` is materialized from the bundle and the
+    // agent may not edit it. Its CSS token resolver legitimately exceeds the
+    // application limits (complexity 10, max-depth 3), so grading it there only
+    // produces errors nobody is allowed to fix — the gate then fails forever.
+    for (const name of configTemplates()) {
+      const source = fs.readFileSync(path.join(templatesDir, name), 'utf8');
+      const designOverride = source.slice(source.indexOf('**/tests/design/**'));
+      expect(designOverride, `${name}: missing tests/design override`).not.toBe('');
+      expect(designOverride).toContain("complexity: 'off'");
+      expect(designOverride).toContain("'max-depth': 'off'");
+    }
+  });
+
+  it('ship a vite-env.d.ts declaring the vite/client types', () => {
+    // Nothing declares `import.meta.env` or the `*.css` side-effect imports on its
+    // own: `vite` is aliased to @voidzero-dev/vite-plus-core, whose root has no
+    // `client.d.ts`. Without this the type-check reports TS2339/TS2882 in code the
+    // agent did not write.
+    const envTemplate = path.join(templatesDir, 'vite-env.d.ts.tmpl');
+    expect(fs.existsSync(envTemplate)).toBe(true);
+    expect(fs.readFileSync(envTemplate, 'utf8')).toContain('reference types="vite/client"');
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(templatesDir, 'package.json.tmpl'), 'utf8'));
+    expect(pkg.devDependencies['@types/node']).toBeDefined();
+  });
+
   it('never close a block comment early with a glob', () => {
     for (const name of configTemplates()) {
       const source = fs.readFileSync(path.join(templatesDir, name), 'utf8');

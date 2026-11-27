@@ -45,6 +45,15 @@ describe('reconcile-package-manifest (pure)', () => {
     expect(notes.join('\n')).toContain('vite-plus');
   });
 
+  it('declares the Node types the Node-side configs and specs need', () => {
+    // `playwright.design.config.ts`, `tests/design/design-audit.spec.ts` and the
+    // Vite config itself read process.env. With typeCheck on and no Node types,
+    // each reports TS2591 and the quality gate fails on the tooling it just
+    // materialized — which the agent is forbidden to edit.
+    const { manifest } = reconcileWith(emptyManifest(), { profile: 'react', framework: 'vite' });
+    expect(manifest.devDependencies['@types/node']).toBe(template.devDependencies['@types/node']);
+  });
+
   it('gives an API profile a Node runtime and vp pack, never the Vite app build', () => {
     const { manifest } = reconcileWith(emptyManifest(), { profile: 'api', framework: 'vite' });
 

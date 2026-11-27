@@ -133,6 +133,7 @@ export function reconcile(pkg, options = {}) {
   const tsxVersion = tplDev.tsx || '^4.23.15';
   const playwrightVersion = tplDev['@playwright/test'] || '^1.65.1';
   const axeVersion = tplDev['@axe-core/playwright'] || '^4.14.0';
+  const typesNodeVersion = tplDev['@types/node'] || '^26.6.11';
 
   const next = structuredClone(pkg);
   next.scripts = next.scripts || {};
@@ -245,6 +246,13 @@ export function reconcile(pkg, options = {}) {
     ensureDev('@playwright/test', playwrightVersion, 'visual audit gate');
     ensureDev('@axe-core/playwright', axeVersion, 'accessibility audit');
   }
+
+  // `playwright.design.config.ts`, `tests/design/design-audit.spec.ts` and the
+  // project's own Vite config run on the Node side and read `process.env`. With
+  // `lint.options.typeCheck` on and no Node types, every one of them reports
+  // TS2591 ("Cannot find name 'process'") — the gate then fails on the tooling it
+  // just materialized, which the agent is forbidden to fix.
+  ensureDev('@types/node', typesNodeVersion, 'process.env in Node-side configs and specs');
 
   // ---------------------------------------------------------------------------
   // 3. Vite+ aliasing. A plain `vite` next to `vite-plus` installs a second Vite

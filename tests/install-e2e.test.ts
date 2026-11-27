@@ -56,6 +56,12 @@ describe('Bundle Installer Script E2E', () => {
     expect(fs.existsSync(path.join(tempDir, '.specify/templates/design-audit.spec.ts'))).toBe(true);
     // Non-UI features declare their runtime with this template.
     expect(fs.existsSync(path.join(tempDir, '.specify/templates/runtime.json.tmpl'))).toBe(true);
+    // `import.meta.env` and the `*.css` side-effect imports are declared by
+    // `vite/client`, which nothing references on its own: without this file
+    // the type-check fails on TS2339/TS2882 in code the agent did not write.
+    const viteEnv = path.join(tempDir, 'vite-env.d.ts');
+    expect(fs.existsSync(viteEnv)).toBe(true);
+    expect(fs.readFileSync(viteEnv, 'utf8')).toContain('reference types="vite/client"');
     expect(fs.existsSync(path.join(tempDir, '.specify/extensions.yml'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.specify/workflows/viteplus-stitch/GUARDRAILS.md'))).toBe(true);
 

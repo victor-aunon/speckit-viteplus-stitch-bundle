@@ -165,6 +165,17 @@ for tmpl in "playwright.design.config.ts" "design-audit.spec.ts"; do
   fi
 done
 
+# The type environment Vite+ expects. `vite` is aliased to
+# @voidzero-dev/vite-plus-core, whose package root ships no `client.d.ts`, so
+# nothing declares `import.meta.env` or the `*.css` side-effect imports on its
+# own. With `lint.options.typeCheck` on, that is TS2339/TS2882 on files the agent
+# did not write, and the gate fails on the type environment rather than the code.
+VITE_ENV_FILE="$TARGET_DIR/vite-env.d.ts"
+if [ ! -f "$VITE_ENV_FILE" ] && [ -f "$SPECIFY_DIR/templates/vite-env.d.ts.tmpl" ]; then
+  cp "$SPECIFY_DIR/templates/vite-env.d.ts.tmpl" "$VITE_ENV_FILE"
+  echo "✓ Initialized vite-env.d.ts (vite/client types: import.meta.env, CSS modules)"
+fi
+
 # 3b. Keep machine-local state out of git
 #
 # `.specify/` accumulates state that is rewritten on every single run: the repair
