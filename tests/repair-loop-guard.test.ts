@@ -261,6 +261,36 @@ describe('repair-loop-guard.sh', () => {
     expect(fs.existsSync(path.join(tempDir, '.specify/.repair-loop/window-step'))).toBe(false);
   });
 
+  it('counts a commit as progress', () => {
+    // `git status` and `git diff HEAD` are BOTH empty once the agent commits, so
+    // a window that ended in a commit used to look identical to one that did
+    // nothing. A real run reported "stalled" after a 13-minute window that had
+    // fixed things, and the loop stopped right after its best iteration.
+    initRepo();
+    expect(runGuard(['--snapshot'], tempDir).status).toBe(0);
+
+    write('tracked.txt', 'a\nb\n');
+    git(tempDir, ['add', '-A']);
+    git(tempDir, ['commit', '-qm', 'fix: real work']);
+
+    const { status, stdout } = runGuard(['--assess'], tempDir);
+    expect(status).toBe(0);
+    expect(stdout).toContain('changed the working tree');
+  });
+
+  it('still reports a stall when nothing happened at all', () => {
+    initRepo();
+    expect(runGuard(['--snapshot'], tempDir).status).toBe(0);
+    expect(runGuard(['--assess'], tempDir).status).toBe(1);
+  });
+
+  it('handles a repository with no HEAD and no changes', () => {
+    git(tempDir, ['init', '-q', '.']);
+    fs.writeFileSync(path.join(tempDir, 'a.txt'), 'a\n', 'utf8');
+    expect(runGuard(['--snapshot'], tempDir).status).toBe(0);
+    expect(runGuard(['--assess'], tempDir).status).toBe(1);
+  });
+
   it('treats a repository with no commits as a valid baseline', () => {
     // `git diff HEAD` has no HEAD to diff against here; the guard must still
     // work instead of erroring out and blocking the loop.

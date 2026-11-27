@@ -150,6 +150,15 @@ build_fingerprint() {
     return 1
   fi
 
+  # A COMMIT IS PROGRESS TOO.
+  #
+  # `git status` and `git diff HEAD` are BOTH empty once the agent commits its
+  # work, so a window that ended in a commit looked byte-identical to a window
+  # that did nothing. In a real run that produced a false "stalled" verdict after
+  # a 13-minute window that had actually fixed things, and the loop stopped right
+  # after the most productive iteration. The tip SHA is what distinguishes them.
+  git rev-parse HEAD 2>/dev/null || printf '%s\n' 'no-head'
+
   # Paths and status codes for everything git tracks or sees as untracked.
   git status --porcelain --untracked-files=all -- . "${EXCLUDES[@]}" 2>/dev/null || true
 
@@ -257,12 +266,19 @@ cmd_assess() {
   if [ "$previous" = "$current" ]; then
     mkdir -p "$STATE_DIR" 2>/dev/null || true
     {
-      echo "The repair agent changed nothing in the working tree during this iteration."
+      echo "This iteration produced no observable progress: the working tree is"
+      echo "unchanged and HEAD did not move."
       echo "Repeating the same window would reproduce the same failure, so the"
       echo "remaining repair attempts were not spent."
       echo ""
-      echo "Treat this failure as NOT repairable by the autonomous loop:"
-      echo "  1. Read the evidence under specs/<feature>/evidence/."
+      echo "What counts as progress: any change to the tracked/untracked tree"
+      echo "(excluding .specify/**, specs/*/evidence/** and build output) or a new"
+      echo "commit. Rewriting only the evidence files does NOT count, by design."
+      echo ""
+      echo "Treat this failure as NOT repairable by the autonomous loop, unless the"
+      echo "window genuinely could not touch anything:"
+      echo "  1. Read the evidence under specs/<feature>/evidence/ and the gate output"
+      echo "     above; the real cause is almost always named there."
       echo "  2. If the offending file is in a protected path (see"
       echo "     check-blast-radius.sh), change the supporting configuration instead"
       echo "     of the protected file, or escalate to a human."

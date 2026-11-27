@@ -12,6 +12,22 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- **A commit was invisible to the stall detector, producing false "no progress"
+  verdicts.** The progress fingerprint hashed `git status` plus `git diff HEAD`,
+  and BOTH are empty once the agent commits its work. A window that ended in a
+  commit therefore looked byte-identical to a window that did nothing: a real run
+  reported `REPAIR LOOP STALLED` after a 13-minute window that had actually fixed
+  the bundle and the contracts, and the loop stopped right after its most
+  productive iteration. The fingerprint now includes the tip SHA
+  (`git rev-parse HEAD`), so advancing history counts as progress while a window
+  that only rewrote `specs/*/evidence/**` still does not. Reproduced before the
+  fix with a repository, a snapshot, a real edit and a commit.
+
+  The stall message now states exactly what is measured — tree change or new
+  commit, evidence rewrites excluded — instead of asserting the agent "changed
+  nothing", and the abort banner says the same.
+
+
 - **An untagged checkbox is now written by a script, not by the agent.** "Tick
   only after the gate passes" was prose, so an agent that swept every box at the
   end was indistinguishable from one that verified each task — and in a real run

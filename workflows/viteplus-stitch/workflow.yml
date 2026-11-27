@@ -704,8 +704,9 @@ steps:
             run: |
               echo "" >/dev/tty 2>/dev/null || true
               if [ -s .specify/.repair-loop/reason.txt ]; then
-                echo "❌ [REPAIR LOOP STALLED]: the last repair window changed nothing." >/dev/tty 2>/dev/null || true
-                echo "   The loop stopped early rather than repeating an identical failure." >/dev/tty 2>/dev/null || true
+                echo "❌ [REPAIR LOOP STALLED]: the last repair window produced no tree change and no commit." >/dev/tty 2>/dev/null || true
+                echo "   The loop stopped early rather than repeating an identical failure. A commit counts" >/dev/tty 2>/dev/null || true
+                echo "   as progress; rewriting only evidence files does not." >/dev/tty 2>/dev/null || true
                 cat .specify/.repair-loop/reason.txt >/dev/tty 2>/dev/null || true
               else
                 echo "❌ [REPAIR LOOP EXHAUSTED]: gates are still failing after 3 repair attempts." >/dev/tty 2>/dev/null || true
