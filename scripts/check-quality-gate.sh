@@ -62,6 +62,12 @@ SCOPE_DIR=""
 RESET_BREAKER=false
 FEATURE_DIR=""
 EVIDENCE_DIR=""
+# Populated only when the gate actually fails. The evidence used to record WHICH
+# check died and nothing else, so reading it after an abort never told you what
+# to fix and the only path forward was re-running the gate by hand.
+FAILURE_OUTPUT=""
+FAILURE_EXIT=""
+FAILURE_LOG=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -166,6 +172,28 @@ emit_gate_telemetry() {
   fi
 }
 
+# Persist what the tool actually printed.
+#
+# Two destinations on purpose: the full log lands next to the evidence (the JSON
+# keeps a bounded tail so it stays readable and the history line stays small), and
+# the same tail is embedded so a summary is useful on its own.
+capture_failure_output() {
+  local source_log="$1"
+  FAILURE_EXIT="$CHECK_STATUS"
+  [ -f "$source_log" ] || return 0
+
+  if [ -n "$EVIDENCE_DIR" ] && mkdir -p "$EVIDENCE_DIR" 2>/dev/null; then
+    if cp "$source_log" "$EVIDENCE_DIR/quality-gate.log" 2>/dev/null; then
+      FAILURE_LOG="quality-gate.log"
+    fi
+  fi
+
+  # The tail, not the head: the tool banner is at the top and the violations are
+  # at the bottom. 120 lines names the failures without turning the evidence into
+  # a log dump.
+  FAILURE_OUTPUT="$(tail -n 120 "$source_log" 2>/dev/null | cut -c1-500 || true)"
+}
+
 write_evidence() {
   local status="$1"
   local failed_step="${2:-none}"
@@ -180,6 +208,9 @@ write_evidence() {
       EV_SKIP_TESTS="$SKIP_TESTS" \
       EV_SKIP_BUILD="$SKIP_BUILD" \
       EV_TESTS_EXECUTED="$TESTS_EXECUTED" \
+      EV_FAILURE_OUTPUT="$FAILURE_OUTPUT" \
+      EV_FAILURE_EXIT="$FAILURE_EXIT" \
+      EV_FAILURE_LOG="$FAILURE_LOG" \
       EV_REGRESSION_OVERRIDE="$REGRESSION_OVERRIDE" \
       EV_GIT_TOPLEVEL="$GIT_TOPLEVEL" \
       EV_PROJECT_ROOT="$PROJECT_ROOT" \
@@ -206,6 +237,19 @@ write_evidence() {
           return stepName === "circuit_breaker" ? "healthy" : "passed";
         };
         const testsExecuted = Number(env.EV_TESTS_EXECUTED);
+        const failureExit = Number(env.EV_FAILURE_EXIT);
+        const failureOutput = env.EV_FAILURE_OUTPUT || "";
+        // What the tool said, not just which check died. Absent on a passing run
+        // so a stale failure can never be read as current.
+        const failure =
+          status === "failed" && failureOutput
+            ? {
+                step: failedStep !== "none" ? failedStep : undefined,
+                exit_code: Number.isFinite(failureExit) ? failureExit : undefined,
+                output_file: env.EV_FAILURE_LOG || undefined,
+                output: failureOutput,
+              }
+            : undefined;
         let previousStatus;
         try {
           const previous = JSON.parse(fs.readFileSync(outPath, "utf8"));
@@ -223,6 +267,7 @@ write_evidence() {
           git_toplevel: env.EV_GIT_TOPLEVEL || undefined,
           engine: env.EV_ENGINE || undefined,
           tests_executed: Number.isFinite(testsExecuted) ? testsExecuted : undefined,
+          failure,
           checks: {
             circuit_breaker: getStatus("circuit_breaker", 0),
             git_root: getStatus("git_root", 1),
@@ -245,7 +290,12 @@ write_evidence() {
         const historyPath = outPath.replace(/\.json$/, ".history.jsonl");
         const comparable = (entry) => {
           // timestamp and previous_status are bookkeeping, not state.
-          const { timestamp, previous_status, ...rest } = entry;
+          // `failure` is excluded too: its content changes on every run (paths,
+          // line numbers, counts) without the gate STATE changing, so counting
+          // it would append a history line per run and destroy the "only on state
+          // change" contract that makes this trail readable. No apostrophes in
+          // here: this whole block lives inside a single-quoted node -e payload.
+          const { timestamp, previous_status, failure, ...rest } = entry;
           return JSON.stringify(rest);
         };
         let lastHistory = "";
@@ -514,19 +564,31 @@ fi
 echo "Executing vp check (Airbnb Linter + Oxlint + TypeScript Types + Complexity)..."
 
 CHECK_STATUS=0
+# Tee the tool output into a log we own: the evidence must be able to say what
+# broke, not only that something did. `set -o pipefail` makes the pipeline report
+# vp's status, so the guard below still sees the real exit code.
+CHECK_LOG_FILE="${TMPDIR:-/tmp}/speckit-quality-check-$$.log"
+: > "$CHECK_LOG_FILE" 2>/dev/null || true
 if [ "$AUTO_FIX" = true ]; then
-  $VP_CMD check --fix || CHECK_STATUS=$?
+  $VP_CMD check --fix 2>&1 | tee "$CHECK_LOG_FILE" || CHECK_STATUS=$?
 else
-  $VP_CMD check || CHECK_STATUS=$?
+  $VP_CMD check 2>&1 | tee "$CHECK_LOG_FILE" || CHECK_STATUS=$?
 fi
 
 if [ $CHECK_STATUS -ne 0 ]; then
   record_failure
+  capture_failure_output "$CHECK_LOG_FILE"
+  rm -f "$CHECK_LOG_FILE" 2>/dev/null || true
   write_evidence "failed" "code_quality"
   emit_gate_telemetry "failed" "$CHECK_STATUS"
   echo ""
   echo "❌ [QUALITY GATE FAILED]: Violations detected in code (exit code: $CHECK_STATUS)."
   echo "Please fix the issues flagged by Vite+ before proceeding to the next phase."
+  if [ -n "$FAILURE_OUTPUT" ]; then
+    echo ""
+    echo "--- output (tail; full log: ${EVIDENCE_DIR:-.}/${FAILURE_LOG:-quality-gate.log}) ---"
+    printf '%s\n' "$FAILURE_OUTPUT"
+  fi
   exit 1
 fi
 

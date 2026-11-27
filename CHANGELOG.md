@@ -34,6 +34,18 @@ one-file change plus this changelog.
   message and became invisible to the diff-based gates. The README now documents
   both the repetition and that hazard.
 
+- **The quality gate's evidence named the gate but not the violation.**
+  `quality-gate.json` recorded `"failed_step": "code_quality"` and nothing else,
+  while `abort_unrepaired` told the operator to "inspect the evidence below" — so
+  the only way to learn what to fix was to re-run the gate by hand. The gate now
+  tees `vp check` output to a log it owns and records a `failure` block in the
+  evidence: `step`, `exit_code`, `output` (bounded tail) and `output_file`, which
+  points at the untruncated `quality-gate.log` written alongside. `failure` is
+  excluded from the `history.jsonl` state comparison on purpose — its content
+  drifts on every run (paths, line numbers, counts) without the gate's state
+  changing, so including it would append a history line per execution and
+  destroy the append-only-on-change contract.
+
 - **A commit was invisible to the stall detector, producing false "no progress"
   verdicts.** The progress fingerprint hashed `git status` plus `git diff HEAD`,
   and BOTH are empty once the agent commits its work. A window that ended in a

@@ -532,4 +532,109 @@ describe('check-quality-gate.sh', () => {
       removeDir(dir);
     }
   });
+
+  /**
+   * The evidence used to name the gate and nothing else. A real run aborted with
+   * `"failed_step": "code_quality"` and no indication of which rule broke, so the
+   * only way forward was re-running the gate by hand — which is exactly what the
+   * abort message's "inspect the evidence" told the operator they would not need.
+   */
+  function failingCheckProject(outputLine: string): {
+    dir: string;
+    evidenceDir: string;
+    env: NodeJS.ProcessEnv;
+  } {
+    const dir = makeGitProject({
+      'package.json': JSON.stringify(
+        { name: 'vite-app', scripts: { dev: 'vp dev', test: 'vp test' } },
+        null,
+        2
+      ),
+    });
+    const binDir = path.join(dir, 'fakebin');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(binDir, 'vp'),
+      [
+        '#!/usr/bin/env bash',
+        'case "$*" in',
+        `  check*) echo "${outputLine}" ; exit 1 ;;`,
+        'esac',
+        'exit 0',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    fs.chmodSync(path.join(binDir, 'vp'), 0o755);
+    return {
+      dir,
+      evidenceDir: path.join(dir, 'evidence'),
+      env: { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` },
+    };
+  }
+
+  function runFailing(project: ReturnType<typeof failingCheckProject>): void {
+    try {
+      runBash(
+        scriptPath,
+        [`--evidence-dir=${project.evidenceDir}`, '--skip-tests', '--skip-build'],
+        { cwd: project.dir, stdio: 'pipe', env: project.env }
+      );
+      expect.fail('the gate must exit 1 when vp check fails');
+    } catch (error: any) {
+      if (error?.message === 'the gate must exit 1 when vp check fails') throw error;
+      expect(error.status).toBe(1);
+    }
+  }
+
+  it('records what the tool printed in the evidence of a failing gate', () => {
+    const project = failingCheckProject('  x src/App.tsx:3:1  lint/no-unused-vars  FIXME-flaggable');
+    try {
+      runFailing(project);
+
+      const evidence = JSON.parse(
+        fs.readFileSync(path.join(project.evidenceDir, 'quality-gate.json'), 'utf8')
+      );
+      expect(evidence.status).toBe('failed');
+      expect(evidence.failed_step).toBe('code_quality');
+      expect(evidence.failure.output).toContain('FIXME-flaggable');
+      expect(evidence.failure.exit_code).toBe(1);
+
+      // The untruncated log travels next to it.
+      expect(evidence.failure.output_file).toBe('quality-gate.log');
+      expect(
+        fs.readFileSync(path.join(project.evidenceDir, 'quality-gate.log'), 'utf8')
+      ).toContain('FIXME-flaggable');
+    } finally {
+      removeDir(project.dir);
+    }
+  });
+
+  it('does not grow the state history when only the failure output changes', () => {
+    // The history trail is append-only on STATE changes. Folding the tool output
+    // into that comparison would append a line per run (paths, line numbers,
+    // counts all drift) and make the trail useless.
+    const project = failingCheckProject('  x src/App.tsx:3:1  FIXME-first-run');
+    try {
+      runFailing(project);
+      fs.writeFileSync(
+        path.join(project.dir, 'fakebin/vp'),
+        ['#!/usr/bin/env bash', 'case "$*" in', '  check*) echo "  x src/App.tsx:99:1  FIXME-second-run" ; exit 1 ;;', 'esac', 'exit 0', ''].join('\n'),
+        'utf8'
+      );
+      runFailing(project);
+
+      const history = fs
+        .readFileSync(path.join(project.evidenceDir, 'quality-gate.history.jsonl'), 'utf8')
+        .split('\n')
+        .filter(Boolean);
+      expect(history).toHaveLength(1);
+      // The single entry is the FIRST run: the second was suppressed because the
+      // state did not change, even though the tool printed something different.
+      expect(history[0]).toContain('FIXME-first-run');
+      expect(history[0]).not.toContain('FIXME-second-run');
+    } finally {
+      removeDir(project.dir);
+    }
+  });
 });
