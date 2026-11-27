@@ -252,6 +252,46 @@ describe('repair-loop-guard.sh', () => {
     expect(assessed.stdout).toContain('REPAIR LOOP STALLED');
   });
 
+  it('keeps its state out of the project git history', () => {
+    // The managed `.specify/.gitignore` covers only `feature.json` and the
+    // extension overrides, so the state was fully committable.
+    // `bootstrap-project-env.sh` runs `git add .specify` on every repair
+    // iteration, and a real run left six identical
+    // `chore: baseline specify tooling snapshot` commits whose entire content
+    // was this directory plus `.circuit-breaker-state`.
+    initRepo();
+
+    expect(runGuard(['--snapshot']).status).toBe(0);
+
+    const ignoreFile = path.join(tempDir, '.specify/.repair-loop/.gitignore');
+    expect(fs.existsSync(ignoreFile)).toBe(true);
+    expect(fs.readFileSync(ignoreFile, 'utf8').trim()).toBe('*');
+
+    // Nothing the guard wrote may be stageable, so no future `git add .specify`
+    // can resurrect the bookkeeping into a commit.
+    git(tempDir, ['add', '-A']);
+    const staged = execFileSync('git', ['diff', '--cached', '--name-only'], {
+      cwd: tempDir,
+      encoding: 'utf8',
+    });
+    expect(staged.trim()).toBe('');
+  });
+
+  it('writes the ignore file on every verb that creates the state dir', () => {
+    // `--assess` also mkdirs the state dir (for reason.txt), and a missing ignore
+    // there would let a stalled window commit its own diagnosis.
+    initRepo();
+    expect(runGuard(['--snapshot']).status).toBe(0);
+    fs.rmSync(path.join(tempDir, '.specify/.repair-loop/.gitignore'));
+
+    const assessed = runGuard(['--assess']);
+
+    expect(assessed.status).toBe(1);
+    expect(
+      fs.readFileSync(path.join(tempDir, '.specify/.repair-loop/.gitignore'), 'utf8').trim()
+    ).toBe('*');
+  });
+
   it('--reset clears the window state too', () => {
     initRepo();
     runGuard(['--snapshot'], tempDir);

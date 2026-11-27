@@ -165,6 +165,35 @@ for tmpl in "playwright.design.config.ts" "design-audit.spec.ts"; do
   fi
 done
 
+# 3b. Keep machine-local state out of git
+#
+# `.specify/` accumulates state that is rewritten on every single run: the repair
+# loop's snapshot/window files, the circuit-breaker counter, the telemetry journal
+# and the per-run logs. None of it is shareable, and committing it turns `git log`
+# into a log of this tooling's own bookkeeping.
+#
+# The managed `.specify/.gitignore` produced by the Specify CLI only covers
+# `feature.json` and the extension overrides, so the state leaked: a real run left
+# six identical `chore: baseline specify tooling snapshot` commits whose entire
+# content was `.repair-loop/` plus `.circuit-breaker-state`. The CLI documents
+# that edits to this file survive a refresh, which is why the block lives here
+# rather than being rewritten by every script that touches the state.
+SPECIFY_GITIGNORE="$SPECIFY_DIR/.gitignore"
+STATE_IGNORE_MARKER="# >>> viteplus-stitch machine-local state (managed) >>>"
+if ! grep -qF "$STATE_IGNORE_MARKER" "$SPECIFY_GITIGNORE" 2>/dev/null; then
+  cat >> "$SPECIFY_GITIGNORE" << 'EOF'
+# >>> viteplus-stitch machine-local state (managed) >>>
+# Rewritten on every run; never shareable. The repair-loop-guard also drops its
+# own .gitignore inside .repair-loop/ so that directory stays out of git even if
+# this block is lost.
+.repair-loop/
+.circuit-breaker-state
+workflows/runs/
+telemetry.jsonl
+# <<< viteplus-stitch machine-local state (managed) <<<
+EOF
+fi
+
 # 4. Install the non-negotiable quality-gate guardrails
 #    - A standalone copy the workflow prompt step tells the model to read.
 #    - A constitution section, because speckit.plan/tasks/implement read

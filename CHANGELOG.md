@@ -12,6 +12,28 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- **The repair loop's own bookkeeping was committed into the project's history.**
+  The managed `.specify/.gitignore` covers only `feature.json` and the extension
+  overrides, so `.repair-loop/` and `.circuit-breaker-state` were fully
+  committable — and `bootstrap-project-env.sh` runs `git add .specify` on every
+  repair iteration. A real run (`4-vanilla-web`) left **six** identical
+  `chore: baseline specify tooling snapshot` commits whose entire content was the
+  guard's snapshot/window files. They are authored by `spec-kit bootstrap` and
+  say nothing, so the project's `git log` became a log of this tooling. Closed at
+  three levels: `repair-loop-guard.sh` now writes its own `.gitignore` inside
+  `.specify/.repair-loop/`, so the state stays untracked even if nothing else
+  ran; `install.sh` appends a managed block to `.specify/.gitignore` covering
+  `.repair-loop/`, `.circuit-breaker-state`, `workflows/runs/` and
+  `telemetry.jsonl`; and the bootstrap commit uses an explicit pathspec so state
+  cannot be staged even when the ignore files are missing.
+
+  The same mechanism could hide a real change: the baseline commit also stages
+  pending edits to `.gitignore`, `AGENTS.md`, `playwright.design.config.ts` and
+  `tests/design/`, so in that run a genuine behavioural edit
+  (`reuseExistingServer: !process.env.CI` -> `false`) landed under a `chore:`
+  message and became invisible to the diff-based gates. The README now documents
+  both the repetition and that hazard.
+
 - **A commit was invisible to the stall detector, producing false "no progress"
   verdicts.** The progress fingerprint hashed `git status` plus `git diff HEAD`,
   and BOTH are empty once the agent commits its work. A window that ended in a

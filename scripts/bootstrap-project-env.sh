@@ -324,8 +324,26 @@ if [ "$DO_GIT" = true ] && command -v git >/dev/null 2>&1 && [ -e "$ROOT/.git" ]
   if git -C "$ROOT" rev-parse --verify HEAD >/dev/null 2>&1; then
     # When .specify/ was freshly installed or templates were materialized in an existing git repo,
     # uncommitted tooling files trigger false-positive scope violations in check-blast-radius.sh.
-    if [ -d "$ROOT/.specify" ] && git -C "$ROOT" status --porcelain -- .specify 2>/dev/null | grep -q .; then
-      git -C "$ROOT" add .specify 2>/dev/null || true
+    #
+    # The state paths below are excluded because they are machine-local and are
+    # rewritten on every run. They are also NOT reliably git-ignored: the managed
+    # `.specify/.gitignore` covers only `feature.json` and the extension overrides.
+    # A real run left six identical `chore: baseline specify tooling snapshot`
+    # commits whose entire content was `.repair-loop/` and
+    # `.circuit-breaker-state` — pure bookkeeping in the project's history, and a
+    # commit that also silently absorbs any pending edit to the extra tooling
+    # files staged below. Excluding them keeps this snapshot to the tooling it was
+    # meant to capture.
+    SPECIFY_STATE_EXCLUDES=(
+      ':(exclude).specify/.repair-loop'
+      ':(exclude).specify/.repair-loop/**'
+      ':(exclude).specify/.circuit-breaker-state'
+      ':(exclude).specify/telemetry.jsonl'
+      ':(exclude).specify/workflows/runs'
+      ':(exclude).specify/workflows/runs/**'
+    )
+    if [ -d "$ROOT/.specify" ] && git -C "$ROOT" status --porcelain -- .specify "${SPECIFY_STATE_EXCLUDES[@]}" 2>/dev/null | grep -q .; then
+      git -C "$ROOT" add .specify "${SPECIFY_STATE_EXCLUDES[@]}" 2>/dev/null || true
       for extra_tooling in ".gitignore" "AGENTS.md" "playwright.design.config.ts" "tests/design"; do
         if [ -e "$ROOT/$extra_tooling" ]; then
           git -C "$ROOT" add "$extra_tooling" 2>/dev/null || true

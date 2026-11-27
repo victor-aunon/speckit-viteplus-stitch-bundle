@@ -209,4 +209,44 @@ describe('bootstrap-project-env.sh', () => {
     // Git status should be completely clean
     expect(git('status', '--porcelain').trim()).toBe('');
   });
+
+  it('never commits machine-local repair state into the tooling baseline', () => {
+    // The managed `.specify/.gitignore` only covers `feature.json` and the
+    // extension overrides, so the repair loop's own bookkeeping reached the
+    // history: a real run left six identical
+    // `chore: baseline specify tooling snapshot` commits whose entire content
+    // was `.repair-loop/` plus `.circuit-breaker-state`. Worse, every such commit
+    // also swept up any pending edit to the extra tooling files, so a real change
+    // to `playwright.design.config.ts` ended up labelled as a baseline.
+    git('init', '-q');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'Test');
+    fs.writeFileSync(path.join(tempDir, 'README.md'), '# existing project', 'utf8');
+    git('add', '.');
+    git('commit', '-qm', 'initial commit');
+
+    const write = (relative: string, content: string): void => {
+      const target = path.join(tempDir, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, content, 'utf8');
+    };
+
+    // The tooling this snapshot exists to capture.
+    write('.specify/scripts/bash/gate.sh', '#!/bin/bash\nexit 0');
+    // Machine-local state that must never reach a commit.
+    write('.specify/.repair-loop/fingerprint', 'deadbeef');
+    write('.specify/.repair-loop/window-start', '1700000000');
+    write('.specify/.circuit-breaker-state', '2');
+    write('.specify/telemetry.jsonl', '{}\n');
+    write('.specify/workflows/runs/run-1.json', '{}');
+
+    runBash(scriptPath, [`--root=${tempDir}`, '--no-templates']);
+
+    const committed = git('show', '--name-only', '--pretty=format:', 'HEAD');
+    expect(committed).toContain('.specify/scripts/bash/gate.sh');
+    expect(committed).not.toContain('.repair-loop');
+    expect(committed).not.toContain('.circuit-breaker-state');
+    expect(committed).not.toContain('telemetry.jsonl');
+    expect(committed).not.toContain('workflows/runs');
+  });
 });

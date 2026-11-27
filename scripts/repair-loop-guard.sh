@@ -94,6 +94,25 @@ REASON_FILE="$STATE_DIR/reason.txt"
 WINDOW_START_FILE="$STATE_DIR/window-start"
 WINDOW_STEP_FILE="$STATE_DIR/window-step"
 
+# Keep this directory out of the project's git history.
+#
+# The assumption that `.specify/` is git-ignored in the installed project is NOT
+# reliable: the managed `.specify/.gitignore` only covers `feature.json` and the
+# extension overrides, and `bootstrap-project-env.sh` runs `git add .specify` on
+# every repair iteration. A real run produced six identical
+# `chore: baseline specify tooling snapshot` commits whose entire content was
+# this directory plus `.circuit-breaker-state`. The state must not be able to
+# reach a commit at all.
+#
+# The `*` travels WITH the state instead of being installed ahead of it, so this
+# holds whether or not the installer or the Specify CLI ever ran, and it survives
+# a CLI refresh of `.specify/`, which is documented as preserving user edits but
+# is not something a gate should depend on.
+ensure_state_ignored() {
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
+  printf '%s\n' '*' > "$STATE_DIR/.gitignore" 2>/dev/null || true
+}
+
 if [ -z "$VERB" ]; then
   show_help
   exit 2
@@ -228,7 +247,7 @@ cmd_snapshot() {
   local raw
   # Start the clock before any early return, so a non-git project still reports
   # how long the iteration took.
-  mkdir -p "$STATE_DIR" 2>/dev/null || true
+  ensure_state_ignored
   date +%s > "$WINDOW_START_FILE" 2>/dev/null || true
   printf '%s' "$WINDOW_STEP" > "$WINDOW_STEP_FILE" 2>/dev/null || true
 
@@ -264,7 +283,7 @@ cmd_assess() {
   current="$(printf '%s' "$raw" | hash_fingerprint)"
 
   if [ "$previous" = "$current" ]; then
-    mkdir -p "$STATE_DIR" 2>/dev/null || true
+    ensure_state_ignored
     {
       echo "This iteration produced no observable progress: the working tree is"
       echo "unchanged and HEAD did not move."
