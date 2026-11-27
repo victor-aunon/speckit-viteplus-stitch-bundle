@@ -10,6 +10,27 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
+### Added
+
+- **`watch-run.sh`: an unattended run survives a model hang.** The engine has no
+  `retry` for a `prompt` step, so a timeout ends the run and waits for a human to
+  type `workflow resume`. A real run lost two hours that way — the loop was not
+  slow, it was stopped. The script resumes across exactly that failure and refuses
+  every other: a real error is reported instead of retried, a `paused` run is left
+  for the person it is waiting for, and the resumes are capped (6 by default, so a
+  model that hangs every time cannot loop).
+
+  Installed and preflighted like every other script: `check-bundle-preflight.sh`
+  requires exactly what the installer ships.
+
+### Changed
+
+- **A repair window is bounded at 900s instead of 1800s** (`repair_agent` and
+  `verdict_repair_agent`). The timeout is both what surfaces a hang and the ceiling
+  on wasted wall clock: at 1800s two hangs cost an hour before anyone could act.
+  `implement-auto` keeps no timeout on purpose — it is a `command` step, the engine
+  gives it none, and there a long window is real work.
+
 ### Fixed
 
 - **The formatter could be switched off through an ignore file.** `vp check`

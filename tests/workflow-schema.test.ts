@@ -396,6 +396,36 @@ describe('Workflow YAML Schema Validation', () => {
     expect(content).toContain('SPEC_AUDIT.md');
   });
 
+  it('bounds a repair window at 15 minutes so a hang costs half', () => {
+    // A model hang ends the run and waits for a human to type `workflow resume`;
+    // the timeout is the only thing that surfaces it, and it is also the ceiling on
+    // wasted wall clock. At 1800s two hangs cost an hour before anyone could act.
+    // `watch-run.sh` resumes across exactly this failure, which is why the number
+    // has to stay small enough for a retry to be cheap.
+    const findById = (steps: any[], id: string): any => {
+      for (const step of steps) {
+        if (step.id === id) return step;
+        for (const branch of ['then', 'else', 'steps']) {
+          if (Array.isArray(step[branch])) {
+            const found = findById(step[branch], id);
+            if (found) return found;
+          }
+        }
+      }
+      return undefined;
+    };
+
+    const wf = yaml.parse(
+      fs.readFileSync(path.resolve(__dirname, '../workflows/viteplus-stitch/workflow.yml'), 'utf8')
+    );
+    for (const id of ['repair_agent', 'verdict_repair_agent']) {
+      const step = findById(wf.steps, id);
+      expect(step, id).toBeDefined();
+      expect(step.type, id).toBe('prompt');
+      expect(step.timeout, id).toBe(900);
+    }
+  });
+
   it('should pause after every implementation phase by default and allow --auto-continue', () => {
     const wfPath = path.resolve(__dirname, '../workflows/viteplus-stitch/workflow.yml');
     const wf = yaml.parse(fs.readFileSync(wfPath, 'utf8'));

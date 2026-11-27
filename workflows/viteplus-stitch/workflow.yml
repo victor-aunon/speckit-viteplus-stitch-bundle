@@ -627,7 +627,7 @@ steps:
             type: prompt
             integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
             model: "{{ inputs.implement_model | default(inputs.model) }}"
-            timeout: 1800
+            timeout: 900
             prompt: |
               ROLE: RELIABILITY & COMPILER SRE SPECIALIST (AUTONOMOUS REPAIR).
               The implementation gates failed. You own this repair window: fix the
@@ -859,7 +859,7 @@ steps:
             type: prompt
             integration: "{{ inputs.implement_integration | default(inputs.integration) }}"
             model: "{{ inputs.implement_model | default(inputs.model) }}"
-            timeout: 1800
+            timeout: 900
             prompt: |
               ROLE: RELIABILITY ENGINEER (POST-AUDIT REPAIR).
               The independent auditor REJECTED this feature.

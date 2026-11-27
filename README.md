@@ -154,6 +154,7 @@ This is a **Spec Kit workflow**, not a slash-command extension. It does not add 
 | `.specify/scripts/bash/reconcile-package-manifest.mjs` | Idempotent `package.json` reconciler (baseline scripts + the dependencies they execute); used by the installer and the bootstrap |
 | `.specify/scripts/bash/check-verification-verdict.sh` | Machine verdict gate (fails unless `verification.json` says `pass`) |
 | `.specify/scripts/bash/design-seal.sh` | Content seal of the design master, so the visual gate cannot grade against a reference that moved |
+| `.specify/scripts/bash/watch-run.sh` | Unattended runner: resumes a run across prompt timeouts, and refuses to retry anything else |
 | `.specify/scripts/bash/emit-telemetry.sh` | Structured telemetry & observability event logger |
 | `.specify/templates/` | `vite.config.ts`, Playwright config, env config, and design-audit templates |
 | `vite.config.ts` (project root, only when absent) | Vite+ config with the React plugin registered (`plugins: [react()]`) so Fast Refresh works |
@@ -1052,6 +1053,47 @@ bash .specify/scripts/bash/emit-telemetry.sh \
 `--import-state` resolves the run from `--state=<path>`, `SPECIFY_RUN_ID`/`SPECKIT_RUN_ID`, or the most recently updated run under `.specify/workflows/runs/`. It reads `state.json` (`model`, `integration` -> agent), `log.jsonl` (per-step durations) and the run's `workflow.yml` snapshot (the step's `ROLE:` line), and upserts one `step_execution` record per step without duplicating prior imports. The workflow calls it on every gate failure (via `--summary`) and once at the end in the `telemetry_sync` step, so `.specify/telemetry.jsonl` reflects the full pipeline, not only the gates that happened to emit an event.
 
 ---
+
+### 11. `watch-run.sh` (Unattended Run Supervisor)
+
+The engine has **no `retry` for a `prompt` step**. When a model hangs, the step fails
+with `Prompt timed out after N seconds`, the run ends, and somebody has to type
+`specify workflow resume <id>` before it moves again. A real run lost two hours that
+way — not because the pipeline is slow, but because it was waiting for a person who
+was away from the machine.
+
+```bash
+# Start a run and survive a transient hang in the agent
+bash .specify/scripts/bash/watch-run.sh viteplus-stitch \
+  --input spec="A habit tracker" --input integration=gemini
+
+# Supervise a run that already died
+bash .specify/scripts/bash/watch-run.sh --resume=75340d30
+
+# Options
+--max-resumes=<n>   Give up after n resumes (default 6)
+--delay=<seconds>   Wait before each resume (default 60)
+```
+
+It retries **one** failure mode and refuses the others, which is the whole point:
+
+- **Only an error containing `timed out` is resumed.** Retrying a real failure burns
+  the attempt budget and buries the bug behind a wall of retries.
+- **A run that ends `paused` is left alone.** A pause is a phase checkpoint waiting
+  for a person, and resuming it would skip that review.
+- **The resumes are capped**, so a model that hangs every single time cannot loop.
+
+Installed and preflighted with the rest: `check-bundle-preflight.sh` requires
+exactly what the installer ships, so a missing copy is caught before the run starts.
+
+What it does **not** cover: a hang that never reaches the timeout. The run stays
+`running`, `resume` refuses a running run, and this script is itself blocked waiting
+for the command to return. That is an engine problem, not a workflow one.
+
+> **Why 900s and not 1800s for a repair window.** The timeout is what surfaces a hang
+> *and* the ceiling on wasted wall clock. At 1800s, two hangs cost an hour before
+> anyone could act; at 900s, half. `implement-auto` is a `command` step and has no
+> timeout — deliberately, because there the long window is real work.
 
 ## Greenfield & Brownfield Compatibility
 

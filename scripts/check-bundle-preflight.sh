@@ -74,6 +74,7 @@ REQUIRED_SCRIPTS=(
   reconcile-task-ledger.sh
   repair-loop-guard.sh
   design-seal.sh
+  watch-run.sh
   verify-stitch-design.sh
 )
 # check-env-config.sh and check-ghost-classes.sh are not invoked by the workflow
