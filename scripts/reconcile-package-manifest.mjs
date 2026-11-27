@@ -107,6 +107,29 @@ export function readTemplate(templatePath) {
  * Pure reconciler. Mutates and returns a deep-ish copy of `pkg`.
  * @returns {{ changed: boolean, manifest: object, notes: string[] }}
  */
+const CORE_ALIAS_PREFIX = 'npm:@voidzero-dev/vite-plus-core@';
+
+/** The core version inside the alias spec, or null when the spec is not that form. */
+function coreVersionOf(spec) {
+  if (typeof spec !== 'string' || !spec.startsWith(CORE_ALIAS_PREFIX)) return null;
+  const version = spec.slice(CORE_ALIAS_PREFIX.length);
+  return /^\d+\.\d+\.\d+$/.test(version) ? version : null;
+}
+
+/**
+ * Numeric `a.b.c` comparison; > 0 when `a` is newer. The core version encodes the
+ * bundled Vite version as `major.minor.(patch * 1000 + counter)`, so a plain
+ * segment-wise numeric compare is the right ordering.
+ */
+function compareVersions(a, b) {
+  const left = a.split('.').map(Number);
+  const right = b.split('.').map(Number);
+  for (let i = 0; i < 3; i += 1) {
+    if (left[i] !== right[i]) return left[i] - right[i];
+  }
+  return 0;
+}
+
 export function reconcile(pkg, options = {}) {
   const {
     profile = '',
@@ -119,6 +142,8 @@ export function reconcile(pkg, options = {}) {
     // Seed mode: the manifest was just copied from the template, so the whole
     // file is bundle-owned and may be corrected (scripts AND dependencies).
     seed = false,
+    // A newer core is not an error to correct. See the aliasing block below.
+    allowToolchainDowngrade = false,
   } = options;
 
   const tplDev = template.devDependencies || {};
@@ -258,11 +283,33 @@ export function reconcile(pkg, options = {}) {
   // 3. Vite+ aliasing. A plain `vite` next to `vite-plus` installs a second Vite
   //    and vp refuses to boot.
   // ---------------------------------------------------------------------------
+  // The alias both `devDependencies.vite` and `overrides.vite` are held to. It is
+  // the bundle pin unless the project has deliberately moved ahead of it.
+  let effectiveAlias = viteAlias;
+
   if (viteAlias) {
     next.dependencies = next.dependencies || {};
     const declared = next.devDependencies.vite || next.dependencies.vite || '';
+    const declaredVersion = coreVersionOf(declared);
+    const targetVersion = coreVersionOf(viteAlias);
+    const isNewer =
+      Boolean(declaredVersion && targetVersion) &&
+      compareVersions(declaredVersion, targetVersion) > 0;
 
-    if (!declared) {
+    if (isNewer && !allowToolchainDowngrade) {
+      // A NEWER core is not a mistake to correct. Reinstalling the bundle used to
+      // silently move the project backwards, which is the same "the tool
+      // overwrites your tree and says nothing" failure this bundle already fixed
+      // for `vp check --fix` and `git add .specify`. Keeping the version is only
+      // half the story though: `vite-plus` and the core must agree or `vp` will
+      // not boot, so the note names the command that reads the match.
+      effectiveAlias = declared;
+      notes.push(
+        `! vite ${declaredVersion} is newer than the bundle pin ${targetVersion}; kept it. ` +
+          'Run `vp toolchain vite-plus-core` and align `vite-plus` with the result, ' +
+          'or pass --allow-toolchain-downgrade to pin it back.'
+      );
+    } else if (!declared) {
       next.devDependencies.vite = viteAlias;
       notes.push(`+ vite -> ${viteAlias}`);
       changed = true;
@@ -277,9 +324,11 @@ export function reconcile(pkg, options = {}) {
   }
 
   next.overrides = next.overrides || {};
-  if (viteAlias && next.overrides.vite !== viteAlias) {
-    next.overrides.vite = viteAlias;
-    notes.push(`~ overrides.vite -> ${viteAlias}`);
+  // Following `effectiveAlias`, not `viteAlias`: a kept bump whose override was
+  // left behind is exactly npm's EOVERRIDE abort.
+  if (effectiveAlias && next.overrides.vite !== effectiveAlias) {
+    next.overrides.vite = effectiveAlias;
+    notes.push(`~ overrides.vite -> ${effectiveAlias}`);
     changed = true;
   }
   if (vitestPin && !next.overrides.vitest) {
@@ -298,7 +347,13 @@ export function reconcile(pkg, options = {}) {
 }
 
 function parseArgs(argv) {
-  const args = { playwrightDeps: false, profile: '', framework: 'vite', seed: false };
+  const args = {
+    playwrightDeps: false,
+    profile: '',
+    framework: 'vite',
+    seed: false,
+    allowToolchainDowngrade: false,
+  };
   const VALUE_FLAGS = new Set([
     '--manifest',
     '--template',
@@ -321,6 +376,8 @@ function parseArgs(argv) {
       // Boolean flag: never consumes the next argument, so `--seed --profile=api`
       // cannot swallow `--profile`.
       if (flag === '--seed') args.seed = separator === -1 ? true : raw.slice(separator + 1) !== 'false';
+      if (flag === '--allow-toolchain-downgrade')
+        args.allowToolchainDowngrade = separator === -1 ? true : raw.slice(separator + 1) !== 'false';
       continue;
     }
 
@@ -377,6 +434,7 @@ function main(argv) {
     designScript: args.designScript,
     playwrightDeps: args.playwrightDeps,
     seed: args.seed,
+    allowToolchainDowngrade: args.allowToolchainDowngrade,
   });
 
   if (!result.changed) {

@@ -25,6 +25,9 @@ RELEASE_TAG=""
 ZIP_FILE=""
 TARGET_DIR="."
 PROFILE=""
+# Off by default: a reinstall must never move a project's toolchain backwards
+# without being asked. See the aliasing block in reconcile-package-manifest.mjs.
+TOOLCHAIN_DOWNGRADE_ARGS=()
 
 for arg in "$@"; do
   case "$arg" in
@@ -33,6 +36,9 @@ for arg in "$@"; do
       ;;
     --profile=*)
       PROFILE="${arg#*=}"
+      ;;
+    --allow-toolchain-downgrade)
+      TOOLCHAIN_DOWNGRADE_ARGS+=(--allow-toolchain-downgrade)
       ;;
     --release=*|--version=*)
       RELEASE_TAG="${arg#*=}"
@@ -48,6 +54,8 @@ for arg in "$@"; do
       echo "  --profile=<profile>    Project profile: api, react, vanilla, or fullstack (default: auto-detected)"
       echo "  --release=<tag>        Install from a specific GitHub Release tag (e.g. v1.0.0)"
       echo "  --zip=<path>           Install from a locally downloaded release .zip file"
+      echo "  --allow-toolchain-downgrade  Move vite back to the bundle pin even when the"
+      echo "                         project already runs a newer core (default: keep it)"
       echo "  --help                 Show this help message"
       exit 0
       ;;
@@ -602,7 +610,8 @@ if [ -f "$PACKAGE_FILE" ] && command -v node >/dev/null 2>&1; then
     --framework="$FRAMEWORK" \
     --design-script="$DESIGN_SCRIPT" \
     --playwright-deps=false \
-    --seed="$PKG_SEEDED" 2>/dev/null || true)"
+    --seed="$PKG_SEEDED" \
+    ${TOOLCHAIN_DOWNGRADE_ARGS[@]+"${TOOLCHAIN_DOWNGRADE_ARGS[@]}"} 2>/dev/null || true)"
   PKG_STATUS="$(printf '%s' "$PKG_OUT" | head -n 1)"
   if [ "$PKG_STATUS" = "updated" ]; then
     echo "✓ Ensured baseline scripts and toolchain dependencies in existing package.json"

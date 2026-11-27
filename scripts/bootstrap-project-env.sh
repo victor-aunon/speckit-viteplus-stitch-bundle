@@ -30,6 +30,9 @@ Options:
   --designs-dir=<path> Feature designs directory (default: newest specs/*/designs)
   --no-git             Do not initialize a git repository
   --no-templates       Do not materialize Playwright/design-audit templates
+  --allow-toolchain-downgrade
+                       Move vite back to the bundle pin even when the project
+                       already runs a newer core (default: keep the newer one)
   --quiet              Only print actions, not the summary
 
 What it does:
@@ -49,6 +52,7 @@ ROOT="$PWD"
 DESIGNS_DIR=""
 DO_GIT=true
 DO_TEMPLATES=true
+ALLOW_TOOLCHAIN_DOWNGRADE=false
 QUIET=false
 PROFILE=""
 HAS_UI=""
@@ -77,6 +81,10 @@ for arg in "$@"; do
       ;;
     --no-templates)
       DO_TEMPLATES=false
+      ;;
+    --allow-toolchain-downgrade)
+      # Off by default: the workflow must not move a project's toolchain backwards.
+      ALLOW_TOOLCHAIN_DOWNGRADE=true
       ;;
     --quiet)
       QUIET=true
@@ -303,7 +311,9 @@ if [ -f "$ROOT/package.json" ] && command -v node >/dev/null 2>&1; then
       --framework="$BOOTSTRAP_FRAMEWORK" \
       --design-script="$DESIGN_SCRIPT" \
       --playwright-deps="$DESIGN_SCRIPT" \
-      --seed="$PKG_SEEDED" 2>/dev/null || true)"
+      --seed="$PKG_SEEDED" \
+      ${ALLOW_TOOLCHAIN_DOWNGRADE:+$([ "$ALLOW_TOOLCHAIN_DOWNGRADE" = true ] && echo --allow-toolchain-downgrade)} \
+      2>/dev/null || true)"
     PKG_STATUS="$(printf '%s' "$PKG_OUT" | head -n 1)"
     if [ "$PKG_STATUS" = "updated" ]; then
       echo "✓ Ensured baseline scripts and toolchain dependencies in package.json"

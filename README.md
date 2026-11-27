@@ -95,6 +95,7 @@ curl -fsSL https://raw.githubusercontent.com/victor-aunon/speckit-viteplus-stitc
 | `--profile=<name>` | `react` \| `vanilla` \| `api` \| `fullstack`. Declares the project archetype **before** any file exists. Default: auto-detected from the framework config, the framework dependency, or a `src/features` + `index.html` heuristic; falls back to `react`. |
 | `--release=<tag>` | Install from a specific GitHub Release tag (e.g. `v2.0.0`) |
 | `--zip=<path>` | Install from a locally downloaded release `.zip` |
+| `--allow-toolchain-downgrade` | Move `vite` back to the bundle pin even when the project already runs a **newer** core. Default: keep the newer one and warn (see [Upgrading](#upgrading-a-project-that-already-installed-this-bundle)). |
 | `--help` | Usage |
 
 `--profile` matters most when the project does not exist yet (see below): it decides
@@ -597,7 +598,53 @@ Why each line exists ([docs](https://viteplus.dev/guide/local-cli)):
 - **`overrides.vitest` must be exact.** Without it a dependency can pull a different
   Vitest than the bundled runner, splitting mocks, `expect` and runner state.
 
-### Bumping the toolchain
+### Upgrading a project that already installed this bundle
+
+Two different things, two different answers.
+
+**Everything with a caret is yours.** `typescript`, `@vitejs/plugin-react`,
+`@playwright/test`, `@axe-core/playwright`, `@shadcn/lint`, `@types/node` — the
+reconciler only adds those when they are missing and never corrects a version you
+chose. `npm install -D <pkg>@latest` and move on.
+
+The **toolchain** is bundle-owned and moves as a unit: `vite` (the
+`@voidzero-dev/vite-plus-core` alias), its matching `overrides.vite`, `vite-plus`
+itself, and `overrides.vitest`. A reinstall **no longer downgrades you**: if your
+core is newer than the pin shipped in `templates/package.json.tmpl`, the
+reconciler keeps yours and prints
+
+```
+! vite 8.4.0 is newer than the bundle pin 8.3.8001; kept it. Run
+  `vp toolchain vite-plus-core` and align `vite-plus` with the result,
+  or pass --allow-toolchain-downgrade to pin it back.
+```
+
+**If you keep the newer core, run `vp toolchain` — this is not optional.** The CLI
+and the engine are published separately, so a core that is ahead of `vite-plus`
+makes `vp` refuse to boot at all, and `vp` is the engine behind every gate:
+
+```bash
+vp toolchain vite-plus-core   # the core version your installed vite-plus expects
+vp toolchain vitest           # the Vitest your installed vite-plus bundles
+```
+
+Read both, then set `vite` / `overrides.vite` to the first and `overrides.vitest`
+to the second. Getting them wrong does not fail a gate with a readable message; it
+fails with `Expected @voidzero-dev/vite-plus-core@X, but found vite@Y` and nothing
+runs.
+
+To deliberately move **backwards** to the bundle pin, say so:
+
+```bash
+bash scripts/install.sh --target-dir=<project> --allow-toolchain-downgrade
+```
+
+Finally: `package-lock.json` is committed on purpose. Editing `package.json` alone
+changes nothing until `npm install` runs, and carets do not float once the lock
+exists — `npm update <pkg>` or `npm install <pkg>@<version>` is what actually moves
+a resolution.
+
+### Bumping the toolchain (bundle maintainers)
 
 Never bump one package alone. After `npm install -D vite-plus@<version>`:
 

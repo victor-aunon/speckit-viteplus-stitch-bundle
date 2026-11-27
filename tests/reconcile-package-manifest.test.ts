@@ -111,6 +111,73 @@ describe('reconcile-package-manifest (pure)', () => {
     expect(notes.join('\n')).toMatch(/~ vite \^6\.2\.0 -> npm:@voidzero-dev/);
   });
 
+  describe('a project that moved ahead of the bundle pin', () => {
+    const NEWER = 'npm:@voidzero-dev/vite-plus-core@99.0.1';
+    const movedAhead = () => ({
+      name: 'fixture',
+      scripts: {},
+      devDependencies: { vite: NEWER, 'vite-plus': '99.0.0' },
+      overrides: { vite: NEWER },
+    });
+
+    it('keeps the newer core instead of silently reinstalling it backwards', () => {
+      // Reinstalling the bundle used to move the project back to the template
+      // pin with one line of noise. Same failure class as `vp check --fix`
+      // rewriting .specify/** and `git add .specify` swallowing the working tree:
+      // the tool overwrites the operator's decision and does not say so.
+      const { manifest, notes } = reconcileWith(movedAhead(), {
+        profile: 'react',
+        framework: 'vite',
+      });
+
+      expect(manifest.devDependencies.vite).toBe(NEWER);
+      expect(manifest.overrides.vite).toBe(NEWER);
+      // `vite-plus` is only ever added when absent, never corrected.
+      expect(manifest.devDependencies['vite-plus']).toBe('99.0.0');
+      expect(notes.join('\n')).toContain('is newer than the bundle pin');
+      // The note has to name the command that reads the matching core version,
+      // because keeping the bump without moving `vite-plus` stops vp booting.
+      expect(notes.join('\n')).toContain('vp toolchain vite-plus-core');
+    });
+
+    it('records no downgrade note for the vite pin', () => {
+      // `changed` is true anyway (the baseline scripts and deps get added), so the
+      // assertion that matters is that no `~ vite` rewrite was reported.
+      const result = reconcileWith(movedAhead(), { profile: 'react', framework: 'vite' });
+      expect(result.manifest.devDependencies.vite).toBe(NEWER);
+      expect(result.notes.join('\n')).not.toMatch(/~ vite /);
+    });
+
+    it('pins it back only when the operator asks', () => {
+      const { manifest, changed } = reconcileWith(movedAhead(), {
+        profile: 'react',
+        framework: 'vite',
+        allowToolchainDowngrade: true,
+      });
+
+      expect(changed).toBe(true);
+      expect(manifest.devDependencies.vite).toBe(template.devDependencies.vite);
+      expect(manifest.overrides.vite).toBe(template.overrides.vite);
+    });
+
+    it('still aligns an override the operator left behind', () => {
+      // A kept bump whose `overrides.vite` stayed on the old pin is exactly npm's
+      // EOVERRIDE abort, so the override follows the kept version.
+      const result = reconcileWith(
+        {
+          name: 'fixture',
+          scripts: {},
+          devDependencies: { vite: NEWER, 'vite-plus': '99.0.0' },
+          overrides: { vite: template.overrides.vite },
+        },
+        { profile: 'react', framework: 'vite' }
+      );
+
+      expect(result.manifest.devDependencies.vite).toBe(NEWER);
+      expect(result.manifest.overrides.vite).toBe(NEWER);
+    });
+  });
+
   it('only adds the React tooling to the react profile', () => {
     for (const profile of ['vanilla', 'api']) {
       const { manifest } = reconcileWith(emptyManifest(), { profile, framework: 'vite' });

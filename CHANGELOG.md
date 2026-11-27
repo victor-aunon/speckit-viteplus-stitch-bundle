@@ -10,6 +10,26 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
+### Changed
+
+- **Reinstalling the bundle no longer downgrades a project's toolchain.** The
+  reconciler compared `devDependencies.vite` with the template pin and rewrote it
+  whenever the two differed — including when the project had deliberately moved
+  ahead, in which case a reinstall pulled it **backwards** and said so in one line
+  of `notes`. It now keeps a newer core, prints both versions, and names the
+  command that reads the matching engine (`vp toolchain vite-plus-core`). It also
+  aligns `overrides.vite` to the version it kept, because a kept bump whose
+  override stayed behind is exactly npm's `EOVERRIDE` abort. Pass
+  `--allow-toolchain-downgrade` to `install.sh` or `bootstrap-project-env.sh` to
+  force the pin back.
+
+  This is the third instance of the failure the rest of this release is about: a
+  tool overwriting the operator's tree and reporting it as a line of noise. The
+  README now separates what is the project's to bump from what is the bundle's,
+  and makes the `vp toolchain` step explicit — keeping a newer core without moving
+  `vite-plus` does not fail a gate with a readable message, it stops `vp` booting
+  entirely.
+
 ### Fixed
 
 - **The type environment was missing, so the gate graded code the agent never
