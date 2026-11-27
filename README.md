@@ -930,6 +930,10 @@ Resolves environment, tooling, and configuration prerequisites deterministically
 1. **Git Repository Ownership & Clean Baseline Snapshot**:
    - Creates `.git` when the project root has none and records an initial baseline commit so diff-based gates (`anti_tampering`, `blast_radius`) have a `HEAD`.
    - `.gitignore` is populated with `node_modules/`, `dist/`, `.specify/workflows/runs/` and `.specify/telemetry.jsonl` (run state contains prompt transcripts, so it must never enter the snapshot).
+   - Formats `vite.config.ts` and `vitest.config.ts` with `vp fmt` and carries them
+     into the baseline commit. Both are protected paths, so leaving one unformatted
+     (or formatted but uncommitted) fails `code_quality` with no legal repair: the
+     agent may not touch the file that the checker rewrites.
    - In pre-existing git repositories, commits untracked tooling assets (`.specify/scripts/**`, `extensions.yml`, `memory/`, `templates/`) into a tooling baseline snapshot (`chore: baseline specify tooling snapshot`), ensuring `check-blast-radius.sh` starts clean and avoids false-positive scope violations.
 
      **This commit can fire more than once — expect one per repair iteration.** `reset_breaker` re-runs this script, so a run that repairs three times leaves three of these commits. They are machine bookkeeping, not work: the author is `spec-kit bootstrap`, the message is fixed, and they are safe to squash.

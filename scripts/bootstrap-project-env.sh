@@ -328,6 +328,36 @@ if [ -f "$ROOT/package.json" ] && command -v node >/dev/null 2>&1; then
 fi
 
 # ------------------------------------------------------------------------------
+# 3c. Format the gate config the agent may not edit
+# ------------------------------------------------------------------------------
+# `vite.config.ts` and `vitest.config.ts` are PROTECTED_PATTERNS: the agent is
+# forbidden to modify them, and `vp check` still formats them. An unformatted
+# config therefore fails `code_quality` in about a second with no legal repair.
+# A real run burned 13 gate attempts and a 30-minute repair window on exactly
+# that: `vite.config.ts` and a `vitest.config.ts` it had just created, both
+# missing a trailing newline.
+#
+# Formatting them here is the deterministic half of that pair. The alternative
+# was to stop protecting the file, and the protection is the point.
+#
+# `vp fmt` is used rather than `oxfmt` directly because it reads the project's
+# `fmt` block: bare oxfmt applies its own defaults and produces output that
+# `vp check` then rejects, which is the same trap one level down.
+if command -v vp >/dev/null 2>&1; then
+  GATE_CONFIGS_FORMATTED=""
+  for gate_config in vite.config.ts vitest.config.ts; do
+    if [ -f "$ROOT/$gate_config" ]; then
+      if ( cd "$ROOT" && vp fmt "$gate_config" >/dev/null 2>&1 ); then
+        GATE_CONFIGS_FORMATTED="$GATE_CONFIGS_FORMATTED $gate_config"
+      fi
+    fi
+  done
+  if [ -n "$GATE_CONFIGS_FORMATTED" ] && [ "$QUIET" = false ]; then
+    echo "✓ Formatted the protected gate config(s):$GATE_CONFIGS_FORMATTED"
+  fi
+fi
+
+# ------------------------------------------------------------------------------
 # 4. Commit untracked tooling baseline if repo already has HEAD
 # ------------------------------------------------------------------------------
 if [ "$DO_GIT" = true ] && command -v git >/dev/null 2>&1 && [ -e "$ROOT/.git" ]; then
@@ -352,9 +382,13 @@ if [ "$DO_GIT" = true ] && command -v git >/dev/null 2>&1 && [ -e "$ROOT/.git" ]
       ':(exclude).specify/workflows/runs'
       ':(exclude).specify/workflows/runs/**'
     )
-    if [ -d "$ROOT/.specify" ] && git -C "$ROOT" status --porcelain -- .specify "${SPECIFY_STATE_EXCLUDES[@]}" 2>/dev/null | grep -q .; then
+    # The formatted gate config counts too: if it changed and is left dirty, the
+    # next gate sees a modified protected file and the dead end is back.
+    if [ -d "$ROOT/.specify" ] \
+      && git -C "$ROOT" status --porcelain -- .specify vite.config.ts vitest.config.ts "${SPECIFY_STATE_EXCLUDES[@]}" 2>/dev/null | grep -q .; then
       git -C "$ROOT" add .specify "${SPECIFY_STATE_EXCLUDES[@]}" 2>/dev/null || true
-      for extra_tooling in ".gitignore" "AGENTS.md" "playwright.design.config.ts" "tests/design"; do
+      for extra_tooling in ".gitignore" "AGENTS.md" "playwright.design.config.ts" "tests/design" \
+        "vite.config.ts" "vitest.config.ts"; do
         if [ -e "$ROOT/$extra_tooling" ]; then
           git -C "$ROOT" add "$extra_tooling" 2>/dev/null || true
         fi

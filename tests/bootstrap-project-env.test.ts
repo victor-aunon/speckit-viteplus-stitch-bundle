@@ -210,6 +210,63 @@ describe('bootstrap-project-env.sh', () => {
     expect(git('status', '--porcelain').trim()).toBe('');
   });
 
+  it('formats the protected gate config and commits it, so it cannot fail the gate', () => {
+    // `vite.config.ts` is a PROTECTED_PATTERN: the agent may not edit it, and
+    // `vp check` still formats it. An unformatted config therefore fails
+    // `code_quality` in about a second with no legal repair — a real run burned 13
+    // gate attempts and a 30-minute repair window on a missing trailing newline,
+    // in `vite.config.ts` and in a `vitest.config.ts` the agent had just created.
+    git('init', '-q');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'Test');
+    fs.mkdirSync(path.join(tempDir, '.specify/scripts/bash'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.specify/scripts/bash/gate.sh'), '#!/bin/bash\n', 'utf8');
+    const configPath = path.join(tempDir, 'vite.config.ts');
+    fs.writeFileSync(configPath, 'export default {};\n', 'utf8');
+    git('add', '.');
+    git('commit', '-qm', 'initial commit');
+
+    // Unformatted, exactly as the run's was: no trailing newline.
+    fs.writeFileSync(configPath, 'export default {}', 'utf8');
+
+    // `vp` stub: records the call and does the one thing `vp fmt` would do here.
+    // Outside the repo: the stub and its log must not show up as untracked files
+    // in the very assertion about a clean tree.
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vp-stub-'));
+    const calls = path.join(binDir, 'vp-calls.log');
+    const vpStub = path.join(binDir, 'vp');
+    fs.writeFileSync(
+      vpStub,
+      [
+        '#!/usr/bin/env bash',
+        'printf "vp %s\\n" "$*" >> "${VP_CALLS}"',
+        'for arg in "$@"; do',
+        '  if [ "$arg" != "fmt" ] && [ -f "$arg" ]; then printf "\\n" >> "$arg"; fi',
+        'done',
+        'exit 0',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    fs.chmodSync(vpStub, 0o755);
+
+    runBash(scriptPath, [`--root=${tempDir}`, '--no-templates'], {
+      env: {
+        ...process.env,
+        VP_CALLS: calls,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+      },
+    });
+
+    expect(fs.readFileSync(calls, 'utf8')).toContain('vp fmt vite.config.ts');
+    // Formatted, and committed: a dirty protected file would be a gate violation.
+    expect(fs.readFileSync(configPath, 'utf8').endsWith('\n')).toBe(true);
+    expect(git('status', '--porcelain').trim()).toBe('');
+    expect(git('show', '--name-only', '--pretty=format:', 'HEAD')).toContain('vite.config.ts');
+
+    removeDir(binDir);
+  });
+
   it('never commits machine-local repair state into the tooling baseline', () => {
     // The managed `.specify/.gitignore` only covers `feature.json` and the
     // extension overrides, so the repair loop's own bookkeeping reached the

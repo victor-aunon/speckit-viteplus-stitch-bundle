@@ -12,6 +12,21 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- **A protected gate config that was merely unformatted was unrepairable.**
+  `vite.config.ts` became a `PROTECTED_PATTERNS` entry, and `vp check` still
+  formats it — so a config with a missing newline failed `code_quality` in about a
+  second with no legal repair. A real run burned **13 gate attempts** and a
+  30-minute repair window on exactly that, then died on `Prompt timed out after
+  1800 seconds`. The offending files were `vite.config.ts` and a
+  `vitest.config.ts` the agent had just created, both missing a trailing newline;
+  the quality gate's own log was the only place that said so.
+
+  `bootstrap-project-env.sh` now formats both configs with `vp fmt` (not bare
+  `oxfmt`, which applies its own defaults and produces output `vp check` rejects),
+  and the tooling baseline commit carries them — a formatted-but-dirty protected
+  file would be the same dead end one step later. Protecting a file the tool itself
+  rewrites only works if the tool is the one that leaves it clean.
+
 - **The workflow's conditional template syntax was never rendered, so agents and
   gates were handed `{% if %}` as literal text.** The engine substitutes
   `{{ ... }}` and nothing else; `{% %}` blocks are not evaluated, which means the
