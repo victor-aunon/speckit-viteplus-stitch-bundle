@@ -1,5 +1,27 @@
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+// `vite-plus`, not `vite`: the `lint`, `fmt`, `check`, `test` and `run` blocks are
+// Vite+ extensions, and Vite's own `UserConfigExport` does not declare them. With
+// `lint.options.typeCheck: true` this file is type-checked, so importing from
+// `vite` makes the config fail its own gate with TS2769 ("'lint' does not exist
+// in type 'UserConfigExport'"). `vite-plus` is a declared dependency of every
+// profile that uses this template, so the import always resolves.
+import { defineConfig } from 'vite-plus';
+
+// Never formatted, never linted. Three kinds of file that the agent must not
+// touch, for three different reasons:
+//
+//   .specify/                 Vendored tooling. `check-blast-radius.sh` treats it as
+//                          protected, so a formatter pass there is a gate
+//                          violation the agent is forbidden to repair. It also
+//                          ships in its own style; reflowing it produces a
+//                          permanent diff against the bundle.
+//   specs/<feature>/evidence/  Written by the gates. The agent may not edit evidence,
+//                          and the gates rewrite it on every run, so formatting
+//                          it guarantees a fresh diff after every check.
+//   specs/<feature>/designs/   The Stitch design master and the goldens the visual
+//                          gate compares against. Reformatting it silently moves
+//                          the reference the implementation is graded against.
+const IGNORED_GENERATED_PATHS = ['.specify/**', 'specs/**/evidence/**', 'specs/**/designs/**'];
 
 export default defineConfig({
   // React Fast Refresh (HMR). @vitejs/plugin-react is a declared dependency;
@@ -9,6 +31,7 @@ export default defineConfig({
 
   // Vite+ (vp) Code Quality Configuration
   lint: {
+    ignorePatterns: IGNORED_GENERATED_PATHS,
     options: {
       typeAware: true,
       typeCheck: true, // Strict TypeScript type checking
@@ -148,6 +171,7 @@ export default defineConfig({
     ],
   },
   fmt: {
+    ignorePatterns: IGNORED_GENERATED_PATHS,
     // Airbnb / VoidZero style guide standard
     singleQuote: true,
     semi: true,

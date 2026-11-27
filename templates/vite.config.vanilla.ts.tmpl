@@ -13,8 +13,17 @@
  * installed yet. Importing `defineConfig` from a package that may not exist turns
  * a lint run into a crash.
  */
+// Never formatted, never linted: vendored tooling (`.specify/**`, protected by
+// check-blast-radius.sh — formatting it is a violation the agent cannot repair),
+// gate-written evidence (`specs/<feature>/evidence/**`, which the agent may not
+// edit) and
+// the Stitch design master (`specs/<feature>/designs/**`, the goldens the visual
+// gate compares against). See the React template for the full rationale.
+const IGNORED_GENERATED_PATHS = ['.specify/**', 'specs/**/evidence/**', 'specs/**/designs/**'];
+
 export default {
   lint: {
+    ignorePatterns: IGNORED_GENERATED_PATHS,
     options: {
       // Type checking still applies: env config and DOM helpers are TypeScript.
       typeAware: true,
@@ -87,6 +96,7 @@ export default {
     ],
   },
   fmt: {
+    ignorePatterns: IGNORED_GENERATED_PATHS,
     // Airbnb / VoidZero style guide standard
     singleQuote: true,
     semi: true,

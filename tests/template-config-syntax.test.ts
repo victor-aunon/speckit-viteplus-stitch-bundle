@@ -71,6 +71,46 @@ describe('vite config templates', () => {
     }
   });
 
+  it('keep vendored tooling and generated artifacts out of fmt and lint', () => {
+    // `vp check` runs Oxfmt and Oxlint over the whole project, and the documented
+    // remedy (`--fix`) then rewrites whatever it finds. Without these exclusions
+    // the loop is unwinnable in BOTH directions:
+    //   - with `--fix`, Oxfmt reformats `.specify/**`, which check-blast-radius.sh
+    //     treats as protected: a violation the agent is forbidden to repair.
+    //   - without it, the gates' own evidence stays unformatted (written with no
+    //     trailing newline) and `code_quality` fails on the gate's own output.
+    const expected = ['.specify/**', 'specs/**/evidence/**', 'specs/**/designs/**'];
+    for (const name of configTemplates()) {
+      const source = fs.readFileSync(path.join(templatesDir, name), 'utf8');
+      expect(source, `${name}: lint block must declare ignorePatterns`).toMatch(
+        /lint:\s*\{[\s\S]*?ignorePatterns:/
+      );
+      expect(source, `${name}: fmt block must declare ignorePatterns`).toMatch(
+        /fmt:\s*\{[\s\S]*?ignorePatterns:/
+      );
+      for (const pattern of expected) {
+        expect(source, `${name}: must exclude ${pattern}`).toContain(pattern);
+      }
+    }
+  });
+
+  it('import defineConfig from vite-plus so the Vite+ blocks type-check', () => {
+    // Vite's own UserConfigExport declares none of `lint`, `fmt`, `check`, `test`
+    // or `run`. With `lint.options.typeCheck: true` the config file is itself
+    // type-checked, so importing defineConfig from 'vite' makes the provisioned
+    // config fail its own gate with TS2769 ("'lint' does not exist in type
+    // 'UserConfigExport'"). Profiles that export a plain object are exempt: they
+    // must keep loading before `node_modules/` exists.
+    for (const name of configTemplates()) {
+      const source = fs.readFileSync(path.join(templatesDir, name), 'utf8');
+      // Only the profiles that actually import defineConfig: the others mention it
+      // in a comment explaining why they deliberately export a plain object.
+      if (!/^\s*import\b[^\n]*\bdefineConfig\b/m.test(source)) continue;
+      expect(source, `${name} must not import from vite`).not.toContain("from 'vite'");
+      expect(source, `${name} must import from vite-plus`).toContain("from 'vite-plus'");
+    }
+  });
+
   it('never close a block comment early with a glob', () => {
     for (const name of configTemplates()) {
       const source = fs.readFileSync(path.join(templatesDir, name), 'utf8');

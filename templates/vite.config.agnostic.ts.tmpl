@@ -16,8 +16,17 @@
  *   - shadcn/Tailwind lint rules and `react/no-multi-comp`
  *   - UI layer import boundaries (there is no `ui/` layer to police)
  */
+// Never formatted, never linted: vendored tooling (`.specify/**`, protected by
+// check-blast-radius.sh — formatting it is a violation the agent cannot repair),
+// gate-written evidence (`specs/<feature>/evidence/**`, which the agent may not
+// edit) and
+// the Stitch design master (`specs/<feature>/designs/**`, the goldens the visual
+// gate compares against). See the React template for the full rationale.
+const IGNORED_GENERATED_PATHS = ['.specify/**', 'specs/**/evidence/**', 'specs/**/designs/**'];
+
 export default {
   lint: {
+    ignorePatterns: IGNORED_GENERATED_PATHS,
     options: {
       typeAware: true,
       typeCheck: true,
@@ -82,6 +91,7 @@ export default {
     ],
   },
   fmt: {
+    ignorePatterns: IGNORED_GENERATED_PATHS,
     singleQuote: true,
     semi: true,
     trailingComma: 'all',

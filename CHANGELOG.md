@@ -12,6 +12,38 @@ one-file change plus this changelog.
 
 ### Fixed
 
+- **The quality gate could not pass: it failed on its own artifacts, and its own
+  remedy made the tree untouchable.** Two mechanisms, both unrepairable from
+  inside the loop, closed every exit.
+
+  *The evidence it writes is not formatter-clean.* Every gate wrote its evidence
+  with `JSON.stringify(data, null, 2)`, which does not terminate the file with a
+  newline, and Oxfmt requires one. Concretely: `check-design-artifacts` wrote
+  `design-artifacts.json` at 23:55, `check-quality-gate` ran `vp check` at 00:18
+  and failed on that file, the agent is forbidden from editing evidence, and the
+  gate rewrites it without the newline on the next run. A real run burned eleven
+  hours and seven repair iterations on this and the abort message blamed the
+  application code. All eight writers now terminate the payload with `\\n`, and
+  `gate-integrity.test.ts` fails the suite if a new writer forgets.
+
+  *The documented remedy is a trap.* `vp check --fix` — the flag
+  `check-quality-gate.sh --fix` exists to run — reformats `.specify/**`, which
+  `check-blast-radius.sh` treats as protected tooling. Fifteen protected files
+  turned into a blast-radius violation the agent may not repair, tripping the
+  circuit breaker. Without `--fix` the unformatted evidence failed
+  `code_quality`; with it, the working tree became untouchable. Both directions
+  are dead, so the formatter must read neither tree: the three `vite.config`
+  templates now declare `lint.ignorePatterns` and `fmt.ignorePatterns` for
+  `.specify/**`, `specs/**/evidence/**` and `specs/**/designs/**` — the last
+  because it is the golden the visual gate compares the implementation against.
+
+  `install.sh` must not rewrite an existing config, so it now names both config
+  defects for brownfield projects: the missing `ignorePatterns`, and
+  `defineConfig` imported from `vite`, whose `UserConfigExport` declares none of
+  `lint`, `fmt`, `check`, `test` or `run` — with `lint.options.typeCheck` on,
+  that config fails its own gate with TS2769. The React template imports from
+  `vite-plus`, which does declare them.
+
 - **The repair loop's own bookkeeping was committed into the project's history.**
   The managed `.specify/.gitignore` covers only `feature.json` and the extension
   overrides, so `.repair-loop/` and `.circuit-breaker-state` were fully
