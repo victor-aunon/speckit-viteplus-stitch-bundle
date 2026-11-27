@@ -197,6 +197,12 @@ capture_failure_output() {
 write_evidence() {
   local status="$1"
   local failed_step="${2:-none}"
+  # A green gate must not leave the previous failure's log next to it: read as
+  # current evidence, it is a lie. A real audit had to explain it away in its
+  # report ("it is the output file of a past failure, not a status artifact").
+  if [ "$status" != "failed" ] && [ -n "$EVIDENCE_DIR" ]; then
+    rm -f "$EVIDENCE_DIR/quality-gate.log" 2>/dev/null || true
+  fi
   if [ -n "$EVIDENCE_DIR" ]; then
     mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
     if command -v node >/dev/null 2>&1; then
@@ -506,6 +512,41 @@ if [ "$DRY_RUN" = false ] && [ "$GIT_OWNED" = true ]; then
       echo "   so a committed decision is audited history instead of an unrecorded edit."
       TAMPERING_VIOLATIONS=$((TAMPERING_VIOLATIONS + 1))
     fi
+  fi
+
+  # B3. The formatter reads `.prettierignore` and `.gitignore`, so an exclusion
+  # there is `ignorePatterns` through another door: `src/` in either file takes the
+  # whole application out of `vp check` and the gate grades an empty set. A real
+  # run created an UNTRACKED `.prettierignore` (to stop the formatter rewriting the
+  # auditor's report, a legitimate need) and nothing audited it. Checked whether the
+  # file is tracked or not, because an untracked file never shows in a diff.
+  #
+  # Only patterns that exclude ALL of `src` count. A narrow carve-out such as
+  # `src/legacy/` is a decision, not a bypass, and stays the project's to make.
+  # Collected in an ARRAY, not in `$( ... )`: bash 3.2 (macOS) mis-parses a
+  # multi-line `case` inside a command substitution and only fails at RUN time,
+  # while `bash -n` accepts the same file.
+  BROAD_SRC_EXCLUSIONS=()
+  for ignore_file in .prettierignore .gitignore; do
+    [ -f "$PROJECT_ROOT/$ignore_file" ] || continue
+    while IFS= read -r exclude_line || [ -n "$exclude_line" ]; do
+      exclude_trimmed="$(printf '%s' "$exclude_line" | tr -d '[:space:]')"
+      [ -n "$exclude_trimmed" ] || continue
+      if [ "${exclude_trimmed:0:1}" = "#" ]; then continue; fi
+      case "$exclude_trimmed" in
+        'src'|'src/'|'src/*'|'src/**'|'/src'|'/src/'|'/src/*'|'/src/**'|'*'|'**'|'**/*')
+          BROAD_SRC_EXCLUSIONS+=("$ignore_file: $exclude_line")
+          ;;
+      esac
+    done < "$PROJECT_ROOT/$ignore_file"
+  done
+  if [ "${#BROAD_SRC_EXCLUSIONS[@]}" -gt 0 ]; then
+    echo ""
+    echo "❌ [ANTI-TAMPERING VIOLATION]: An ignore file excludes the whole application from the formatter:"
+    printf '   %s\n' "${BROAD_SRC_EXCLUSIONS[@]}"
+    echo "   `vp check` reads .prettierignore and .gitignore, so this turns the formatting"
+    echo "   check off for src/ instead of fixing the code."
+    TAMPERING_VIOLATIONS=$((TAMPERING_VIOLATIONS + 1))
   fi
 
   # C. Check for neutralization of test/check scripts in package.json

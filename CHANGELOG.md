@@ -10,7 +10,39 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **The formatter could be switched off through an ignore file.** `vp check`
+  reads `.prettierignore` and `.gitignore`, so an entry there is `ignorePatterns`
+  through another door — `src/` takes the whole application out of the formatting
+  check and the gate grades an empty set. A real run created an **untracked**
+  `.prettierignore` (legitimately, to stop the formatter rewriting the auditor's
+  report) and nothing audited what else it could exclude, because an untracked
+  file never shows in a diff. Entries covering all of `src` are now a
+  tampering violation; a narrow carve-out such as `src/legacy/` stays the
+  project's decision.
+
+- **The visual gate's config was editable, and a real run edited it.** Registering
+  a second Playwright project for a feature's own browser audit is legitimate —
+  which is why the template now ships it: `tests/a11y/` gets a project of its own,
+  conditional on specs existing there (Playwright fails a project that matches no
+  tests). With that in place `playwright.design.config.ts` joins
+  `PROTECTED_PATTERNS`, and the bootstrap formats it, because protecting a file
+  the formatter rewrites only works when the tool leaves it clean.
+
+- **A green gate left the previous failure's log next to it.** `quality-gate.log`
+  was only written on failure, so a passing run kept the old text and an
+  independent audit had to explain it away in its own report ("the output file of a
+  past failure, not a status artifact"). The log is removed on a pass.
+
+### Fixed (gotcha)
+
+- **A multi-line `case` inside `$( ... )` breaks bash 3.2 at run time, and
+  `bash -n` accepts the same file.** macOS ships bash 3.2; the CI runs on Linux.
+  The ignore-file scan collects into an array instead. Two variants of the same
+  trap were hit while writing it: an empty `case` pattern (`''|...`) and a quoted
+  `'#'*` inside a substitution.
+
 
 ## [2.2.0] - 2026-11-27
 

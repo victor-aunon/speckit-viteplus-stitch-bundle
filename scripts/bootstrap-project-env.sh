@@ -345,7 +345,7 @@ fi
 # `vp check` then rejects, which is the same trap one level down.
 if command -v vp >/dev/null 2>&1; then
   GATE_CONFIGS_FORMATTED=""
-  for gate_config in vite.config.ts vitest.config.ts; do
+  for gate_config in vite.config.ts vitest.config.ts playwright.design.config.ts; do
     if [ -f "$ROOT/$gate_config" ]; then
       if ( cd "$ROOT" && vp fmt "$gate_config" >/dev/null 2>&1 ); then
         GATE_CONFIGS_FORMATTED="$GATE_CONFIGS_FORMATTED $gate_config"

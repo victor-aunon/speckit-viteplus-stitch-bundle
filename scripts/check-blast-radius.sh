@@ -296,6 +296,11 @@ if [ "$CHECK_SCOPE" = true ] || [ "$CHECK_BREAKER" = false ]; then
     # The vendored accessibility/visual audit. It is tooling, and an agent that can
     # edit it can make the audit pass by weakening the audit.
     "tests/design/"
+    # The visual gate's own config: viewport, tolerance, snapshot policy. A real run
+    # extended it to register a second project (a legitimate need, which the
+    # template now covers) and nothing audited that edit. Project-authored audits
+    # go in tests/a11y, which the template registers on its own.
+    "playwright.design.config.ts"
   )
 
   # App-shell and shared infrastructure are intentionally outside any slice.

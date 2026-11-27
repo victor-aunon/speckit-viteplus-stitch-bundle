@@ -155,7 +155,13 @@ describe('check-blast-radius.sh', () => {
     // rule retuned to `off`) turns the gate off without deleting a line. The
     // audit spec is the audit: an agent that may edit it can pass accessibility
     // by weakening the assertions.
-    for (const file of ['vite.config.ts', 'tests/design/design-audit.spec.ts']) {
+    for (const file of [
+      'vite.config.ts',
+      'tests/design/design-audit.spec.ts',
+      // The visual gate's own config: viewport, tolerance, snapshot policy. A real
+      // run extended it to register a second project, and nothing audited that.
+      'playwright.design.config.ts',
+    ]) {
       const gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blast-protected-'));
       try {
         execFileSync('git', ['init'], { cwd: gitDir });

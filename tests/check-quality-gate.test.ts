@@ -620,6 +620,29 @@ describe('check-quality-gate.sh', () => {
     }
   });
 
+  it('removes the failure log when the gate passes', () => {
+    // A green gate sitting next to the previous failure's log reads as current
+    // evidence. A real audit had to explain it away in its own report.
+    const project = failingCheckProject('  x src/App.tsx:3:1  FIXME-flaggable');
+    const logPath = path.join(project.evidenceDir, 'quality-gate.log');
+    try {
+      runFailing(project);
+      expect(fs.existsSync(logPath)).toBe(true);
+
+      // Flip the stub so `vp check` passes and the gate can reach its evidence write.
+      fs.writeFileSync(path.join(project.dir, 'fakebin/vp'), '#!/usr/bin/env bash\nexit 0\n', 'utf8');
+      runBash(scriptPath, [`--evidence-dir=${project.evidenceDir}`, '--skip-tests', '--skip-build'], {
+        cwd: project.dir,
+        stdio: 'pipe',
+        env: project.env,
+      });
+
+      expect(fs.existsSync(logPath)).toBe(false);
+    } finally {
+      removeDir(project.dir);
+    }
+  });
+
   it('does not grow the state history when only the failure output changes', () => {
     // The history trail is append-only on STATE changes. Folding the tool output
     // into that comparison would append a line per run (paths, line numbers,
@@ -646,6 +669,41 @@ describe('check-quality-gate.sh', () => {
     } finally {
       removeDir(project.dir);
     }
+  });
+
+  describe('the formatter cannot be switched off through an ignore file', () => {
+    // `vp check` reads `.prettierignore` and `.gitignore`, so an entry there is
+    // `ignorePatterns` through another door. A real run created an UNTRACKED
+    // `.prettierignore` — legitimately, to stop the formatter rewriting the
+    // auditor's report — and nothing audited what else it could exclude.
+    const runWithIgnore = (contents: string): { status: number; output: string } => {
+      const dir = makeGitProject({ 'vitest.config.ts': 'export default {};\n' });
+      try {
+        fs.writeFileSync(path.join(dir, '.prettierignore'), contents, 'utf8');
+        try {
+          runBash(scriptPath, ['--skip-tests', '--skip-build'], { cwd: dir, stdio: 'pipe' });
+          return { status: 0, output: '' };
+        } catch (error: any) {
+          return { status: error.status, output: `${error.stdout ?? ''}${error.stderr ?? ''}` };
+        }
+      } finally {
+        removeDir(dir);
+      }
+    };
+
+    it('flags an entry that excludes the whole application', () => {
+      const { status, output } = runWithIgnore('# audit artifacts\nspecs/*/evidence/\nsrc/\n');
+      expect(status).toBe(1);
+      expect(output).toContain('ANTI-TAMPERING VIOLATION');
+      expect(output).toContain('.prettierignore');
+    });
+
+    it('allows a narrow carve-out and the generated trees', () => {
+      // Excluding an audit artifact or one legacy folder is a decision, not a
+      // bypass: only a pattern that covers ALL of src is a violation.
+      const { output } = runWithIgnore('specs/*/evidence/\nsrc/legacy/\ndist/\n');
+      expect(output).not.toContain('ANTI-TAMPERING VIOLATION');
+    });
   });
 
   describe('anti-tampering audits additions, not only deletions', () => {

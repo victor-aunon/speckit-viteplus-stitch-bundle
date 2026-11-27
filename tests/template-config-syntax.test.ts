@@ -159,6 +159,21 @@ describe('vite config templates', () => {
     expect(pkg.devDependencies.jsdom).toBeDefined();
   });
 
+  it('registers a project-authored audit under tests/a11y, only when specs exist', () => {
+    // `tests/design/` is vendored tooling protected by check-blast-radius.sh, so a
+    // feature's own browser audit goes in `tests/a11y/`. Shipping that project in
+    // the template is what keeps anyone from editing the visual gate's config: a
+    // real run extended it by hand and nothing audited the edit.
+    const source = fs.readFileSync(
+      path.join(templatesDir, 'playwright.design.config.ts.tmpl'),
+      'utf8'
+    );
+    expect(source).toContain("const A11Y_DIR = './tests/a11y'");
+    expect(source).toContain('testDir: A11Y_DIR');
+    // Playwright fails a project that matches no tests, so it has to be conditional.
+    expect(source).toMatch(/\.\.\.\(A11Y_SPECS > 0/);
+  });
+
   it('never close a block comment early with a glob', () => {
     for (const name of configTemplates()) {
       const source = fs.readFileSync(path.join(templatesDir, name), 'utf8');
