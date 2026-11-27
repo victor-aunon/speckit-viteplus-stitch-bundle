@@ -10,6 +10,10 @@ one-file change plus this changelog.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.2.1] - 2026-11-28
+
 ### Added
 
 - **`watch-run.sh`: an unattended run survives a model hang.** The engine has no
