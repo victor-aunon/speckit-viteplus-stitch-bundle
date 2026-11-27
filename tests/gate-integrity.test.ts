@@ -432,4 +432,45 @@ exit 0
       }
     });
   });
+
+  describe('evidence formatting contract', () => {
+    /**
+     * Every gate writes its evidence as `JSON.stringify(data, null, 2)`.
+     * `JSON.stringify` does not terminate the file with a newline, and Oxfmt
+     * requires one — so each gate wrote a file that its OWN quality gate rejects.
+     *
+     * This was not theoretical. A real run spent eleven hours and seven repair
+     * iterations on it: `check-design-artifacts` wrote `design-artifacts.json` at
+     * 23:55, `check-quality-gate` ran `vp check` at 00:18 and failed on that file,
+     * and the repair agent was forbidden from editing evidence. The loop could not
+     * win, and the abort message blamed the application code.
+     */
+    const evidenceWriters = fs
+      .readdirSync(scriptsDir)
+      .filter((name) => name.endsWith('.sh'))
+      .map((name) => ({ name, source: fs.readFileSync(path.join(scriptsDir, name), 'utf8') }))
+      .filter((entry) => entry.source.includes('writeFileSync(outPath'));
+
+    it('finds the evidence writers at all', () => {
+      // Guard against a refactor that renames the pattern and silently disables
+      // the assertions below.
+      expect(evidenceWriters.length).toBeGreaterThanOrEqual(8);
+    });
+
+    it('never writes evidence JSON without a trailing newline', () => {
+      const offenders = evidenceWriters
+        .filter((entry) =>
+          /writeFileSync\(outPath,\s*JSON\.stringify\([^)]*\)\s*,\s*"utf8"\)/.test(entry.source)
+        )
+        .map((entry) => entry.name);
+
+      expect(offenders).toEqual([]);
+    });
+
+    it('terminates the serialized payload with a newline', () => {
+      for (const entry of evidenceWriters) {
+        expect(entry.source).toMatch(/JSON\.stringify\([^\n]*null, 2\)\s*\+\s*"\\n"/);
+      }
+    });
+  });
 });

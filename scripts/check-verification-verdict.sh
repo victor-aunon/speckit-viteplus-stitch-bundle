@@ -134,7 +134,10 @@ write_evidence() {
           feature_dir: process.env.EV_FEATURE_DIR || undefined,
           evidence_type: "verification_verdict_gate"
         };
-        fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
+        // Trailing newline: Oxfmt rejects a file that does not end with one, and the
+        // quality gate runs it over this evidence directory, so a gate that writes
+        // unformatted evidence fails its own gate on the next run.
+        fs.writeFileSync(outPath, JSON.stringify(data, null, 2) + "\n", "utf8");
         // Append-only, but only on state changes: repeated identical outcomes
         // do not grow the history (the timestamp is not part of the payload).
         // Execution frequency lives in .specify/telemetry.jsonl, not here.

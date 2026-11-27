@@ -600,6 +600,13 @@ describe('check-quality-gate.sh', () => {
       expect(evidence.failure.output).toContain('FIXME-flaggable');
       expect(evidence.failure.exit_code).toBe(1);
 
+      // Oxfmt-clean: the gate runs `vp check` over this very directory, and a JSON
+      // file that does not end in a newline fails code_quality — which made the
+      // gate fail on its own output, with the agent forbidden to edit evidence.
+      expect(
+        fs.readFileSync(path.join(project.evidenceDir, 'quality-gate.json'), 'utf8').endsWith('\n')
+      ).toBe(true);
+
       // The untruncated log travels next to it.
       expect(evidence.failure.output_file).toBe('quality-gate.log');
       expect(

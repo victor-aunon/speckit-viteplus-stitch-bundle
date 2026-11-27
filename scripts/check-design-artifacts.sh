@@ -142,7 +142,10 @@ write_evidence() {
           missing,
           evidence_type: "design_artifacts"
         };
-        fs.writeFileSync(outPath, JSON.stringify(data, null, 2), "utf8");
+        // Trailing newline: Oxfmt rejects a file that does not end with one, and the
+        // quality gate runs it over this evidence directory, so a gate that writes
+        // unformatted evidence fails its own gate on the next run.
+        fs.writeFileSync(outPath, JSON.stringify(data, null, 2) + "\n", "utf8");
         const historyPath = outPath.replace(/\.json$/, ".history.jsonl");
         const comparable = (entry) => {
           const { timestamp, previous_status, ...rest } = entry;

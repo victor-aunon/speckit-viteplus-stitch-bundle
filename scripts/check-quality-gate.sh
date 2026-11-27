@@ -281,7 +281,9 @@ write_evidence() {
           },
           evidence_type: "deterministic_quality_gate"
         };
-        const serialized = JSON.stringify(data, null, 2);
+        // Trailing newline: Oxfmt rejects a file that does not end with one, and
+        // `vp check` scans this evidence directory.
+        const serialized = JSON.stringify(data, null, 2) + "\n";
         fs.writeFileSync(outPath, serialized, "utf8");
         // Append-only audit trail: every run leaves a line, nothing is overwritten.
         // Append-only, but only on state changes: repeated identical outcomes
